@@ -14,7 +14,8 @@ import { ActivityCard, BirthdaysCard, EventsCard } from "@/components/dashboard/
 import { ExpensesCard, LeaveCard } from "@/components/dashboard/leave-expenses";
 import { AccountsCard } from "@/components/dashboard/accounts-card";
 import { TeamChat } from "@/components/dashboard/team-chat";
-import { useAccountsDashboard, useAttendanceToday, useCombinedDashboard, useCompliance } from "@/components/dashboard/queries";
+import { useAttendanceToday, useCombinedDashboard, useCompliance } from "@/components/dashboard/queries";
+import { canUseAccounts } from "@/components/accounts/api";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -24,8 +25,8 @@ export default function DashboardPage() {
   const combined = useCombinedDashboard();
   const attendance = useAttendanceToday();
   const compliance = useCompliance(true);
-  const showAccounts = can("accounts");
-  const accounts = useAccountsDashboard(showAccounts);
+  // Only roles the Accounts API actually serves (HR and Owner would get 403).
+  const showAccounts = can("accounts") && canUseAccounts(user?.role);
 
   const d = combined.data;
   const teamCompliance = r.isFirmWide || r.isManager || r.isPartner;
@@ -103,7 +104,7 @@ export default function DashboardPage() {
                 />
               )}
               {showAccounts && (
-                <AccountsCard data={accounts.data} loading={accounts.isLoading} error={accounts.error} onRetry={() => accounts.refetch()} />
+                <AccountsCard />
               )}
             </div>
           )}

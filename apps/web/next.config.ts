@@ -37,6 +37,7 @@ const nextConfig: NextConfig = {
       { source: "/reports", destination: "/portal/reports", permanent: false },
       // Old pages with no separate equivalent. Analytics only ever showed sample data.
       { source: "/analytics", destination: "/portal/reports", permanent: false },
+      { source: "/accounts/ar-management", destination: "/accounts/dashboard", permanent: false },
       { source: "/corporate-calendar", destination: "/calendar", permanent: false },
       { source: "/helpdesk", destination: "/help-desk", permanent: false },
       { source: "/admin/asset-management/inventory", destination: "/admin/asset-management/assets", permanent: false },

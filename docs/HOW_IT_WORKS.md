@@ -36,6 +36,7 @@ Later phases replace the old server with a new, safer one (see section 6). The d
 - Sign in with your **office email and password**.
 - You are signed out automatically after **15 minutes without activity**, to protect your data.
 - **Forgot password:** use the link on the sign-in page; a reset link is emailed to you.
+- **New joiners:** HR invites you from Management → Employees. The email link opens **Complete registration**: set your password, add your details and address, and upload your PAN, Aadhaar and a photo (bank details are optional). HR then approves your account and you can sign in. There is no public sign-up page; anyone without an invitation is sent to sign-in.
 
 Everyone sees the same design, but what you can open depends on your **role**:
 
@@ -168,8 +169,20 @@ Settings and health of the portal. Each tab appears only for the roles that can 
 
 Things that stay in the current portal until the new server is ready: changing reporting lines, connecting the Outlook mailbox, and pulling punches from biometric devices (the current server only simulates this).
 
-### 🔜 Accounts & Finance
-For the accounts team: invoices, receivables and payables, banking, GST and profit-and-loss reports. It will show only real figures. The current version falls back to sample numbers in places, and these will be removed.
+### ✅ Accounts & Finance
+For Admin and the accounts team. As today, an accounts role sees it in the menu once Admin turns on **Accounts & Finance** for them (or their role) in Administration → Users & access. HR and Owner can't use it; the server refuses them.
+
+All amounts are shown in ₹, each document at its own exchange rate. **Drafts and cancelled invoices are never counted.** Every figure is worked out from the invoices and receipts themselves, because the current server's own totals are wrong in several places.
+
+- **Overview**: money to be collected, how much is overdue, billed and collected this month, receivables by how late they are (by due date), who owes the most, and the most overdue invoices.
+- **Invoices**: create an invoice (billing entity, client, optional project and UDIN, dates, currency and rate, line items with SAC and GST rate). The preview shows CGST + SGST or IGST exactly as it will be saved. It starts as a **draft**, which can be edited or deleted. **Mark as sent** makes it count as billed; after that it can't be edited, only cancelled (if nothing has been paid). **Print / PDF** gives a clean A4 tax invoice with bank details and the amount in words. Export to CSV.
+- **Receipts**: record money received. The server always applies a receipt to the client's **oldest** unpaid invoices first, so the form shows exactly where the money will go. It **refuses** if that would touch a draft or an invoice in another currency.
+- **Client statements**: issued invoices and receipts for one client, with opening and closing balance in ₹, for any period. Export to CSV.
+- **GST**: output tax by month, quarter or financial year, per billing entity, split into B2B and B2C/export, with taxable value, CGST, SGST and IGST. Export to CSV.
+- **Revenue & expenses**: billed and collected by month for a financial year, billed by client, and expense claims paid by category. Salaries and other costs aren't in the portal, so this is clearly **not** a full profit and loss.
+- **Billing entities**: the firm's legal entities with GSTIN and PAN (checked against each other), address, the bank account printed on invoices, and the invoice-number prefix and format. Entities are deactivated, never deleted.
+
+**Stays in the current portal until the new server** (the page explains why): bank import and reconciliation (the current one ignores the uploaded file), payables and payments, the claims approval queue (approving there breaks part-way; approve claims from Reimbursements instead), employee ledgers and currency rates. Invoices are also not emailed from the portal yet: download the PDF and send it.
 
 ---
 
@@ -188,7 +201,7 @@ For the accounts team: invoices, receivables and payables, banking, GST and prof
 |---|---|---|
 | 0 | Set up tools and the new project folder | Done |
 | 1 | Copy of real data on a local computer for testing | Waiting for the database backup and uploads folder |
-| 2 | New website on top of the current server | In progress — all modules except Accounts & Finance ready |
+| 2 | New website on top of the current server | Done — every module built (a few Accounts screens wait for the new server) |
 | 3 | New, safer server (same database) that fixes every recorded problem | Next |
 | 4 | Hosting set-up (servers, storage, backups) | After Phase 3 |
 | 5 | Full testing with real users, then switch the live portal over | Last |

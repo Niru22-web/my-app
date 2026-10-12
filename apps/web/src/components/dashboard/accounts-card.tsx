@@ -1,18 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { Landmark } from "lucide-react";
-import type { AccountsDashboard } from "@/lib/types";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import { today } from "@/lib/dates";
+import { formatCurrency, plural } from "@/lib/format";
 import { ModuleCard } from "@/components/ui/card";
 import { MiniStat, StatRow } from "@/components/ui/stat";
 import { ErrorState } from "@/components/ui/empty-state";
-import { ApiError } from "@/lib/api";
+import { summarise, useInvoices, useReceipts } from "@/components/accounts/api";
 
-export function AccountsCard({ data, loading, error, onRetry }: { data?: AccountsDashboard; loading: boolean; error: unknown; onRetry: () => void }) {
-  const s = data?.summary;
-  const w = data?.widgets;
-  if (error instanceof ApiError && error.status === 403) return null;
+/**
+ * Accounts snapshot computed from invoices and receipts — not GET /accounts/dashboard, whose totals
+ * count drafts, mix currencies and age by issue date (BACKEND_FINDINGS AC8).
+ */
+export function AccountsCard() {
+  const inv = useInvoices();
+  const rec = useReceipts();
+  const now = today();
+  const s = useMemo(() => summarise(inv.data ?? [], rec.data ?? [], now), [inv.data, rec.data, now]);
+  const loading = inv.isLoading || rec.isLoading;
+  const late = s.buckets.slice(3).reduce((t, b) => t + b.value, 0);
 
   return (
     <ModuleCard
@@ -24,21 +32,20 @@ export function AccountsCard({ data, loading, error, onRetry }: { data?: Account
         </Link>
       }
     >
-      {error ? (
-        <ErrorState onRetry={onRetry} />
+      {inv.isError || rec.isError ? (
+        <ErrorState onRetry={() => (inv.refetch(), rec.refetch())} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <MiniStat label="Receivables" value={formatCurrency(s?.arOutstanding)} loading={loading} />
-            <MiniStat label="Payables" value={formatCurrency(s?.apOutstanding)} loading={loading} />
+            <MiniStat label="To be collected" value={formatCurrency(s.receivable)} loading={loading} />
+            <MiniStat label="Overdue" value={formatCurrency(s.overdue)} loading={loading} />
           </div>
-          {!loading && s && w && (
+          {!loading && (
             <div className="mt-3">
-              <StatRow label="Revenue this month" value={formatCurrency(s.monthlyRevenue)} />
-              <StatRow label="Collections this month" value={formatCurrency(s.monthlyCollections)} tone="success" />
-              <StatRow label="Overdue 60+ days" value={formatCurrency(w.receivables.invoiceAging.overdueAbove60)} tone="danger" />
-              <StatRow label="Pending reimbursements" value={formatCurrency(s.pendingReimbursements)} tone="warning" />
-              <StatRow label="Invoices awaiting approval" value={formatNumber(w.operations.pendingInvoiceApprovals)} tone="muted" />
+              <StatRow label="Billed this month" value={formatCurrency(s.revenueMonth)} />
+              <StatRow label="Collected this month" value={formatCurrency(s.collectedMonth)} tone="success" />
+              <StatRow label="More than 60 days late" value={formatCurrency(late)} tone={late ? "danger" : "muted"} />
+              <StatRow label="Drafts not yet sent" value={s.drafts ? plural(s.drafts, "invoice") : "None"} tone="muted" />
             </div>
           )}
         </>

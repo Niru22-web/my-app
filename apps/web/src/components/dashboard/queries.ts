@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { AccountsDashboard, AttendanceToday, CombinedDashboard, ComplianceDashboard, Envelope } from "@/lib/types";
+import type { AttendanceToday, CombinedDashboard, ComplianceDashboard, Envelope } from "@/lib/types";
 
 // Same 30s refresh the legacy dashboard used, paused while the tab is hidden.
 const LIVE = { refetchInterval: 30_000, refetchIntervalInBackground: false } as const;
@@ -35,16 +35,6 @@ export function useCompliance(enabled: boolean) {
     queryFn: async () => (await api<Envelope<ComplianceDashboard>>("compliance/dashboard")).data,
     enabled: !!user && enabled,
     ...LIVE,
-  });
-}
-
-export function useAccountsDashboard(enabled: boolean) {
-  const { user } = useAuth();
-  return useQuery({
-    queryKey: ["accounts", "dashboard", user?.id],
-    queryFn: async () => (await api<Envelope<AccountsDashboard>>("accounts/dashboard")).data,
-    enabled: !!user && enabled,
-    staleTime: 60_000,
   });
 }
 

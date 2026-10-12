@@ -144,25 +144,3 @@ export interface SearchResults {
   projects: { id: string; projectId: string; name: string; client: { name: string } | null }[];
   jobs: { id: string; jobId: string; name: string; project: { name: string } | null }[];
 }
-
-export interface AccountsDashboard {
-  summary: {
-    arOutstanding: number;
-    apOutstanding: number;
-    monthlyRevenue: number;
-    monthlyCollections: number;
-    pendingReimbursements: number;
-    pendingTimesheetPayments: number;
-    gstLiability: number;
-    forexExposure: number;
-  };
-  widgets: {
-    receivables: {
-      clientAging: { name: string; value: number }[];
-      invoiceAging: { current: number; overdue1to30: number; overdue31to60: number; overdueAbove60: number };
-    };
-    payables: { payrollDue: number; reimbursementsDue: number };
-    banking: { importedStatements: number; unmappedEntries: number; reconciliationSummary: { reconciled: number; total: number } };
-    operations: { pendingInvoiceApprovals: number; pendingPaymentApprovals: number };
-  };
-}
