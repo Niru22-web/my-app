@@ -932,6 +932,7 @@ export const uploadProfileDocuments = (req: Request, res: Response, next: Functi
     { name: 'panFile', maxCount: 1 },
     { name: 'aadhaarFile', maxCount: 1 },
     { name: 'bankStatementFile', maxCount: 1 },
+    { name: 'profileImage', maxCount: 1 },
     { name: 'profilePhoto', maxCount: 1 }
   ])(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {

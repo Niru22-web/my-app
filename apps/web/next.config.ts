@@ -35,6 +35,17 @@ const nextConfig: NextConfig = {
       { source: "/approvals/reimbursement", destination: "/portal/reimbursements/team", permanent: false },
       { source: "/employee/asset-requests", destination: "/admin/asset-management/dashboard", permanent: false },
       { source: "/reports", destination: "/portal/reports", permanent: false },
+      // Old pages with no separate equivalent. Analytics only ever showed sample data.
+      { source: "/analytics", destination: "/portal/reports", permanent: false },
+      { source: "/corporate-calendar", destination: "/calendar", permanent: false },
+      { source: "/helpdesk", destination: "/help-desk", permanent: false },
+      { source: "/admin/asset-management/inventory", destination: "/admin/asset-management/assets", permanent: false },
+      { source: "/admin/asset-management/tickets", destination: "/help-desk", permanent: false },
+      { source: "/admin/asset-management/reports", destination: "/admin/asset-management/assets", permanent: false },
+      // Public self-registration let anyone create an active account with any role; staff are invited instead.
+      { source: "/register", destination: "/login", permanent: false },
+      { source: "/signup", destination: "/login", permanent: false },
+      ...["/manager/:path+", "/employee/:path+"].map((source) => ({ source, destination: "/dashboard", permanent: false })),
       { source: "/admin-panel", destination: "/admin-portal/dashboard", permanent: false },
       { source: "/admin/masters", destination: "/admin-portal/masters", permanent: false },
       { source: "/admin-portal/masters/helpdesk-categories", destination: "/help-desk/categories", permanent: false },

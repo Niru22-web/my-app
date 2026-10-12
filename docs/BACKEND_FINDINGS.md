@@ -192,3 +192,10 @@ paths and response shapes, but these behaviours should be corrected (with a comp
 | AD10 | legacy `Admin.tsx:231-284,429-431` | Uptime 99.98%, 42ms, 14.2k, Grade A, health bars, activity chart — all hard-coded. Real numbers exist at `GET /system/status`. |
 | AD11 | `masters` | Error envelope uses `error` not `message`; in-use checks ignore legacy string `role/designation/department` columns; currency delete never blocked. |
 | AD12 | `system.controller.ts:109` `GET /system/status` | Ticket count reads `prisma.supportTicket`, which doesn't exist (tickets live in `ticket`) — always 0. New UI doesn't show it. |
+
+## Registration (`POST /auth/complete-registration`)
+| # | Where | Issue |
+|---|---|---|
+| RG1 | `employeeProfile.controller.ts` `uploadProfileDocuments` | The **uncommitted** working copy in the original folder removed `{ name: 'profileImage' }` from the upload fields while the required-file check still demands `profileImage` — with that change deployed, **no new joiner can finish registration** (old form gets "Unexpected file field", any other name fails the required check). The committed version accepts it. Our local copy was restored to match the committed version. |
+| RG2 | same, storage `folder` vs `profileImage` URL | A `profileImage` upload is stored in `uploads/documents/` but the saved URL points to `uploads/profile/` → every new joiner's photo is a broken link (and the nginx `@fallback` then serves another file). Joiners can re-upload from My Profile. |
+| RG3 | `GET /auth/validate-registration-token` | Returns name, email and employee code for any valid token — fine — but tokens are 7-day bearer links with no rate limit on validation. |
