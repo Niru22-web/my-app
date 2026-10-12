@@ -148,3 +148,16 @@ paths and response shapes, but these behaviours should be corrected (with a comp
 | E7 | `POST /notifications/approve-employee` | Activates **any** employee id for any manager/partner — not tied to a notification the caller received or to their team. |
 | E8 | `event.controller.ts` | No update endpoint; `role.includes('manager')` lets every *_manager accounts role edit the firm calendar. Holidays aren't used server-side for leave — the client now excludes them from `totalDays`, but the server trusts whatever `totalDays` it's sent (L-series). |
 | E9 | `POST /notifications` | Any signed-in user can create a notification for **any** user with any message and `actionUrl` (phishing vector). New UI only follows in-app relative links. Should be internal-only. |
+
+## Reports (`modules/reports`, `/timelogs/reports`)
+| # | Where | Issue |
+|---|---|---|
+| RP1 | `reports.service.ts:53-68,98-100` | Managers/partners (and users with an empty role) get `scope:'all'` — the whole firm. Team branch is unreachable. New UI doesn't show `/reports/*` figures to managers/partners. |
+| RP2 | `reports.service.ts:521-523` | Billable = `includes('billable')`, which also matches `non_billable` → billable always ≈ total. New UI computes billable from `/timelogs/reports` with an exact match. |
+| RP3 | `reports.service.ts:353,374,395,416` | KPIs computed from the latest 500 rows only (`take: 500`) — wrong totals on large ranges and inconsistent with the untruncated breakdowns. |
+| RP4 | `reports.service.ts:270-316` | `employeeIds`, `departmentIds`, `tab` accepted but ignored; `statuses` only in `/query`, against the wrong field for most datasets. |
+| RP5 | `reports.service.ts:931-933` | "Over time" chart = top-12 busiest days sorted by hours, not a timeline. |
+| RP6 | `reports.service.ts:530,566` | Reimbursement total counts `MANAGER_APPROVED`; leave balance sums every year's rows. |
+| RP7 | `timelog.service.ts:applyFilters` via `GET /timelogs/reports?employeeId=` | For regular users the `employeeId` filter **replaces** the self restriction — anyone can read anyone's timesheets. Role checks are exact-case (`'Admin'`), so HR/IT/accounts only see themselves. |
+| RP8 | `attendance.controller.ts:741-827` `GET /attendance/report` | No ownership/role check; returns the full Employee row including the password hash. |
+| RP9 | `Admin.tsx:282-284` (legacy UI) | Dashboard KPI changes `+12% / +5% / +8%` are hard-coded; values always 0 (reads fields `/reports/summary` doesn't return). |
