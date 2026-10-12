@@ -161,3 +161,33 @@ paths and response shapes, but these behaviours should be corrected (with a comp
 | RP7 | `timelog.service.ts:applyFilters` via `GET /timelogs/reports?employeeId=` | For regular users the `employeeId` filter **replaces** the self restriction — anyone can read anyone's timesheets. Role checks are exact-case (`'Admin'`), so HR/IT/accounts only see themselves. |
 | RP8 | `attendance.controller.ts:741-827` `GET /attendance/report` | No ownership/role check; returns the full Employee row including the password hash. |
 | RP9 | `Admin.tsx:282-284` (legacy UI) | Dashboard KPI changes `+12% / +5% / +8%` are hard-coded; values always 0 (reads fields `/reports/summary` doesn't return). |
+
+## Asset Management (`modules/asset`, `modules/asset-request`)
+| # | Where | Issue |
+|---|---|---|
+| AS1 | `asset.routes.ts:15` + `assignment.controller.ts` | Router only authenticates. Assign, return, transfer, delete-allocation, allocation import, self-register and POST maintenance have **no role check** — any employee can move or reassign firm assets. |
+| AS2 | `reports.controller.ts:30,45,74` `GET /assets/reports` | Includes full Employee rows (**password hash**) for any logged-in user. New UI doesn't call it. |
+| AS3 | `assignment.controller.ts:404-446` `GET /assets/allocations/template` | Any user downloads every employee's name/email/code. |
+| AS4 | `asset.controller.ts:154-176` `DELETE /assets/:id` | Hard-deletes all allocation history; serial stays unique so it can't be re-registered. New UI retires via `PUT status:'Retired'` instead. |
+| AS5 | `asset.controller.ts:199` dashboard | Counts `status:'Assigned'` but every flow writes `Allocated`; `retired` always 0 (delete sets isDeleted). New UI computes counts from the list. |
+| AS6 | `assignment.controller.ts:133,674` return/transfer | No check the allocation is still active — transferring a returned allocation leaves a live allocation on an "Available" asset. UI only offers these on current allocations. |
+| AS7 | `asset-request.controller.ts:35-60,52,59` | No validation (missing title → 500); `ADMIN`/`HR` role check is case-sensitive so on-behalf requests never work; every request's `assetType` is inserted into AssetCategory. |
+| AS8 | `asset-request.routes.ts:13-28` | Admin request endpoints allow ADMIN/HR only — IT (who gets the notifications) can't act. `PATCH .../status` accepts any string. |
+| AS9 | `asset-request.controller.ts:8-20` `GET /asset-requests/categories` | A GET that seeds 11 categories when empty. |
+| AS10 | DIR-/REG-/ASSET- ids | 6 random digits against a unique column → occasional 500s. |
+| AS11 | legacy UI | QR codes sent asset + custodian names to api.qrserver.com; fake approvals/"+8.4%"/expiring=4 on the dashboard. Not carried over. |
+
+## Administration (`masters`, `userPermissions`, `essl`, `system`, `email`)
+| # | Where | Issue |
+|---|---|---|
+| AD1 | `userPermissions.controller.ts:86,557` | GET selects only `jobsDelete` → UI shows jobs View/Create/Edit unticked → every save writes them false. |
+| AD2 | `userPermissions.controller.ts:138,292-297` | Analytics maps all four flags to `analyticsView` → saved value = canDelete. |
+| AD3 | `userPermissions.routes.ts:19-31` | Manager/partner/owner can grant **themselves** any module (no admin-only / not-self check). |
+| AD4 | `employee.controller.ts:351-355` `PUT /employees/:id` | Accepts `role` and `hasAccountsAccess` with no role guard — any user can make themselves Admin. |
+| AD5 | `employee.controller.ts:777-784` `GET /employees?all=true` | Bypasses scoping for any user (full directory). |
+| AD6 | `system.controller.ts:247` `GET /system/storage/files` | `category` joined into the path unchecked — `..` lists directories outside uploads. `DELETE /system/storage/file` uses a bypassable `startsWith` check. |
+| AD7 | `essl.service.ts:5-8` `GET /essl/machines` | Returns device `deviceKey`/`apiKey` in plain text. Sync is simulated (fake punches when `ENABLE_DEVICE=true`). |
+| AD8 | `accounts.routes.ts:1558-1562` `GET /accounts/audit-log` | SQL injection via `action/portal/search/dateFrom/dateTo` (`$queryRawUnsafe`). |
+| AD9 | `email.routes.ts:64` `GET /email/health` | Unauthenticated SMTP/OAuth configuration details. `GET /email/templates` seeds defaults on read. |
+| AD10 | legacy `Admin.tsx:231-284,429-431` | Uptime 99.98%, 42ms, 14.2k, Grade A, health bars, activity chart — all hard-coded. Real numbers exist at `GET /system/status`. |
+| AD11 | `masters` | Error envelope uses `error` not `message`; in-use checks ignore legacy string `role/designation/department` columns; currency delete never blocked. |

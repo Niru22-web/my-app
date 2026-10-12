@@ -33,6 +33,8 @@ const nextConfig: NextConfig = {
       { source: "/reimbursements", destination: "/portal/reimbursements", permanent: false },
       { source: "/approvals/leaves", destination: "/portal/leaves/team", permanent: false },
       { source: "/approvals/reimbursement", destination: "/portal/reimbursements/team", permanent: false },
+      { source: "/employee/asset-requests", destination: "/admin/asset-management/dashboard", permanent: false },
+      { source: "/reports", destination: "/portal/reports", permanent: false },
       ...["employees", "clients", "projects", "jobs"].map((s) => ({ source: `/${s}`, destination: `/management/${s}`, permanent: false })),
     ];
   },

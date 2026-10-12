@@ -137,9 +137,21 @@ Under **My Portal → Reports** (Admin, Owner, HR, IT, managers, partners, and a
 - Whose data you see is written at the top: Admin/Owner see **everyone**, managers and partners see **their team**, everyone else sees **their own** entries. HR and IT currently see only their own timesheet lines because of a limit in the current server; the new server will fix this.
 - Admin, Owner, HR and IT also see attendance, leave and expense-claim totals for the period.
 
-### 🔜 Asset Management / Asset Requests
-- **Employees** request equipment (laptop, phone and so on) and see what is assigned to them.
-- **Admin / HR / IT** keep the asset inventory, assign and take back assets, track maintenance and vendors, and approve requests.
+### ✅ Asset Management / My assets
+**Employees, managers, partners and accountants** see **My assets**:
+- What equipment is assigned to you (serial, tag, since when, warranty).
+- **Request an asset**: say what you need, why, how many and by when. IT and HR are notified. Track each request: Pending → Approved → handed over (or Rejected, with the reason).
+
+**Admin, HR and IT** (and anyone Admin gives asset access) see the full area, with tabs:
+- **Overview**: assets in service, how many are with people, available or in maintenance, warranties ending in the next 60 days, assets by category, open requests and recent assignments. All counted from the real records.
+- **Inventory**: every asset with search and filters. Add or edit assets, **assign** an available asset to someone, send it for maintenance, **retire** it or mark it **lost** (it stays on record with its history), or bring it back into stock. Export to Excel.
+- **Assignments**: who has what right now, and the history. **Take back** an asset (with its condition) or **transfer** it to someone else.
+- **Requests** (Admin and HR): approve or reject requests, then **hand over** an available asset, which assigns it and closes the request in one step.
+- **Maintenance**: log repairs, servicing and upgrades; mark them in progress and completed (the asset returns to its previous status).
+- **Vendors**: suppliers with contact details and GSTIN; a vendor with assets linked can't be deleted.
+- **Setup**: the lists of categories, types (for example Laptop → Dell Latitude) and locations used in the forms.
+
+Status changes only happen through these actions, never by editing, so the inventory and assignments always agree.
 
 ### 🔜 Administration
 Settings for Admin (and for people Admin allows): master lists (roles, designations, departments…), **user access and permissions**, the reporting hierarchy, the biometric (ESSL) attendance link, email setup and templates, and system information.
