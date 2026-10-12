@@ -42,24 +42,30 @@ function EntryForm({ onClose, entry, defaultDate }: Props) {
   const m = useTimelogMutations();
   const editing = !!entry;
 
-  const [clientId, setClientId] = useState(entry?.job?.project?.client?.id ?? entry?.clientId ?? "");
-  const [projectId, setProjectId] = useState(entry?.job?.project?.id ?? entry?.projectId ?? "");
-  const [jobId, setJobId] = useState(entry?.jobId ?? "");
+  const [pickedClient, setClientId] = useState(entry?.job?.project?.client?.id ?? entry?.clientId ?? "");
+  const [pickedProject, setProjectId] = useState(entry?.job?.project?.id ?? entry?.projectId ?? "");
+  const [pickedJob, setJobId] = useState(entry?.jobId ?? "");
   const [date, setDate] = useState(entry ? workDate(entry.date) : (defaultDate ?? today()));
   const [hours, setHours] = useState(entry ? String(entry.hours) : "");
   const [description, setDescription] = useState(entry?.description ?? "");
   const [workItem, setWorkItem] = useState(entry?.workItem ?? "");
-  const [billable, setBillable] = useState(entry ? entry.billableStatus !== "non_billable" : true);
+  // null = follow the project's default until the person chooses.
+  const [billableChoice, setBillable] = useState<boolean | null>(entry ? entry.billableStatus !== "non_billable" : null);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
 
+  // When there's exactly one choice it is picked automatically (saves a click at each level).
   const clients = useClients();
+  const clientId = pickedClient || (clients.data?.length === 1 ? clients.data[0].id : "");
   const projects = useProjects(clientId || undefined);
-  const jobs = useJobs(projectId || undefined);
-
   // Inactive items are hidden, except the one an existing entry already uses.
-  const projectOptions = (projects.data ?? []).filter((p) => (!clientId || p.clientId === clientId) && (!inactive(p.status) || p.id === projectId));
-  const jobOptions = (jobs.data ?? []).filter((j) => !inactive(j.status) || j.id === jobId);
+  const projectOptions = (projects.data ?? []).filter((p) => (!clientId || p.clientId === clientId) && (!inactive(p.status) || p.id === pickedProject));
+  const projectId = pickedProject || (projectOptions.length === 1 ? projectOptions[0].id : "");
+  const jobs = useJobs(projectId || undefined);
+  const jobOptions = (jobs.data ?? []).filter((j) => !inactive(j.status) || j.id === pickedJob);
+  const jobId = pickedJob || (jobOptions.length === 1 ? jobOptions[0].id : "");
+  const project = projectOptions.find((p) => p.id === projectId);
+  const billable = billableChoice ?? (typeof project?.billable === "boolean" ? project.billable : true);
 
   function validate(): Errors {
     const e: Errors = {};
@@ -151,8 +157,7 @@ function EntryForm({ onClose, entry, defaultDate }: Props) {
             onChange={(e) => {
               setProjectId(e.target.value);
               setJobId("");
-              const p = projectOptions.find((x) => x.id === e.target.value);
-              if (p && typeof p.billable === "boolean" && !editing) setBillable(p.billable);
+              if (!editing) setBillable(null);
             }}
           >
             <option value="">{!clientId ? "Choose a client first" : projects.isLoading ? "Loading…" : projectOptions.length ? "Select a project" : "No active projects"}</option>

@@ -16,7 +16,7 @@ import { FormRow, Select, Textarea } from "@/components/ui/inputs";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { RowMenu } from "@/components/management/row-menu";
-import { REQUEST_TONE, assetStatus, canApproveRequests, personName, useAllRequests, useAssetMutations, useAssets, type AssetRequest } from "@/components/assets/api";
+import { REQUEST_TONE, isRealRequest, requestStatus, assetStatus, canApproveRequests, personName, useAllRequests, useAssetMutations, useAssets, type AssetRequest } from "@/components/assets/api";
 
 type View = "Pending" | "Approved" | "done";
 
@@ -30,7 +30,7 @@ export default function RequestsPage() {
   const [deciding, setDeciding] = useState<{ r: AssetRequest; to: "Approved" | "Rejected" } | null>(null);
   const [fulfilling, setFulfilling] = useState<AssetRequest | null>(null);
 
-  const all = useMemo(() => q.data ?? [], [q.data]);
+  const all = useMemo(() => (q.data ?? []).filter(isRealRequest), [q.data]);
   const count = (s: string) => all.filter((r) => r.status === s).length;
   const rows = all.filter((r) => (view === "done" ? !["Pending", "Approved"].includes(r.status) : r.status === view));
 
@@ -71,7 +71,7 @@ export default function RequestsPage() {
     { key: "priority", header: "Priority", hideBelow: "md", sortValue: (r) => ["Low", "Medium", "High"].indexOf(r.priority), cell: (r) => <Badge tone={r.priority === "High" ? "danger" : "neutral"}>{r.priority}</Badge> },
     { key: "needed", header: "Needed by", hideBelow: "lg", sortValue: (r) => r.requiredDate ?? "9", cell: (r) => <span className="text-ink-muted">{r.requiredDate ? formatDate(r.requiredDate) : "—"}</span> },
     { key: "raised", header: "Raised", hideBelow: "sm", sortValue: (r) => r.createdAt, cell: (r) => <span className="text-ink-muted">{formatDate(r.createdAt)}</span> },
-    ...(view === "done" ? [{ key: "status", header: "Outcome", cell: (r: AssetRequest) => <Badge tone={REQUEST_TONE[r.status] ?? "neutral"}>{r.status}</Badge> }] : []),
+    ...(view === "done" ? [{ key: "status", header: "Outcome", cell: (r: AssetRequest) => <Badge tone={REQUEST_TONE[requestStatus(r)] ?? "neutral"}>{requestStatus(r) === "Allocated" ? "Handed over" : requestStatus(r)}</Badge> }] : []),
     ...(view !== "done"
       ? [
           {

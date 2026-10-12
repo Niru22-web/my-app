@@ -1,5 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
-import { ChevronDown } from "lucide-react";
+import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 const control =
@@ -63,21 +62,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   );
 });
 
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }>(function Select(
-  { className, invalid, children, ...props },
-  ref,
-) {
-  return (
-    <div className="relative">
-      <select
-        ref={ref}
-        aria-invalid={invalid || undefined}
-        className={cn(control, "h-10 appearance-none pr-9", invalid ? "border-danger" : "border-line-strong", className)}
-        {...props}
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-    </div>
-  );
-});
+
+/** Branded dropdown (see ./select) — same props as a native <select> with <option> children. */
+export { Select } from "./select";

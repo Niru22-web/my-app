@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { useToast } from "@/components/ui/toast";
-import { REQUEST_TONE, useAssetMutations, useCategories, useLocations, useMyAllocations, useMyRequests, type AssetRequest } from "./api";
+import { REQUEST_TONE, isRealRequest, requestStatus, useAssetMutations, useCategories, useLocations, useMyAllocations, useMyRequests, type AssetRequest } from "./api";
 
 const KINDS = ["Hardware", "Software", "Office Equipment", "Furniture"];
 const PRIORITIES = ["Low", "Medium", "High"];
@@ -50,7 +50,7 @@ export function MyAssets() {
       sortValue: (r) => r.status,
       cell: (r) => (
         <div>
-          <Badge tone={REQUEST_TONE[r.status] ?? "neutral"}>{r.status}</Badge>
+          <Badge tone={REQUEST_TONE[requestStatus(r)] ?? "neutral"}>{requestStatus(r) === "Allocated" ? "Handed over" : requestStatus(r)}</Badge>
           {r.remarks && r.status === "Rejected" && <p className="mt-1 max-w-[16rem] truncate text-xs text-ink-subtle" title={r.remarks}>{r.remarks}</p>}
         </div>
       ),
@@ -117,7 +117,7 @@ export function MyAssets() {
           </Card>
         ) : (
           <DataTable
-            rows={reqs.data ?? []}
+            rows={(reqs.data ?? []).filter(isRealRequest)}
             columns={columns}
             rowKey={(r) => r.id}
             loading={reqs.isLoading}

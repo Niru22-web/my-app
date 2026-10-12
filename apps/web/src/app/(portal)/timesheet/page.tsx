@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, ClipboardList, Plus, Send } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
-import { addDays, fmtDay, fmtRange, startOfMonth, today, weekDays, weekStart, workDate, type YMD } from "@/lib/dates";
+import { addDays, endOfMonth, fmtDay, fmtRange, startOfMonth, today, weekDays, weekStart, workDate, type YMD } from "@/lib/dates";
 import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,9 +20,10 @@ import { isPrivileged, statusOf, useMyTimelogs, useTimelogMutations, type Timelo
 import { EntryDialog } from "@/components/timesheet/entry-dialog";
 import { EntryRow } from "@/components/timesheet/entry-row";
 import { WeekSummary } from "@/components/timesheet/week-summary";
+import { MonthCalendar } from "@/components/timesheet/month-calendar";
 import { ExcelMenu } from "@/components/timesheet/excel-menu";
 
-type Mode = "week" | "range";
+type Mode = "week" | "month" | "range";
 type StatusFilter = "all" | "draft" | "submitted" | "approved" | "rejected";
 
 export default function MyTimesheetPage() {
@@ -30,8 +31,9 @@ export default function MyTimesheetPage() {
   const toast = useToast();
   const privileged = isPrivileged(user?.role);
 
-  const [mode, setMode] = useState<Mode>("week");
+  const [mode, setMode] = useState<Mode>("month");
   const [anchor, setAnchor] = useState<YMD>(() => weekStart(today()));
+  const [monthAnchor, setMonthAnchor] = useState<YMD>(() => startOfMonth(today()));
   const [rangeFrom, setRangeFrom] = useState<YMD>(() => startOfMonth(today()));
   const [rangeTo, setRangeTo] = useState<YMD>(() => today());
   const [selectedDay, setSelectedDay] = useState<YMD | null>(null);
@@ -42,13 +44,14 @@ export default function MyTimesheetPage() {
   const [confirmSubmitAll, setConfirmSubmitAll] = useState(false);
 
   const days = useMemo(() => weekDays(anchor), [anchor]);
-  const filters = mode === "week" ? { dateFrom: days[0], dateTo: days[6] } : { dateFrom: rangeFrom, dateTo: rangeTo };
+  const filters =
+    mode === "week" ? { dateFrom: days[0], dateTo: days[6] } : mode === "month" ? { dateFrom: monthAnchor, dateTo: endOfMonth(monthAnchor) } : { dateFrom: rangeFrom, dateTo: rangeTo };
   const q = useMyTimelogs(filters);
   const m = useTimelogMutations();
 
   const all = useMemo(() => q.data ?? [], [q.data]);
   const visible = all.filter(
-    (e) => (status === "all" || statusOf(e) === status) && (mode !== "week" || !selectedDay || workDate(e.date) === selectedDay),
+    (e) => (status === "all" || statusOf(e) === status) && (mode === "range" || !selectedDay || workDate(e.date) === selectedDay),
   );
   const drafts = all.filter((e) => statusOf(e) === "draft");
 
@@ -104,6 +107,7 @@ export default function MyTimesheetPage() {
             }}
             options={[
               { value: "week", label: "Week" },
+              { value: "month", label: "Month" },
               { value: "range", label: "Date range" },
             ]}
           />
@@ -124,6 +128,26 @@ export default function MyTimesheetPage() {
               {!isCurrentWeek && (
                 <Button variant="ghost" size="sm" onClick={() => (setAnchor(weekStart(today())), setSelectedDay(null))}>
                   This week
+                </Button>
+              )}
+            </div>
+          ) : mode === "month" ? (
+            <div className="flex items-center gap-1">
+              <button onClick={() => (setMonthAnchor(startOfMonth(addDays(monthAnchor, -1))), setSelectedDay(null))} className="grid h-9 w-9 place-items-center rounded-xl border border-line bg-surface hover:bg-surface-muted" aria-label="Previous month">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-[150px] px-2 text-center text-sm font-semibold text-ink">{fmtDay(monthAnchor, { month: "long", year: "numeric" })}</span>
+              <button
+                onClick={() => (setMonthAnchor(startOfMonth(addDays(endOfMonth(monthAnchor), 1))), setSelectedDay(null))}
+                disabled={monthAnchor === startOfMonth(today())}
+                className="grid h-9 w-9 place-items-center rounded-xl border border-line bg-surface hover:bg-surface-muted disabled:opacity-40"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              {monthAnchor !== startOfMonth(today()) && (
+                <Button variant="ghost" size="sm" onClick={() => (setMonthAnchor(startOfMonth(today())), setSelectedDay(null))}>
+                  This month
                 </Button>
               )}
             </div>
@@ -151,6 +175,24 @@ export default function MyTimesheetPage() {
       </div>
 
       {mode === "week" && <WeekSummary days={days} entries={all} loading={q.isLoading} selected={selectedDay} onSelect={setSelectedDay} />}
+      {mode === "month" && (
+        <MonthCalendar month={monthAnchor} entries={all} loading={q.isLoading} selected={selectedDay} onSelect={setSelectedDay} onLog={(d) => setEditor({ date: d })} />
+      )}
+      {mode === "month" && selectedDay && (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-ink">{fmtDay(selectedDay, { weekday: "long", day: "numeric", month: "long" })}</p>
+          <span className="flex gap-2">
+            {selectedDay <= today() && (
+              <Button size="sm" onClick={() => setEditor({ date: selectedDay })}>
+                <Plus className="h-4 w-4" /> Log time for this day
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setSelectedDay(null)}>
+              Show whole month
+            </Button>
+          </span>
+        </div>
+      )}
 
       {mode === "range" && !q.isLoading && (
         <p className="text-sm text-ink-muted">

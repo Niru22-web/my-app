@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
-import { FormRow, Input, Textarea } from "@/components/ui/inputs";
+import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
@@ -217,14 +217,14 @@ function EntityDialog({ entity, onClose }: { entity: Entity | null; onClose: () 
           <Input id="en-prefix" value={f.invoicePrefix} maxLength={10} onChange={set("invoicePrefix")} className="uppercase" placeholder="ASA" invalid={!!show("invoicePrefix")} />
         </FormRow>
         <FormRow label="Format" htmlFor="en-format" hint="The counter continues across years (current server behaviour)">
-          <select id="en-format" value={f.customFormat} onChange={set("customFormat")} className="h-10 w-full rounded-xl border border-line bg-surface px-3 text-sm text-ink">
+          <Select id="en-format" value={f.customFormat} onChange={set("customFormat")}>
             {FORMATS.map((x) => (
               <option key={x.value} value={x.value}>
                 {x.label}
               </option>
             ))}
             {!FORMATS.some((x) => x.value === f.customFormat) && <option value={f.customFormat}>{f.customFormat}</option>}
-          </select>
+          </Select>
         </FormRow>
       </form>
     </Dialog>

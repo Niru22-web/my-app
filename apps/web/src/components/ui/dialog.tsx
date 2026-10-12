@@ -28,7 +28,8 @@ export function Dialog({ open, onClose, title, description, children, footer, si
       const first = panel.current?.querySelector<HTMLElement>("input, select, textarea, button:not([data-close])");
       (first ?? panel.current)?.focus();
     }, 20);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // A control inside (e.g. an open dropdown) marks Escape as handled with preventDefault.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && onClose();
     document.addEventListener("keydown", onKey);
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";

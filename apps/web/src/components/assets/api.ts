@@ -80,7 +80,7 @@ export interface AssetRequest {
   createdAt: string;
   employee?: { firstName: string; lastName: string | null; employeeId: string; department: string | null };
   approver?: { firstName: string; lastName: string | null } | null;
-  allocations?: { id: string; inventory: Asset }[];
+  allocations?: { id: string; status?: string; returnedAt?: string | null; inventory: Asset }[];
 }
 
 export interface Category {
@@ -123,6 +123,7 @@ export const ASSET_TONE: Record<string, "success" | "brand" | "warning" | "neutr
   Lost: "danger",
 };
 export const REQUEST_TONE: Record<string, "warning" | "brand" | "success" | "danger" | "neutral"> = {
+  Returned: "neutral",
   Pending: "warning",
   Approved: "brand",
   Allocated: "success",
@@ -196,3 +197,16 @@ export function useAssetMutations() {
 }
 
 export const personName = (p?: { firstName: string; lastName: string | null } | null) => (p ? `${p.firstName} ${p.lastName ?? ""}`.trim() : "");
+
+/**
+ * What a requester should see. The API leaves a request at "Allocated" even after the asset was
+ * taken back, so a fully returned request reads "Returned" instead.
+ */
+export function requestStatus(r: Pick<AssetRequest, "status" | "allocations">): string {
+  const a = r.allocations ?? [];
+  if (r.status === "Allocated" && a.length && a.every((x) => x.status === "Returned")) return "Returned";
+  return r.status;
+}
+
+/** The API records direct assignments (DIR-) and self-registrations (REG-) as requests; they aren't requests anyone made. */
+export const isRealRequest = (r: Pick<AssetRequest, "requestId">) => !/^(DIR|REG)-/.test(r.requestId ?? "");
