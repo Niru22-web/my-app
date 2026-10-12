@@ -199,3 +199,22 @@ paths and response shapes, but these behaviours should be corrected (with a comp
 | RG1 | `employeeProfile.controller.ts` `uploadProfileDocuments` | The **uncommitted** working copy in the original folder removed `{ name: 'profileImage' }` from the upload fields while the required-file check still demands `profileImage` — with that change deployed, **no new joiner can finish registration** (old form gets "Unexpected file field", any other name fails the required check). The committed version accepts it. Our local copy was restored to match the committed version. |
 | RG2 | same, storage `folder` vs `profileImage` URL | A `profileImage` upload is stored in `uploads/documents/` but the saved URL points to `uploads/profile/` → every new joiner's photo is a broken link (and the nginx `@fallback` then serves another file). Joiners can re-upload from My Profile. |
 | RG3 | `GET /auth/validate-registration-token` | Returns name, email and employee code for any valid token — fine — but tokens are 7-day bearer links with no rate limit on validation. |
+
+## Accounts & Finance (`modules/accounts/accounts.routes.ts` = R)
+| # | Where | Issue |
+|---|---|---|
+| AC1 | R:41-59 `logAudit`, R:1558-1576 `/audit-log` | SQL injection (`$executeRawUnsafe`/`$queryRawUnsafe`). A quote in any client name/description also silently drops the audit entry. |
+| AC2 | R:340,369,1008,1697 | `include: { employee: true }` returns password hashes (invoices, approval queue, transactions). |
+| AC3 | R:1067 | Reimbursement approval writes a ledger row with a **hard-coded entityId** (the dev mock user id) → FK error 500 *after* the claim status already changed. |
+| AC4 | R:1028 approve | No approver authority/self-approval check; can skip PENDING_MANAGER; invoice "approve" works on any status incl. PAID. |
+| AC5 | invoice PUT (UI) | Editing any invoice resets status to DRAFT (incl. PAID); entity/client text edits, bank fields, notes/terms are silently dropped (no columns). |
+| AC6 | R:759-846 `POST /receipts` | FIFO-settles across all the client's invoices incl. DRAFT, across entities and currencies with no conversion; not transactional; receipt numbers collide. |
+| AC7 | R:883 auto-match | Marks invoices PAID with no allocation (so they still count as outstanding); matches first credit of any client by exact amount. |
+| AC8 | R:64-204 dashboard | AR includes DRAFT; aging uses issue date and mislabelled buckets; GST liability all-time incl. DRAFT/no-GSTIN; AP uses statuses the reimbursement module never produces; approvals counters always 0. |
+| AC9 | R:1107 GST, R:1186 P&L | GST includes DRAFT and CANCELLED; P&L revenue unconverted and incl. DRAFT, expenses include pending/rejected claims; no period filters. |
+| AC10 | R:487-531, 1134 | Local vs inter-state decided from the client's address heuristic (Maharashtra hard-coded); billing entity's state ignored. |
+| AC11 | R:433-480 | Invoice numbering = count+1 (never resets per FY; races → 500); empty prefix gives "-2026-0001". |
+| AC12 | R:213-227, 287-300 | `GET /entities` seeds 4 sample entities with fake GSTIN/PAN/bank numbers when empty; `GET /currencies` seeds currencies. |
+| AC13 | legacy UI | Mock ledgers/rates/approvals on any error; BankImport posts 5 hard-coded rows and ignores the file; manual match never saved; settings only in localStorage; TDS not implemented; payments are reshaped reimbursements with fake "NEFT"/UTR. |
+| AC14 | auth.controller.ts:123-129 | Login whitelist blocks accounts_admin, ar_manager, finance_approver etc. from signing in at all. |
+| AC15 | masters.routes.ts:63-64 | `GET /masters/entities` (any employee) returns entity bank details. |
