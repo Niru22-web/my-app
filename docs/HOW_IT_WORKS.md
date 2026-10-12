@@ -153,8 +153,20 @@ Under **My Portal → Reports** (Admin, Owner, HR, IT, managers, partners, and a
 
 Status changes only happen through these actions, never by editing, so the inventory and assignments always agree.
 
-### 🔜 Administration
-Settings for Admin (and for people Admin allows): master lists (roles, designations, departments…), **user access and permissions**, the reporting hierarchy, the biometric (ESSL) attendance link, email setup and templates, and system information.
+### ✅ Administration
+Settings and health of the portal. Each tab appears only for the roles that can use it:
+
+| Tab | Who | What it does |
+|---|---|---|
+| **Overview** | Everyone in Administration | Real record counts (employees, clients, projects, timesheet entries) and server, database and storage health for Admin, Owner and IT. |
+| **Masters** | View: Admin, Owner, IT, HR · Change: Admin, IT | Roles (with a short code), designations, departments, employment types, shifts (with hours) and locations. Deactivate things that are no longer used; something still in use can't be deleted. |
+| **Users & access** | Admin, Owner | Give a person, or everyone with a role, access to modules (view / add / edit / delete). A person's own list replaces their role's list. Nobody can change their own access. |
+| **Hierarchy** | Admin, Owner, IT, HR | Who reports to whom, team sizes, and a warning listing active people with **no manager or partner** (nobody can approve their work). Read-only for now. |
+| **Biometric devices** | Admin, IT | ESSL machines (add, test connection, enable or disable) and linking each device ID to the right employee, including auto-match by name. |
+| **Server & storage** | Admin, Owner, IT | Server, memory and database health, uploaded files by folder, and clearing temporary files or old logs. |
+| **Email** | Admin | Whether the sending mailbox is connected, a "send me a test" button, and editing the email templates (with a warning for unknown placeholders). |
+
+Things that stay in the current portal until the new server is ready: changing reporting lines, connecting the Outlook mailbox, and pulling punches from biometric devices (the current server only simulates this).
 
 ### 🔜 Accounts & Finance
 For the accounts team: invoices, receivables and payables, banking, GST and profit-and-loss reports. It will show only real figures. The current version falls back to sample numbers in places, and these will be removed.
@@ -176,7 +188,7 @@ For the accounts team: invoices, receivables and payables, banking, GST and prof
 |---|---|---|
 | 0 | Set up tools and the new project folder | Done |
 | 1 | Copy of real data on a local computer for testing | Waiting for the database backup and uploads folder |
-| 2 | New website on top of the current server | In progress — most modules ready |
+| 2 | New website on top of the current server | In progress — all modules except Accounts & Finance ready |
 | 3 | New, safer server (same database) that fixes every recorded problem | Next |
 | 4 | Hosting set-up (servers, storage, backups) | After Phase 3 |
 | 5 | Full testing with real users, then switch the live portal over | Last |

@@ -191,3 +191,4 @@ paths and response shapes, but these behaviours should be corrected (with a comp
 | AD9 | `email.routes.ts:64` `GET /email/health` | Unauthenticated SMTP/OAuth configuration details. `GET /email/templates` seeds defaults on read. |
 | AD10 | legacy `Admin.tsx:231-284,429-431` | Uptime 99.98%, 42ms, 14.2k, Grade A, health bars, activity chart — all hard-coded. Real numbers exist at `GET /system/status`. |
 | AD11 | `masters` | Error envelope uses `error` not `message`; in-use checks ignore legacy string `role/designation/department` columns; currency delete never blocked. |
+| AD12 | `system.controller.ts:109` `GET /system/status` | Ticket count reads `prisma.supportTicket`, which doesn't exist (tickets live in `ticket`) — always 0. New UI doesn't show it. |
