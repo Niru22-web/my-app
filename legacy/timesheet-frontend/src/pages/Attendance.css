@@ -1,0 +1,12 @@
+.attendance-timeline-marker {
+  left: var(--marker-pos);
+}
+
+.attendance-timeline-session {
+  left: var(--session-start);
+  width: var(--session-width);
+}
+
+.running-timer-glow {
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}

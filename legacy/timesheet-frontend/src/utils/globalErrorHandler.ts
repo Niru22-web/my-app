@@ -1,0 +1,178 @@
+/**
+ * Global Error Handler with Toast Integration
+ */
+
+import { getErrorMessage, ERROR_MESSAGES } from './messageUtils';
+
+// Global toast instance - will be set by the ToastProvider
+let globalToast: any = null;
+
+export const setGlobalToast = (toastInstance: any) => {
+  globalToast = toastInstance;
+};
+
+export const getGlobalToast = () => {
+  if (!globalToast) {
+    console.warn('Global toast not initialized. Make sure ToastProvider is used.');
+    return {
+      success: console.log,
+      error: console.error,
+      warning: console.warn,
+      info: console.log
+    };
+  }
+  return globalToast;
+};
+
+// Set/Map to track recent error messages and prevent duplicates
+const recentErrors = new Map<string, number>();
+const ERROR_COOLDOWN_MS = 3000; // 3 seconds cooldown to prevent duplicate toast spam
+
+export const dedupeErrorToast = (message: string) => {
+  if (!globalToast) return;
+  const now = Date.now();
+  const lastSeen = recentErrors.get(message);
+  
+  if (lastSeen && (now - lastSeen < ERROR_COOLDOWN_MS)) {
+    // Skip duplicate toast
+    return;
+  }
+  
+  recentErrors.set(message, now);
+  
+  // Clean up old entries from the map occasionally to prevent memory leaks
+  if (recentErrors.size > 50) {
+    for (const [msg, time] of recentErrors.entries()) {
+      if (now - time > ERROR_COOLDOWN_MS) {
+        recentErrors.delete(msg);
+      }
+    }
+  }
+
+  globalToast.error(message);
+};
+
+// Enhanced error handler with automatic toast notifications
+export const handleError = (error: any, customMessage?: string, showToast: boolean = true) => {
+  const message = customMessage || getErrorMessage(error);
+  
+  // Log error for debugging
+  console.error('Global Error Handler:', error);
+  
+  // Show toast notification if enabled and toast is available
+  if (showToast && globalToast) {
+    dedupeErrorToast(message);
+  }
+  
+  return message;
+};
+
+// Success handler with automatic toast notifications
+export const handleSuccess = (action: string, customMessage?: string, showToast: boolean = true) => {
+  const message = customMessage || `✅ ${action}`;
+  
+  // Show toast notification if enabled and toast is available
+  if (showToast && globalToast) {
+    globalToast.success(message);
+  }
+  
+  return message;
+};
+
+// Loading handler
+export const handleLoading = (action: string) => {
+  return `⏳ ${action}`;
+};
+
+// Specific error handlers for common scenarios
+export const handleAuthError = (error: any) => {
+  if (error.response?.status === 401) {
+    const message = error.config?.url?.includes('/auth/login') 
+      ? ERROR_MESSAGES.INVALID_CREDENTIALS 
+      : ERROR_MESSAGES.SESSION_EXPIRED;
+    
+    handleError(error, message);
+    return message;
+  }
+  
+  return handleError(error);
+};
+
+export const handleNetworkError = (error: any) => {
+  if (error.code === 'NETWORK_ERROR' || !navigator.onLine) {
+    return handleError(error, ERROR_MESSAGES.NETWORK_ERROR);
+  }
+  
+  return handleError(error);
+};
+
+export const handleValidationError = (error: any) => {
+  if (error.response?.status === 400) {
+    // If the server provides a specific validation message, use it. Otherwise, use the generic one.
+    const serverMessage = error.response?.data?.message || error.response?.data?.error;
+    return handleError(error, serverMessage || ERROR_MESSAGES.VALIDATION_ERROR);
+  }
+  
+  return handleError(error);
+};
+
+export const handleForbiddenError = (error: any) => {
+  if (error.response?.status === 403) {
+    return handleError(error, ERROR_MESSAGES.ACCESS_DENIED);
+  }
+  
+  return handleError(error);
+};
+
+export const handleNotFoundError = (error: any) => {
+  if (error.response?.status === 404) {
+    return handleError(error, ERROR_MESSAGES.NOT_FOUND);
+  }
+  
+  return handleError(error);
+};
+
+export const handleServerError = (error: any) => {
+  if (error.response?.status >= 500) {
+    return handleError(error, ERROR_MESSAGES.SERVER_ERROR);
+  }
+  
+  return handleError(error);
+};
+
+// Main error dispatcher
+export const dispatchError = (error: any) => {
+  // 1. Detect Network Errors (No response from server)
+  if (!error.response) {
+    console.error('🌐 Network Error / Server unreachable:', error);
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      return handleError(error, '⏱️ Server response timeout. The connection timed out. Please try again.');
+    }
+    return handleError(error, '🌐 Server is temporarily offline. Please verify that the system backend is running.');
+  }
+
+  const status = error.response?.status;
+  
+  // 2. Handle HTTP status errors
+  switch (status) {
+    case 400:
+      return handleValidationError(error);
+    case 401:
+      return handleAuthError(error);
+    case 403:
+      return handleForbiddenError(error);
+    case 404:
+      return handleNotFoundError(error);
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return handleServerError(error);
+    default:
+      // Fallback for everything else
+      if (error.code === 'NETWORK_ERROR' || !navigator.onLine) {
+        return handleNetworkError(error);
+      }
+      return handleError(error);
+  }
+};

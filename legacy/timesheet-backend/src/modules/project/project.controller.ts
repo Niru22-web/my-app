@@ -1,0 +1,414 @@
+import { Request, Response } from 'express';
+import { ProjectService } from './project.service';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { logActivity } from '../activity/activity.service';
+import { ExcelService } from '../../utils/ExcelService';
+import { prisma } from '../../config/prisma';
+import * as XLSX from 'xlsx';
+
+import { getUploadsDir } from '../../utils/assetUrl';
+
+const projectService = new ProjectService();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadsDir = path.join(getUploadsDir(), 'projects');
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `project-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allowed file types for project attachments
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'image/jpeg',
+      'image/png',
+      'image/gif'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Allowed types: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, JPG, PNG, GIF'));
+    }
+  }
+});
+
+export const getAllProjects = async (req: Request, res: Response) => {
+  try {
+    const { q, status, billable, clientId, startDateFrom, startDateTo } = req.query;
+    
+    const search = typeof q === 'string' ? q.trim() : "";
+    
+    const filters = {
+      status: status && status !== 'All Status' ? status as string : undefined,
+      billable: billable === 'true' ? true : billable === 'false' ? false : undefined,
+      clientId: clientId as string,
+      startDateFrom: startDateFrom as string,
+      startDateTo: startDateTo as string
+    };
+    
+    const projects = await projectService.searchProjects(search, filters, (req as any).user);
+    res.json({
+      success: true,
+      data: projects,
+      message: 'Projects retrieved successfully'
+    });
+  } catch (error: any) {
+    console.error("Projects API Error:", error);
+    console.error(error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error",
+      error: error.message || 'Failed to fetch projects' 
+    });
+  }
+};
+
+export const getProjectById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const project = await projectService.getProjectById(id);
+    
+    if (!project) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Project not found' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: project,
+      message: 'Project retrieved successfully'
+    });
+  } catch (error: any) {
+    console.error("Project Fetch Error:", error);
+    console.error(error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error",
+      error: error.message || 'Failed to fetch project' 
+    });
+  }
+};
+
+export const createProject = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const attachments = req.files as any[];
+    
+    const project = await projectService.createProject(req.body, attachments, user);
+    
+    // Log activity
+    await logActivity({
+      type: 'project_created',
+      title: 'Project Created',
+      description: `New project "${project.name}" was created`,
+      userId: user?.id,
+      relatedId: project.id
+    });
+
+    res.status(201).json({
+      success: true,
+      data: project,
+      message: 'Project created successfully'
+    });
+  } catch (error: any) {
+    console.error("Project Create Error:", error);
+    console.error(error.stack);
+    res.status(400).json({ 
+      success: false,
+      message: "Bad Request",
+      error: error.message || 'Failed to create project' 
+    });
+  }
+};
+
+export const updateProject = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = (req as any).user;
+    const project = await projectService.updateProject(id, req.body);
+    
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+
+    // Log activity
+    await logActivity({
+      type: 'project_updated',
+      title: 'Project Updated',
+      description: `Project "${project.name}" was updated`,
+      userId: user?.id,
+      relatedId: project.id
+    });
+
+    res.json({
+      success: true,
+      data: project,
+      message: 'Project updated successfully'
+    });
+  } catch (error: any) {
+    console.error("Project Update Error:", error);
+    console.error(error.stack);
+    res.status(400).json({ 
+      success: false,
+      message: "Bad Request",
+      error: error.message || 'Failed to update project' 
+    });
+  }
+};
+
+export const deleteProject = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await projectService.deleteProject(id);
+    res.json({
+      success: true,
+      message: 'Project deleted successfully'
+    });
+  } catch (error: any) {
+    console.error("Project Delete Error:", error);
+    console.error(error.stack);
+    res.status(400).json({ 
+      success: false,
+      message: "Bad Request",
+      error: error.message || 'Failed to delete project' 
+    });
+  }
+};
+
+export const searchProjects = async (req: Request, res: Response) => {
+  try {
+    const { q, status, billable, clientId, startDateFrom, startDateTo } = req.query;
+    
+    const search = typeof q === 'string' ? q.trim() : "";
+    
+    const filters = {
+      status: status as string,
+      billable: billable === 'true' ? true : billable === 'false' ? false : undefined,
+      clientId: clientId as string,
+      startDateFrom: startDateFrom as string,
+      startDateTo: startDateTo as string
+    };
+    
+    const projects = await projectService.searchProjects(search, filters, (req as any).user);
+    res.json({
+      success: true,
+      data: projects,
+      message: 'Projects found successfully'
+    });
+  } catch (error: any) {
+    console.error("Projects Search API Error:", error);
+    console.error(error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error",
+      error: error.message || 'Failed to search projects' 
+    });
+  }
+};
+
+export const getProjectAttachments = async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const attachments = await projectService.getProjectAttachments(projectId);
+    res.json(attachments);
+  } catch (error: any) {
+    console.error("Project Attachments Fetch Error:", error);
+    console.error(error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error",
+      error: error.message || 'Failed to fetch project attachments' 
+    });
+  }
+};
+
+export const addProjectAttachment = async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const userEmail = (req as any).user?.email;
+    const attachment = req.file;
+    
+    if (!attachment) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const projectAttachment = await projectService.addProjectAttachment(projectId, attachment, userEmail);
+    res.status(201).json(projectAttachment);
+  } catch (error: any) {
+    console.error('Error adding project attachment:', error);
+    res.status(400).json({ error: error.message || 'Failed to add project attachment' });
+  }
+};
+
+export const deleteProjectAttachment = async (req: Request, res: Response) => {
+  try {
+    const { attachmentId } = req.params;
+    const result = await projectService.deleteProjectAttachment(attachmentId);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error deleting project attachment:', error);
+    res.status(400).json({ error: error.message || 'Failed to delete project attachment' });
+  }
+};
+
+export const bulkUploadProjects = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const jsonData = ExcelService.parseExcel(req.file.buffer);
+    const userEmail = (req as any).user?.email;
+
+    const results = [];
+    const errors = [];
+
+    for (let row of jsonData) {
+      try {
+        const { name, clientName, status, startDate, billable, contactPerson } = row;
+        
+        // Find client by name
+        const client = await (prisma as any).client.findFirst({
+          where: { name: { contains: clientName, mode: 'insensitive' } }
+        });
+
+        if (!client) {
+          throw new Error(`Client "${clientName}" not found`);
+        }
+
+        const projectData = {
+          name,
+          clientId: client.id,
+          status: status || 'Started',
+          startDate: startDate ? new Date(startDate) : new Date(),
+          billable: billable === 'Yes' || billable === true,
+          contactPerson: contactPerson || ''
+        };
+
+        const project = await projectService.createProject(projectData, [], (req as any).user);
+        results.push(project);
+      } catch (err: any) {
+        errors.push({ row, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: { successCount: results.length, errors },
+      message: 'Bulk upload completed'
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const exportProjects = async (req: Request, res: Response) => {
+  try {
+    const { q, status, billable, clientId, startDateFrom, startDateTo } = req.query;
+    
+    const filters = {
+      status: status && status !== 'All Status' ? status as string : undefined,
+      billable: billable === 'true' ? true : billable === 'false' ? false : undefined,
+      clientId: clientId as string,
+      startDateFrom: startDateFrom as string,
+      startDateTo: startDateTo as string
+    };
+    
+    const projects = await projectService.searchProjects(q as string, filters, (req as any).user);
+
+    const exportData = (projects as any[]).map(p => ({
+      'Project ID': p.projectId,
+      'Name': p.name,
+      'Client': p.client.name,
+      'Status': p.status,
+      'Billable': p.billable ? 'Yes' : 'No',
+      'Start Date': p.startDate.toISOString().split('T')[0],
+      'Contact Person': p.contactPerson || '',
+      'Jobs': p._count.jobs
+    }));
+
+    ExcelService.exportToExcel(res, exportData, 'projects');
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const downloadProjectTemplate = async (req: Request, res: Response) => {
+  try {
+    const columns = ['name', 'clientName', 'status', 'startDate', 'billable', 'contactPerson'];
+    ExcelService.generateTemplate(res, columns, 'project_template');
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate template' });
+  }
+};
+
+export const toggleProjectStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const project = await projectService.getProjectById(id);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+
+    const newStatus = project.status === 'Inactive' ? 'Started' : 'Inactive';
+    const updatedProject = await projectService.updateProject(id, { status: newStatus });
+
+    res.json({
+      success: true,
+      data: updatedProject,
+      message: `Project status toggled successfully to ${newStatus}`
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to toggle project status',
+      error: error.message
+    });
+  }
+};
+
+// Middleware for multiple file uploads
+export const uploadProjectFiles = upload.array('attachments', 10); // Max 10 files
+
+// Middleware for single file upload
+// Use memory storage for bulk upload to read buffer
+const memoryStorage = multer.memoryStorage();
+const memoryUpload = multer({ storage: memoryStorage });
+export const uploadProjectExcel = memoryUpload.single('file');

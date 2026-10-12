@@ -1,0 +1,2741 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800;900&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-brand: "Poppins", var(--font-sans);
+
+  --color-primary-50: #f5f6ff;
+  --color-primary-100: #ebedff;
+  --color-primary-200: #dce0ff;
+  --color-primary-300: #b3b7ff;
+  --color-primary-400: #8085ff;
+  --color-primary-500: #5b5ffb;
+  --color-primary-600: #4b4fd8;
+  --color-primary-700: #393db3;
+  --color-primary-800: #262980;
+  --color-primary-900: #171a53;
+
+  --color-secondary-50: #f8fafc;
+  --color-secondary-100: #f1f5f9;
+  --color-secondary-200: #e2e8f0;
+  --color-secondary-300: #cbd5e1;
+  --color-secondary-400: #94a3b8;
+  --color-secondary-500: #64748b;
+  --color-secondary-600: #475569;
+  --color-secondary-700: #334155;
+  --color-secondary-800: #1e293b;
+  --color-secondary-900: #0f172a;
+
+  --color-success-50: #f0fdf4;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803d;
+
+  --color-danger-50: #fef2f2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+
+  --color-warning-50: #fffbeb;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+
+  --shadow-soft: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-elevated: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-3xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+
+    @apply text-secondary-800 bg-secondary-50;
+  }
+
+  body {
+    @apply bg-secondary-50;
+    /* Prevent overscroll bounce on mobile */
+    overscroll-behavior-y: none;
+  }
+
+  /* Safe area support for notched devices */
+  @supports (padding: env(safe-area-inset-bottom)) {
+    body {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm min-h-[44px] min-w-[44px];
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-sm active:scale-95 min-h-[44px] min-w-[44px];
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm bg-white text-secondary-700 border border-secondary-200 hover:bg-secondary-50 hover:border-secondary-300 focus:ring-secondary-200 shadow-sm active:scale-95 min-h-[44px] min-w-[44px];
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center px-4 py-2.5 rounded-lg font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500 shadow-sm active:scale-95 min-h-[44px] min-w-[44px];
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-soft border border-secondary-100 overflow-hidden transition-shadow duration-200 hover:shadow-md;
+    min-height: 0;
+  }
+
+  @media (min-width: 640px) {
+    .card {
+      min-height: 120px;
+    }
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-white border border-secondary-200 rounded-lg outline-none transition-all duration-200 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 hover:border-secondary-300 text-sm min-h-[44px];
+  }
+
+  .label {
+    @apply block text-sm font-medium text-secondary-700 mb-1.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border;
+  }
+
+  /* Responsive Table Styles */
+  .responsive-table {
+    @apply w-full overflow-x-auto;
+  }
+
+  .responsive-table table {
+    @apply min-w-full divide-y divide-secondary-200;
+  }
+
+  .responsive-table th {
+    @apply px-3 py-3.5 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider bg-secondary-50;
+  }
+
+  .responsive-table td {
+    @apply px-3 py-4 text-sm text-secondary-900 whitespace-nowrap;
+  }
+
+  /* Mobile Card View for Tables */
+  .mobile-card-view {
+    @apply space-y-3;
+  }
+
+  .mobile-card {
+    @apply bg-white rounded-xl border border-secondary-200 p-4 space-y-2 shadow-sm;
+  }
+
+  .mobile-card-header {
+    @apply flex items-center justify-between pb-2 border-b border-secondary-100;
+  }
+
+  .mobile-card-title {
+    @apply font-bold text-secondary-900 text-sm;
+  }
+
+  .mobile-card-content {
+    @apply space-y-1.5;
+  }
+
+  .mobile-card-row {
+    @apply flex justify-between items-center py-1.5;
+  }
+
+  .mobile-card-label {
+    @apply text-[11px] font-semibold text-secondary-500 uppercase tracking-wider;
+  }
+
+  .mobile-card-value {
+    @apply text-sm font-medium text-secondary-900 text-right max-w-[60%] truncate;
+  }
+
+  .mobile-card-actions {
+    @apply flex items-center gap-2 pt-2 border-t border-secondary-100 mt-2;
+  }
+
+  /* Touch-friendly action buttons - 44px minimum per Apple HIG */
+  .action-button {
+    @apply p-2 rounded-lg hover:bg-secondary-100 transition-colors duration-200 min-w-[44px] min-h-[44px] flex items-center justify-center;
+  }
+
+  /* Responsive Grid */
+  .responsive-grid {
+    @apply grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+  }
+
+  .responsive-grid-2 {
+    @apply grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2;
+  }
+
+  .responsive-grid-3 {
+    @apply grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3;
+  }
+}
+
+/* Chart Tooltip Overflow Fix */
+.recharts-tooltip-wrapper {
+  z-index: 100 !important;
+}
+
+/* Ensure donut labels don't overlap */
+.recharts-pie-label-text {
+  font-size: 10px;
+  font-weight: bold;
+}
+
+@layer components {
+
+  /* Skeleton loader */
+  .skeleton {
+    @apply relative overflow-hidden bg-secondary-200 rounded;
+  }
+
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: skeleton-shimmer 1.5s infinite;
+  }
+
+  /* Mobile-friendly form groups */
+  .form-group-mobile {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4;
+  }
+
+  .fab-safe-bottom {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .location-text {
+    @apply truncate;
+    display: inline-block;
+    max-width: 250px;
+    vertical-align: middle;
+  }
+}
+
+
+/* Simple animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .modal-container {
+    margin: 0;
+    margin-top: auto;
+    max-height: 90vh;
+    border-radius: 1rem 1rem 0 0;
+  }
+
+  .modal-content {
+    max-height: calc(90vh - 130px);
+    overflow-y: auto;
+  }
+
+  /* Hide table headers on mobile and show card view */
+  .responsive-table thead {
+    display: none;
+  }
+
+  .responsive-table,
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .responsive-table tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--color-secondary-200);
+    border-radius: 0.75rem;
+    padding: 0.875rem;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .responsive-table td {
+    text-align: right;
+    padding-left: 45%;
+    position: relative;
+    border-bottom: 1px solid var(--color-secondary-100);
+    padding-top: 0.625rem;
+    padding-bottom: 0.625rem;
+    font-size: 0.8125rem;
+  }
+
+  .responsive-table td:before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0.875rem;
+    width: calc(45% - 1.5rem);
+    padding-right: 0.75rem;
+    text-align: left;
+    font-weight: 700;
+    color: var(--color-secondary-500);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .responsive-table td:last-child {
+    border-bottom: none;
+  }
+
+  /* Action buttons on mobile */
+  .responsive-table td:last-child {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    padding-left: 0.875rem;
+    padding-top: 0.75rem;
+  }
+
+  .responsive-table td:last-child:before {
+    display: none;
+  }
+
+  /* Make all select/input full-width on mobile */
+  select,
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  textarea {
+    width: 100% !important;
+    min-height: 44px;
+    font-size: 16px !important;
+    /* Prevent iOS zoom on focus */
+  }
+
+  /* Stack form grids to single column on mobile */
+  .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Exception: compact filter grids (e.g. Employees Role/Designation/Status)
+     stay 2-up on mobile so the filter bar stays short */
+  .employee-filter-wrapper .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Ensure page titles don't overflow */
+  h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.3 !important;
+  }
+
+  /* Mobile-friendly scrollbar handled globally */
+}
+
+/* Tablet styles */
+@media (min-width: 768px) and (max-width: 1024px) {
+
+  .responsive-table th,
+  .responsive-table td {
+    @apply px-2 py-3 text-xs;
+  }
+}
+
+/* Modal specific styles */
+.modal-container {
+  /* Ensure modal container doesn't inherit overflow issues */
+  overflow: visible !important;
+}
+
+.modal-content {
+  /* Ensure smooth scrolling */
+  scroll-behavior: smooth;
+  /* Prevent scrollbar from appearing over content */
+  padding-right: 8px;
+}
+
+/* Ensure proper viewport handling */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: auto;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+.main-layout {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 256px;
+  /* 16rem matching Tailwind */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.page-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  scroll-behavior: smooth;
+}
+
+@media (min-width: 768px) {
+  .page-content {
+    padding: 32px;
+  }
+}
+
+/* ============================================================
+   GLOBAL SAAS-STYLE SMOOTH SCROLL & SCROLLBAR SYSTEM
+   ============================================================ */
+
+/* 1. Global Smooth Scroll & Scroll Performance Defaults */
+* {
+  scroll-behavior: smooth !important;
+}
+
+/* Enable momentum scroll on iOS and contain overscroll bounce */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto,
+main,
+.page-content {
+  overscroll-behavior: contain !important;
+}
+
+/* 2. Root Layout Constraints */
+html,
+body,
+#root {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* 3. Global Firefox Custom Scrollbar */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(99, 102, 241, 0.35) transparent !important;
+}
+
+/* 4. Global WebKit (Chrome/Edge/Safari/Brave) Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.35) !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.55) !important;
+}
+
+/* 5. Natural Page Scrolling & Fixed Sidebar */
+main,
+.page-content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 !important;
+}
+
+/* 6. Modals, Side Panels, and Cards Internal Scroll Safeguard */
+.modal-body,
+[class*="modal-body"],
+[class*="max-h-[85vh]"],
+[class*="max-h-[80vh]"],
+[class*="max-h-[60vh]"] {
+  overflow-y: auto !important;
+  max-height: 70vh !important;
+}
+
+::selection {
+  @apply bg-primary-100 text-primary-900;
+}
+
+/* NProgress Customization */
+#nprogress {
+  pointer-events: none;
+}
+
+#nprogress .bar {
+  background: var(--color-primary-600) !important;
+  position: fixed;
+  z-index: 1031;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px !important;
+  box-shadow: 0 0 10px var(--color-primary-500), 0 0 5px var(--color-primary-600);
+}
+
+/* Fancy blur effect */
+#nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0px;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px var(--color-primary-600), 0 0 5px var(--color-primary-600);
+  opacity: 1;
+  -webkit-transform: rotate(3deg) translate(0px, -4px);
+  -ms-transform: rotate(3deg) translate(0px, -4px);
+  transform: rotate(3deg) translate(0px, -4px);
+}
+
+/* Status Toggle Switch Styles */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  background-color: #d1d5db;
+  border-radius: 34px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transition: 0.3s;
+}
+
+.slider:hover {
+  background-color: #9ca3af;
+}
+
+input:checked+.slider {
+  background-color: #22c55e;
+}
+
+input:checked+.slider:hover {
+  background-color: #16a34a;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.3s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+input:checked+.slider {
+  background-color: #22c55e;
+}
+
+input:checked+.slider:before {
+  transform: translateX(20px);
+}
+
+input:disabled+.slider {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Toast Animations */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-in-from-bottom {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+.animate-slide-out {
+  animation: slide-out 0.3s ease-in;
+}
+
+.animate-slide-in-from-bottom {
+  animation: slide-in-from-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Toast positioning above bottom nav on mobile */
+@media (max-width: 768px) {
+
+  .Toastify__toast-container--bottom-right,
+  .Toastify__toast-container--bottom-left,
+  .Toastify__toast-container--bottom-center {
+    bottom: 80px !important;
+  }
+
+  .Toastify__toast {
+    margin-bottom: 0.5rem;
+    border-radius: 0.75rem !important;
+    margin-left: 0.5rem;
+    margin-right: 0.5rem;
+  }
+}
+
+/* Custom Animations */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* ============================================================
+   DARK MODE — Global theme applied via html.dark class
+   ThemeContext adds/removes this class on <html>
+   ============================================================ */
+
+/* Smooth theme transition on ALL elements */
+*,
+*::before,
+*::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease, box-shadow 0.25s ease;
+}
+
+/* Core backgrounds */
+html.dark body,
+html.dark #root {
+  background-color: #080F1D !important;
+  color: #FFFFFF !important;
+}
+
+html.dark .bg-secondary-50,
+html.dark .bg-secondary-100,
+html.dark .bg-slate-50,
+html.dark .bg-slate-100,
+html.dark .bg-gray-50,
+html.dark .bg-gray-100 {
+  background-color: #0E1626 !important;
+}
+
+html.dark .bg-white {
+  background-color: #151F32 !important;
+}
+
+/* Page content area */
+html.dark .page-content {
+  background-color: #080F1D !important;
+}
+
+/* Handled globally by transparent scrollbar thumb styling */
+
+/* Cards & generic white surface panels */
+html.dark .card,
+html.dark .bg-card,
+html.dark .glass-card,
+html.dark .bg-white.rounded-xl,
+html.dark .bg-white.rounded-2xl,
+html.dark .bg-white.rounded-3xl,
+html.dark .bg-white.rounded-\[2rem\] {
+  background-color: #151F32 !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25) !important;
+}
+
+html.dark .card:hover,
+html.dark .bg-white.rounded-xl:hover {
+  background-color: #1E2C44 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Text overrides - Standardize contrast */
+html.dark .text-secondary-900,
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-gray-900,
+html.dark .text-gray-800 {
+  color: #FFFFFF !important;
+}
+
+html.dark .text-secondary-800,
+html.dark .text-secondary-700,
+html.dark .text-slate-700,
+html.dark .text-gray-700 {
+  color: #CBD5E1 !important;
+}
+
+html.dark .text-secondary-600,
+html.dark .text-secondary-500,
+html.dark .text-slate-600,
+html.dark .text-slate-500,
+html.dark .text-gray-600,
+html.dark .text-gray-500 {
+  color: #94A3B8 !important;
+}
+
+html.dark .text-secondary-400,
+html.dark .text-slate-400,
+html.dark .text-gray-400 {
+  color: #94A3B8 !important;
+}
+
+/* Border overrides */
+html.dark .border-secondary-100,
+html.dark .border-secondary-200,
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark .border-blue-50,
+html.dark .border-blue-100 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Common Background Overrides */
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: #0E1626 !important;
+}
+
+html.dark .bg-gray-100,
+html.dark .bg-slate-100 {
+  background-color: #151F32 !important;
+}
+
+/* Input fields, search bars, selects, textareas, datepickers */
+html.dark .input-field,
+html.dark input[type="text"],
+html.dark input[type="email"],
+html.dark input[type="password"],
+html.dark input[type="number"],
+html.dark input[type="date"],
+html.dark input[type="search"],
+html.dark input[type="tel"],
+html.dark input[type="time"],
+html.dark textarea,
+html.dark select {
+  background-color: #0E1626 !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark .input-field:focus,
+html.dark input:focus,
+html.dark textarea:focus,
+html.dark select:focus {
+  border-color: #5b5ffb !important;
+  background-color: #0E1626 !important;
+  box-shadow: 0 0 0 3px rgba(91, 95, 251, 0.25) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+html.dark select option {
+  background-color: #0E1626 !important;
+  color: #FFFFFF !important;
+}
+
+html.dark .label,
+html.dark label {
+  color: #CBD5E1 !important;
+}
+
+/* Global Tables Overhaul */
+html.dark table,
+html.dark .responsive-table table {
+  background-color: #151F32 !important;
+}
+
+html.dark thead,
+html.dark th,
+html.dark .responsive-table th {
+  /* Background is controlled by the sticky header layering rules below */
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark tr,
+html.dark .responsive-table tr {
+  background-color: #151F32 !important;
+}
+
+html.dark tr:nth-child(even),
+html.dark .responsive-table tr:nth-child(even) {
+  background-color: #19243a !important;
+}
+
+html.dark td,
+html.dark .responsive-table td {
+  background-color: inherit !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark tr:hover,
+html.dark tr:hover td,
+html.dark .responsive-table tr:hover,
+html.dark .responsive-table tr:hover td {
+  background-color: #1E2C44 !important;
+}
+
+/* Modals */
+html.dark .modal-container,
+html.dark .modal-content,
+html.dark [class*="modal"] {
+  background-color: #151F32 !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark [class*="modal"] header,
+html.dark [class*="modal"] footer,
+html.dark [class*="modal"] > div {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: transparent !important;
+}
+
+/* Mobile cards */
+html.dark .mobile-card {
+  background-color: #152238 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Buttons */
+html.dark .btn-secondary {
+  background-color: #1A2942 !important;
+  color: #B8C5D6 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .btn-secondary:hover {
+  background-color: #203354 !important;
+  color: #FFFFFF !important;
+}
+
+/* Dividers */
+html.dark .divide-secondary-200>*+* {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Hover backgrounds */
+html.dark .hover\:bg-secondary-50:hover,
+html.dark .hover\:bg-secondary-100:hover {
+  background-color: #1A2942 !important;
+}
+
+html.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(79, 107, 255, 0.15) !important;
+}
+
+/* Notification dropdown panel */
+html.dark .bg-blue-50 {
+  background-color: #152238 !important;
+}
+
+html.dark .bg-blue-50\/90 {
+  background-color: rgba(21, 34, 56, 0.9) !important;
+}
+
+/* Handled globally by custom scrollbar system */
+
+/* Shadow overrides for dark - Removes glowing white/gray shadows globally */
+html.dark * {
+  --tw-shadow-color: rgba(0, 0, 0, 0.5) !important;
+  --tw-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5) !important;
+}
+
+html.dark .shadow-soft,
+html.dark [class*="shadow-soft"] {
+  box-shadow: 0 2px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.dark .shadow-elevated,
+html.dark [class*="shadow-elevated"] {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 10px 10px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Override all standard Tailwind shadow utility classes in dark mode to look soft, natural and deep black */
+html.dark .shadow-sm,
+html.dark .shadow,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl,
+html.dark [class*="shadow-"] {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7) !important;
+}
+
+html.dark .shadow-sm:hover,
+html.dark .shadow:hover,
+html.dark .shadow-md:hover,
+html.dark .shadow-lg:hover,
+html.dark .shadow-xl:hover,
+html.dark .shadow-2xl:hover,
+html.dark [class*="shadow-"]:hover {
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Translucent highlights for statistics metric cards */
+html.dark .bg-primary-50,
+html.dark .bg-blue-50 {
+  background-color: rgba(79, 107, 255, 0.15) !important;
+}
+html.dark .text-blue-600 {
+  color: #4F6BFF !important;
+}
+html.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+}
+html.dark .text-green-600 {
+  color: #4ade80 !important;
+}
+html.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+html.dark .text-red-600 {
+  color: #f87171 !important;
+}
+html.dark .bg-orange-50,
+html.dark .bg-yellow-50 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+html.dark .text-orange-600,
+html.dark .text-yellow-600 {
+  color: #fbbf24 !important;
+}
+
+/* SearchableSelect and MultiSelect custom list dropdowns in dark mode */
+html.dark [role="combobox"],
+html.dark [role="listbox"],
+html.dark .select-dropdown,
+html.dark .dropdown-menu,
+html.dark [id*="-listbox"] {
+  background-color: #0F1B33 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark [role="option"],
+html.dark [role="listbox"] > div {
+  color: #FFFFFF !important;
+  background-color: transparent !important;
+}
+
+html.dark [role="option"]:hover,
+html.dark [role="listbox"] > div:hover {
+  background-color: #1A2942 !important;
+}
+
+/* Toast / notification panel */
+html.dark [class*="notification"],
+html.dark [class*="toast"] {
+  background-color: #152238 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+}
+
+/* Dark mode text selection */
+html.dark ::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #E5E7EB;
+}
+
+/* Login Page Specific Animations & Utilities */
+@keyframes mesh-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+}
+
+@keyframes logo-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-mesh {
+  background: linear-gradient(-45deg, #eff6ff, #dbeafe, #e0e7ff, #f5f3ff);
+  background-size: 400% 400%;
+  animation: mesh-gradient 15s ease infinite;
+}
+
+html.dark .animate-mesh {
+  background: linear-gradient(-45deg, #0f172a, #1e1b4b, #2e1065, #020617);
+  background-size: 400% 400%;
+}
+
+
+.animate-float {
+  animation: float 10s ease-in-out infinite;
+}
+
+.animate-logo {
+  animation: logo-entrance 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+}
+
+html.dark .glass-card {
+  background: rgba(15, 23, 42, 0.7);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+
+
+.input-focus-glow:focus-within {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.delay-neg-2s {
+  animation-delay: -2s;
+}
+
+.delay-neg-5s {
+  animation-delay: -5s;
+}
+
+/* ============================================================
+   GLOBAL PORTAL SCALE & COMPACTNESS OPTIMIZATION
+   ============================================================ */
+
+/* Hide scrollbar visually but keep drag/wheel scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* Root Font Size Scaledown for laptop first screen fit */
+html {
+  font-size: 13.5px !important;
+}
+
+@media (min-width: 1200px) {
+  html {
+    font-size: 14px !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  html {
+    font-size: 14.5px !important;
+  }
+}
+
+/* Compact Tables Override */
+.responsive-table th,
+table th {
+  padding-top: 0.35rem !important;
+  padding-bottom: 0.35rem !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+.responsive-table td,
+table td {
+  padding-top: 0.3rem !important;
+  padding-bottom: 0.3rem !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+}
+
+/* Compact Sidebar Spacing */
+.sidebar nav button {
+  height: 2.1rem !important;
+  /* Elegant 34px height */
+}
+
+/* Tighten global main content padding and scroll bar footprint */
+main.overflow-y-auto {
+  height: calc(100vh - 60px) !important;
+}
+
+main.overflow-y-auto>div {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  padding-top: 1rem !important;
+  padding-bottom: 2.5rem !important;
+}
+
+@media (min-width: 1024px) {
+  main.overflow-y-auto>div {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.5rem !important;
+  }
+}
+
+/* Card Heading & Layout Compaction */
+.card,
+.bg-white.rounded-xl {
+  padding: 0.95rem !important;
+  /* Shrunk padding by ~25% */
+}
+
+h1,
+.text-3xl,
+.text-2xl {
+  font-size: 1.25rem !important;
+  letter-spacing: -0.015em !important;
+}
+
+h2,
+.text-xl {
+  font-size: 1.1rem !important;
+  letter-spacing: -0.01em !important;
+}
+
+h3,
+.text-lg,
+.card-title {
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+}
+
+/* Compact Form Fields */
+.input-field,
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="search"],
+select,
+textarea {
+  padding-top: 0.4rem !important;
+  padding-bottom: 0.4rem !important;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  font-size: 12.5px !important;
+  min-height: 32px !important;
+  /* Compact inputs height */
+  border-radius: 8px !important;
+}
+
+/* Form Label Compaction */
+.label,
+label {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  margin-bottom: 0.2rem !important;
+}
+
+/* Button Height Compaction */
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+button.btn,
+.primary-btn {
+  padding-top: 0.35rem !important;
+  padding-bottom: 0.35rem !important;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  font-size: 12.5px !important;
+  min-height: 32px !important;
+  /* Compact button height */
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Tighten grid gap spacing */
+.responsive-grid,
+.responsive-grid-2,
+.responsive-grid-3,
+.grid {
+  gap: 0.65rem !important;
+}
+
+/* ============================================================
+   SIMPLE LOGIN PAGE PREMIUM TYPOGRAPHY OVERRIDES
+   ============================================================ */
+.login-logo {
+  font-size: 30px !important;
+  font-weight: 700 !important;
+}
+
+.login-welcome-sub {
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  display: block !important;
+  margin-bottom: 8px !important;
+}
+
+.login-welcome-title {
+  font-size: 34px !important;
+  font-weight: 700 !important;
+}
+
+.login-left-desc {
+  font-size: 18px !important;
+  line-height: 1.7 !important;
+}
+
+.login-joined-text {
+  font-size: 15px !important;
+}
+
+.login-signin-title {
+  font-size: 38px !important;
+  font-weight: 700 !important;
+}
+
+.login-signin-sub {
+  font-size: 18px !important;
+}
+
+.login-form-label {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+/* autofill styling fixes */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: inherit !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+}
+
+.login-input-container {
+  height: 48px !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+
+.login-input-container input.login-form-input {
+  font-size: 16px !important;
+  line-height: normal !important;
+  padding-left: 44px !important;
+  /* Clear left prefix icon area perfectly */
+  padding-right: 42px !important;
+  /* Clear right eye toggle icon perfectly */
+  width: 100% !important;
+  height: 100% !important;
+  border: 1px solid #E2E8F0 !important;
+  outline: none !important;
+  vertical-align: middle !important;
+  text-overflow: ellipsis !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  border-radius: 16px !important;
+  /* rounded-2xl */
+  box-sizing: border-box !important;
+  transition: all 0.3s ease !important;
+  color: #0F172A !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+/* Dark mode inputs override */
+.dark .login-input-container input.login-form-input {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  border-color: #374151 !important;
+  color: #FFFFFF !important;
+}
+
+.login-input-container input.login-form-input:focus {
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+}
+
+.login-input-icon {
+  position: absolute !important;
+  left: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  pointer-events: none !important;
+  color: #94A3B8 !important;
+  z-index: 10 !important;
+}
+
+.login-forgot-btn {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+.login-remember-text {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+.login-submit-text {
+  font-size: 17px !important;
+  font-weight: 600 !important;
+}
+
+.login-bottom-prompt {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}
+
+.login-contact-hr {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+.login-secure-footer {
+  font-size: 12px !important;
+  letter-spacing: 0.12em !important;
+}
+
+/* Isolated header search input padding overrides to avoid icon/shortcut text overlap */
+input.header-search-input {
+  padding-left: 40px !important;
+  padding-right: 70px !important;
+}
+
+/* ============================================================
+   SYSTEM-WIDE FIX: PREVENT SEARCH ICON AND TEXT OVERLAPS
+   ============================================================ */
+.relative svg[class*="left-"] ~ input,
+.relative svg[class*="left-"] + input,
+.relative svg.absolute.left-3 ~ input,
+.relative svg.absolute.left-3\.5 ~ input,
+.relative svg.absolute.left-4 ~ input,
+.relative svg.absolute.left-4\.5 ~ input,
+.relative svg.left-3 ~ input,
+.relative svg.left-4 ~ input,
+.relative .absolute.left-3 ~ input,
+.relative .absolute.left-4 ~ input,
+.relative .left-3 ~ input,
+.relative .left-4 ~ input {
+  padding-left: 2.75rem !important; /* Spaciously offset placeholder/text to clear the left icon */
+}
+
+/* ============================================================
+   Employee Page - Unified Filter Bar Design System
+   ============================================================ */
+
+/* Shared base for search input */
+.emp-filter-input {
+  height: 46px !important;
+  min-height: 46px !important;
+  padding-left: 46px !important;
+  padding-right: 16px !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: #1e293b !important;
+  transition: all 0.25s ease !important;
+  box-sizing: border-box !important;
+  line-height: normal !important;
+  outline: none !important;
+}
+
+.emp-filter-input::placeholder {
+  color: #94a3b8 !important;
+  font-weight: 400 !important;
+}
+
+.emp-filter-input:hover {
+  transform: translateY(-1px) !important;
+  border-color: rgba(79, 107, 255, 0.18) !important;
+}
+
+.emp-filter-input:focus {
+  outline: none !important;
+  border-color: rgba(79, 107, 255, 0.45) !important;
+  box-shadow: 0 0 0 4px rgba(79, 107, 255, 0.12) !important;
+  background: #fff !important;
+  transform: none !important;
+}
+
+/* Shared base for dropdown trigger buttons */
+.emp-filter-dropdown {
+  height: 46px !important;
+  min-height: 46px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 0 14px !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: #1e293b !important;
+  cursor: pointer !important;
+  transition: all 0.25s ease !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  outline: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+.emp-filter-dropdown:hover {
+  transform: translateY(-1px) !important;
+  border-color: rgba(79, 107, 255, 0.18) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.07) !important;
+}
+
+.emp-filter-dropdown:focus {
+  border-color: rgba(79, 107, 255, 0.45) !important;
+  box-shadow: 0 0 0 4px rgba(79, 107, 255, 0.12) !important;
+  transform: none !important;
+}
+
+/* Custom search input override for asset management page to prevent icon/placeholder overlap */
+input.asset-search-input {
+  padding-left: 3rem !important; /* 48px to clear the magnifying glass icon */
+  padding-right: 1.5rem !important; /* 24px */
+  padding-top: 1rem !important; /* py-4 is 16px */
+  padding-bottom: 1rem !important;
+  font-size: 0.875rem !important; /* text-sm */
+  min-height: 48px !important;
+  border-radius: 1.5rem !important;
+}
+
+/* Custom search input override for asset request page to prevent icon/placeholder overlap */
+input.asset-request-search-input {
+  padding-left: 36px !important; /* 36px to clear the magnifying glass icon at left-3 */
+  padding-right: 16px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  min-height: 38px !important;
+  font-size: 13.5px !important;
+  border-radius: 12px !important;
+}
+
+/* ============================================================
+   Unified Dashboard Hero Action Button Design System
+   ============================================================ */
+
+.dashboard-btn-primary {
+  background: linear-gradient(135deg, #5B5FFB 0%, #4F6BFF 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 20px rgba(79, 107, 255, 0.28) !important;
+  color: #ffffff !important;
+  height: 44px !important;
+  padding: 0 18px !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  transition: all 0.25s ease !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+
+.dashboard-btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 24px rgba(79, 107, 255, 0.38) !important;
+}
+
+.dashboard-btn-primary:active {
+  transform: translateY(0) !important;
+}
+
+/* Unified Dashboard primary button (Rose version for safety check-out action) */
+.dashboard-btn-primary-rose {
+  background: linear-gradient(135deg, #F43F5E 0%, #E11D48 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 20px rgba(244, 63, 94, 0.28) !important;
+  color: #ffffff !important;
+  height: 44px !important;
+  padding: 0 18px !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  transition: all 0.25s ease !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+
+.dashboard-btn-primary-rose:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 24px rgba(244, 63, 94, 0.38) !important;
+}
+
+.dashboard-btn-primary-rose:active {
+  transform: translateY(0) !important;
+}
+
+.dashboard-btn-secondary {
+  background: rgba(255, 255, 255, 0.06) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  height: 44px !important;
+  padding: 0 18px !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  transition: all 0.25s ease !important;
+  cursor: pointer !important;
+  outline: none !important;
+}
+
+.dashboard-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dashboard-btn-secondary:active {
+  transform: scale(0.98) !important;
+}
+
+/* Unified Icon styling for visibility inside premium dashboard buttons */
+.dashboard-btn-primary svg,
+.dashboard-btn-primary-rose svg,
+.dashboard-btn-secondary svg {
+  color: rgba(255, 255, 255, 0.9) !important;
+  flex-shrink: 0 !important;
+}
+
+/* Fix stacking order globally for dropdowns */
+.dropdown-menu,
+[data-radix-popper-content-wrapper],
+.select-dropdown,
+.filter-dropdown {
+    z-index: 9999 !important;
+}
+
+/* ============================================================
+   COMPREHENSIVE DARK MODE COMPLETENESS LAYER
+   Catches all remaining light-theme leaks across every module.
+   Applied via html.dark class — no layout side effects.
+   ============================================================ */
+
+/* ── Admin Dashboard specific overrides ── */
+html.dark .bg-gray-50\/50 {
+  background-color: #081225 !important;
+}
+
+html.dark .bg-indigo-950 {
+  background-color: #0F1B33 !important;
+}
+
+/* Quick-action cards in Admin (bg-white text-gray-400) */
+html.dark button.bg-white {
+  background-color: #1A2942 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #B8C5D6 !important;
+}
+
+html.dark button.bg-white:hover {
+  background-color: #203354 !important;
+  color: #FFFFFF !important;
+}
+
+/* Activity table border in Admin */
+html.dark .border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .divide-gray-50 > * + * {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark .hover\:bg-gray-50\/50:hover {
+  background-color: rgba(26, 41, 66, 0.6) !important;
+}
+
+/* Admin stat card icon badge backgrounds (bg-indigo-100, bg-emerald-100 etc.) */
+html.dark .bg-indigo-100 {
+  background-color: rgba(79, 70, 229, 0.18) !important;
+}
+html.dark .text-indigo-600 {
+  color: #818cf8 !important;
+}
+html.dark .bg-emerald-100 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+}
+html.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+html.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.18) !important;
+}
+html.dark .text-amber-600 {
+  color: #fbbf24 !important;
+}
+html.dark .bg-purple-100 {
+  background-color: rgba(139, 92, 246, 0.18) !important;
+}
+html.dark .text-purple-600 {
+  color: #a78bfa !important;
+}
+
+/* Chart tooltip in dark mode */
+html.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #152238 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+  border-radius: 12px !important;
+}
+html.dark .recharts-tooltip-label {
+  color: #B8C5D6 !important;
+}
+html.dark .recharts-tooltip-item {
+  color: #FFFFFF !important;
+}
+html.dark .recharts-cartesian-grid-horizontal line,
+html.dark .recharts-cartesian-grid-vertical line {
+  stroke: rgba(255, 255, 255, 0.05) !important;
+}
+html.dark .recharts-text {
+  fill: #7F8CA3 !important;
+}
+
+/* ── Reimbursement page specific overrides ── */
+
+/* Tab bar pill container */
+html.dark .bg-secondary-100\/50 {
+  background-color: rgba(15, 27, 51, 0.7) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Active tab pill (bg-white shadow text-primary) */
+html.dark .bg-white.shadow-sm.text-primary-600 {
+  background-color: #1A2942 !important;
+  color: #4F6BFF !important;
+}
+
+/* Reimbursement table body (sm:bg-white) */
+html.dark tbody.sm\:bg-white {
+  background-color: #152238 !important;
+}
+
+/* Approvals sub-tab header bg-white */
+html.dark .border-b.bg-white {
+  background-color: #0F1B33 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Approvals filter bar bg-slate-50/50 */
+html.dark .bg-slate-50\/50 {
+  background-color: #0F1B33 !important;
+}
+
+/* Search input in approval filter */
+html.dark input.border-slate-200 {
+  background-color: #152238 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+}
+
+/* ApprovalsMetricCard icon badge colors */
+html.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+html.dark .text-amber-600 {
+  color: #fbbf24 !important;
+}
+html.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+}
+html.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+html.dark .bg-rose-50 {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+}
+html.dark .text-rose-600 {
+  color: #fb7185 !important;
+}
+
+/* Inline text references from Reimbursement/Admin using slate- colors */
+html.dark .text-slate-900 {
+  color: #FFFFFF !important;
+}
+html.dark .text-slate-700 {
+  color: #B8C5D6 !important;
+}
+html.dark .text-slate-600 {
+  color: #7F8CA3 !important;
+}
+html.dark .text-slate-500 {
+  color: #7F8CA3 !important;
+}
+html.dark .text-slate-400 {
+  color: #7F8CA3 !important;
+}
+html.dark .border-slate-50 {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+html.dark .border-slate-200 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .bg-slate-50 {
+  background-color: #0F1B33 !important;
+}
+
+/* ── Accounts Dashboard specific ── */
+
+/* glass-card base is already handled; ensure dark:border-white/5 renders correctly */
+html.dark .glass-card {
+  background: rgba(15, 27, 51, 0.65) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Aging/banking sub-cards */
+html.dark .bg-secondary-50 {
+  background-color: #0F1B33 !important;
+}
+html.dark .bg-secondary-800\/40 {
+  background-color: rgba(15, 27, 51, 0.6) !important;
+}
+html.dark .border-secondary-200\/50 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+html.dark .border-secondary-700\/50 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Reconciliation ratio card */
+html.dark .bg-indigo-500\/5 {
+  background-color: rgba(79, 107, 255, 0.08) !important;
+}
+html.dark .border-indigo-500\/15 {
+  border-color: rgba(79, 107, 255, 0.2) !important;
+}
+
+/* ── Admin quick-action buttons with border-gray-100 ── */
+html.dark .border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── Modal / Overlay deepfix ── */
+/* Ensure fixed overlays (backdrop) stay dark */
+html.dark .fixed.inset-0.bg-black\/50,
+html.dark .fixed.inset-0.bg-black\/40,
+html.dark .fixed.inset-0.bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.72) !important;
+}
+
+/* ── Tab nav pills (active bg-white used throughout) ── */
+html.dark [class*="bg-white"][class*="shadow-sm"][class*="ring-black"] {
+  background-color: #1A2942 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ── Employee filter bar dark mode ── */
+html.dark .emp-filter-input {
+  background: #0F1B33 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #FFFFFF !important;
+}
+
+html.dark .emp-filter-input::placeholder {
+  color: #7F8CA3 !important;
+}
+
+html.dark .emp-filter-input:focus {
+  background: #0F1B33 !important;
+  border-color: rgba(79, 107, 255, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.2) !important;
+}
+
+html.dark .emp-filter-dropdown {
+  background: #0F1B33 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #B8C5D6 !important;
+}
+
+html.dark .emp-filter-dropdown:hover {
+  background: #152238 !important;
+  border-color: rgba(79, 107, 255, 0.3) !important;
+}
+
+/* ── Status badge overrides ── */
+/* Indigo verified badge in Admin */
+html.dark .bg-indigo-50.text-indigo-600 {
+  background-color: rgba(79, 107, 255, 0.15) !important;
+  color: #818cf8 !important;
+}
+html.dark .border-indigo-100 {
+  border-color: rgba(79, 107, 255, 0.2) !important;
+}
+
+/* ── Inline hardcoded bg-white panel fixes ── */
+/* Targets the .border-b.bg-white tab header in Reimbursement approvals */
+html.dark div.bg-white {
+  background-color: #152238 !important;
+}
+html.dark span.bg-white {
+  background-color: #1A2942 !important;
+}
+
+/* ── Section Heading Accent Lines ── */
+html.dark .bg-gradient-to-b.from-indigo-500 {
+  /* Keep gradient accent visible */
+  opacity: 0.85;
+}
+
+/* ── Pagination Controls ── */
+html.dark [class*="pagination"] button,
+html.dark nav[aria-label*="pagination"] button {
+  background-color: #152238 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #B8C5D6 !important;
+}
+html.dark [class*="pagination"] button:hover,
+html.dark nav[aria-label*="pagination"] button:hover {
+  background-color: #1A2942 !important;
+  color: #FFFFFF !important;
+}
+
+/* ── Misc light-surface patterns ── */
+html.dark .bg-gray-200 {
+  background-color: #1A2942 !important;
+}
+html.dark .bg-gray-300 {
+  background-color: #203354 !important;
+}
+html.dark .text-gray-300 {
+  color: #B8C5D6 !important;
+}
+html.dark .text-gray-200 {
+  color: #7F8CA3 !important;
+}
+
+/* Progress bar tracks */
+html.dark .bg-secondary-100 {
+  background-color: #1A2942 !important;
+}
+html.dark .bg-secondary-200 {
+  background-color: #203354 !important;
+}
+
+/* ── Hover row fix inside Reimbursement tbody ── */
+html.dark tr.hover\:bg-primary-50\/20:hover {
+  background-color: rgba(79, 107, 255, 0.08) !important;
+}
+
+/* ── Action button hover bg-white fix ── */
+html.dark button.hover\:bg-white:hover {
+  background-color: #1A2942 !important;
+}
+
+/* ── Dark-safe autofill ── */
+html.dark input:-webkit-autofill,
+html.dark input:-webkit-autofill:hover,
+html.dark input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #0F1B33 inset !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: #FFFFFF !important;
+}
+
+/* ── Finance / Accounts sub-page tables (light borders remaining) ── */
+html.dark .divide-secondary-50 > * + * {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Handled globally by custom scrollbar system */
+
+/* Custom robust brand color styles to prevent browser/extension auto-theme color shifts */
+.bg-brand-royal {
+  background-color: #00419c !important;
+}
+
+/* ============================================================
+   INVOICE PRINT PREVIEW — Light Mode Isolation
+   Forces the A4 papers to always display in light mode styles
+   even when the parent application is in dark mode.
+   ============================================================ */
+
+/* 1. Force white background on the A4 paper containers and all their background classes */
+html.dark .invoice-preview-paper-container,
+html.dark .invoice-preview-paper-container .bg-white,
+html.dark .invoice-preview-paper-container .bg-slate-50\/50,
+html.dark #print-invoice-area,
+html.dark #print-invoice-area .bg-white,
+html.dark #print-invoice-area .bg-slate-50\/50,
+html.dark #template-print-invoice-area,
+html.dark #template-print-invoice-area .bg-white,
+html.dark #template-print-invoice-area .bg-slate-50\/50 {
+  background-color: #ffffff !important;
+}
+
+/* 2. Force text colors back to light-mode values to prevent contrast issues */
+html.dark .invoice-preview-paper-container .text-black,
+html.dark #print-invoice-area .text-black,
+html.dark #template-print-invoice-area .text-black {
+  color: #000000 !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-900,
+html.dark #print-invoice-area .text-slate-900,
+html.dark #template-print-invoice-area .text-slate-900 {
+  color: #0f172a !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-800,
+html.dark #print-invoice-area .text-slate-800,
+html.dark #template-print-invoice-area .text-slate-800 {
+  color: #1e293b !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-700,
+html.dark #print-invoice-area .text-slate-700,
+html.dark #template-print-invoice-area .text-slate-700 {
+  color: #334155 !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-600,
+html.dark #print-invoice-area .text-slate-600,
+html.dark #template-print-invoice-area .text-slate-600 {
+  color: #475569 !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-500,
+html.dark #print-invoice-area .text-slate-500,
+html.dark #template-print-invoice-area .text-slate-500 {
+  color: #64748b !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-400,
+html.dark #print-invoice-area .text-slate-400,
+html.dark #template-print-invoice-area .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark .invoice-preview-paper-container .text-slate-450,
+html.dark #print-invoice-area .text-slate-450,
+html.dark #template-print-invoice-area .text-slate-450 {
+  color: #708090 !important;
+}
+
+/* 3. Force border colors back to light-mode values */
+html.dark .invoice-preview-paper-container .border-slate-200,
+html.dark #print-invoice-area .border-slate-200,
+html.dark #template-print-invoice-area .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+html.dark .invoice-preview-paper-container .border-slate-100,
+html.dark #print-invoice-area .border-slate-100,
+html.dark #template-print-invoice-area .border-slate-100 {
+  border-color: #f1f5f9 !important;
+}
+
+html.dark .invoice-preview-paper-container .border-slate-300,
+html.dark #print-invoice-area .border-slate-300,
+html.dark #template-print-invoice-area .border-slate-300 {
+  border-color: #cbd5e1 !important;
+}
+
+html.dark .invoice-preview-paper-container .border-black,
+html.dark #print-invoice-area .border-black,
+html.dark #template-print-invoice-area .border-black {
+  border-color: #000000 !important;
+}
+
+/* 4. Table overrides — counter the global html.dark table/tr/td/th rules */
+html.dark .invoice-preview-paper-container table,
+html.dark #print-invoice-area table,
+html.dark #template-print-invoice-area table {
+  background-color: #ffffff !important;
+}
+
+html.dark .invoice-preview-paper-container thead,
+html.dark .invoice-preview-paper-container th,
+html.dark #print-invoice-area thead,
+html.dark #print-invoice-area th,
+html.dark #template-print-invoice-area thead,
+html.dark #template-print-invoice-area th {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html.dark .invoice-preview-paper-container tr,
+html.dark #print-invoice-area tr,
+html.dark #template-print-invoice-area tr {
+  background-color: #ffffff !important;
+}
+
+html.dark .invoice-preview-paper-container tr:nth-child(even),
+html.dark #print-invoice-area tr:nth-child(even),
+html.dark #template-print-invoice-area tr:nth-child(even) {
+  background-color: #ffffff !important;
+}
+
+html.dark .invoice-preview-paper-container td,
+html.dark #print-invoice-area td,
+html.dark #template-print-invoice-area td {
+  background-color: inherit !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html.dark .invoice-preview-paper-container tr:hover,
+html.dark .invoice-preview-paper-container tr:hover td,
+html.dark #print-invoice-area tr:hover,
+html.dark #print-invoice-area tr:hover td,
+html.dark #template-print-invoice-area tr:hover,
+html.dark #template-print-invoice-area tr:hover td {
+  background-color: #ffffff !important;
+}
+
+/* 5. contentEditable spans inside the invoice preview — keep text visible */
+html.dark .invoice-preview-paper-container [contenteditable],
+html.dark #print-invoice-area [contenteditable],
+html.dark #template-print-invoice-area [contenteditable] {
+  color: inherit !important;
+  background-color: transparent !important;
+  caret-color: #000000 !important;
+}
+
+html.dark .invoice-preview-paper-container [contenteditable]:focus,
+html.dark #print-invoice-area [contenteditable]:focus,
+html.dark #template-print-invoice-area [contenteditable]:focus {
+  background-color: rgba(248, 250, 252, 0.9) !important;
+  box-shadow: none !important;
+  border-color: #6366f1 !important;
+}
+
+/* 6. Input elements inside invoice preview (not expected, but safety net) */
+html.dark .invoice-preview-paper-container input,
+html.dark .invoice-preview-paper-container textarea,
+html.dark .invoice-preview-paper-container select,
+html.dark #print-invoice-area input,
+html.dark #print-invoice-area textarea,
+html.dark #print-invoice-area select,
+html.dark #template-print-invoice-area input,
+html.dark #template-print-invoice-area textarea,
+html.dark #template-print-invoice-area select {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* 7. Labels inside invoice preview */
+html.dark .invoice-preview-paper-container label,
+html.dark #print-invoice-area label,
+html.dark #template-print-invoice-area label {
+  color: #334155 !important;
+}
+
+/* 8. Strong/bold elements */
+html.dark .invoice-preview-paper-container strong,
+html.dark #print-invoice-area strong,
+html.dark #template-print-invoice-area strong {
+  color: inherit !important;
+}
+
+/* 9. Italic/emphasis */
+html.dark .invoice-preview-paper-container em,
+html.dark .invoice-preview-paper-container i,
+html.dark #print-invoice-area em,
+html.dark #print-invoice-area i,
+html.dark #template-print-invoice-area em,
+html.dark #template-print-invoice-area i {
+  color: inherit !important;
+}
+
+/* 10. Divs and spans — reset any inherited dark bg colors */
+html.dark .invoice-preview-paper-container div,
+html.dark .invoice-preview-paper-container span,
+html.dark #print-invoice-area div,
+html.dark #print-invoice-area span,
+html.dark #template-print-invoice-area div,
+html.dark #template-print-invoice-area span {
+  background-color: transparent;
+  /* Don't use !important here — let explicit bg-* classes win via rule #1 above */
+}
+
+/* ============================================================
+   PRINT @media — Force white paper on system print/PDF
+   ============================================================ */
+@media print {
+  body,
+  html {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  #print-invoice-area,
+  #template-print-invoice-area {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #print-invoice-area *,
+  #template-print-invoice-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide the dark modal chrome, only print the paper */
+  .fixed.inset-0 {
+    background: none !important;
+    position: static !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Exclude glassmorphism from print output */
+  .glass-card,
+  .card,
+  .responsive-table,
+  tbody tr {
+    background: #ffffff !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+}
+
+/* ============================================================
+   GLASSMORPHISM TABLE EFFECTS (GLOBAL OVERRIDES)
+   ============================================================ */
+
+/* 1. Table Element & Body Reset to Transparent */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) table,
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody {
+  background: transparent !important;
+  border-collapse: collapse !important;
+}
+
+/* 2. Robust Sticky Table Header & Scroll System */
+
+/* ============================================================
+   STICKY TABLE HEADER — Layering & Z-Index Fix
+   Header must ALWAYS appear above hovered/elevated body rows.
+   Key rules:
+   - thead z-index: 100, th cells: 101 (beats hover row z-index: 2)
+   - isolation: isolate on thead creates own stacking context
+   - box-shadow on thead acts as a visible separator line
+   - tbody tr default z-index: 1 keeps stacking hierarchy clean
+   ============================================================ */
+
+/* thead itself — relative + isolation so it creates its own stacking context */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead {
+  position: relative !important;
+  z-index: 999 !important;
+  isolation: isolate !important;
+  /* Drop shadow acts as a crisp separator line while scrolling */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* header cells — highest z-index to beat any transform/hover stacking */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 999 !important;
+  background-color: var(--color-bg-primary, #ffffff) !important;
+}
+
+/* Dark mode header cells */
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead th {
+  background-color: var(--color-bg-tertiary, #151F32) !important;
+}
+
+/* Dark mode thead box-shadow separator */
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Header bottom border — clean separation line */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead th {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07) !important;
+}
+
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead th {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Management tables paint a dark gradient inline on <thead>/<tr>. The default
+   white sticky-header background above covers it and makes the light-blue
+   header text unreadable — repaint the header cells dark for those tables. */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead[style*="linear-gradient"] th,
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) thead tr[style*="linear-gradient"] th {
+  background-color: #1e3a5f !important;
+  background-image: none !important;
+  border-bottom: none !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* tbody rows — base z-index: 1 so they always sit below the header (z-index: 100+) */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* 3. Row Styles & Transitions */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr {
+  background: transparent !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Alternating Row Tint (Light Theme) */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:nth-child(even) {
+  background: rgba(248, 250, 252, 0.2) !important;
+}
+
+/* Alternating Row Tint (Dark Theme) */
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.01) !important;
+}
+
+/* 4. Desktop-Only Row Hover Elevation & Highlight (Light & Dark Theme) */
+/* NOTE: z-index on hover rows is intentionally kept at 2 (well below thead z-index: 100)
+   so the sticky header always wins the stacking order, even when a row is elevated via transform. */
+@media (min-width: 1024px) {
+  :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:hover {
+    background: rgba(240, 246, 255, 0.5) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    backdrop-filter: blur(4px) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08) !important;
+    position: relative !important;
+    z-index: 2 !important;
+  }
+
+  /* Force table cells to inherit parent row's background on hover to override global cell styles */
+  :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:hover td {
+    background-color: inherit !important;
+    /* Explicitly no z-index on td — let the tr control stacking */
+  }
+
+  html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    backdrop-filter: blur(4px) !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3) !important;
+  }
+}
+
+/* 7. Selection Highlight - keep selected rows visible & colored (Light & Dark) */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr.bg-blue-50\/30,
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class^="bg-blue-"],
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class*=" bg-blue-"],
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class^="bg-indigo-"],
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class*=" bg-indigo-"] {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr.bg-blue-50\/30,
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class^="bg-blue-"],
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class*=" bg-blue-"],
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class^="bg-indigo-"],
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr[class*=" bg-indigo-"] {
+  background-color: rgba(59, 130, 246, 0.16) !important;
+}
+
+/* 8. Soft Bottom Borders on Cells (Light Theme) */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) td,
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) th {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Soft Bottom Borders on Cells (Dark Theme) */
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) td,
+html.dark :not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) th {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Remove cell borders in last row */
+:not(#print-invoice-area):not(#template-print-invoice-area):not(.invoice-preview-paper-container) :is(.glass-card, .card, .responsive-table, div[class*="rounded-"]):has(table) tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+/* Sticky Header Table Styles */
+.table-wrapper {
+  height: 100%;
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 999 !important;
+  background: var(--color-bg-primary, #ffffff) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+html.dark thead th {
+  background: #151F32 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+}
+
+tbody tr {
+  position: relative;
+  z-index: 1;
+}
+
+thead {
+  position: relative;
+  z-index: 999;
+}
+
+/* Loader & Skeleton Custom Utilities */
+.animate-spin-reverse-custom {
+  animation: spin 1.5s linear infinite reverse;
+}
+
+.animation-delay-0 { animation-delay: 0ms; }
+.animation-delay-80 { animation-delay: 80ms; }
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-160 { animation-delay: 160ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-240 { animation-delay: 240ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-320 { animation-delay: 320ms; }
+.animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-480 { animation-delay: 480ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+.animation-delay-560 { animation-delay: 560ms; }
+.animation-delay-600 { animation-delay: 600ms; }
+.animation-delay-640 { animation-delay: 640ms; }
+.animation-delay-700 { animation-delay: 700ms; }
+.animation-delay-720 { animation-delay: 720ms; }
+.animation-delay-800 { animation-delay: 800ms; }
+
+/* Hide scrollbar utility but preserve scrolling functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
+/* Thin modern scrollbar for components that require high information density */
+.app-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(99, 102, 241, 0.45) transparent !important;
+}
+
+.app-scrollbar::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.app-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4) !important;
+  border-radius: 999px !important;
+  transition: background-color 0.2s ease !important;
+}
+
+.app-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.65) !important;
+}
+/* -- KPI Progress Bar -- */
+.kpi-progress-bar {
+  width: var(--bar-width, 0%);
+}
+
+
+/* -- SaaS Alert & Confirm System Styles -- */
+@keyframes confirmZoom {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes toastProgress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+@keyframes shakeAlert {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+.animate-confirm-zoom {
+  animation: confirmZoom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.animate-shake {
+  animation: shakeAlert 0.4s ease-in-out;
+}
+.toast-progress-bar {
+  animation: toastProgress var(--duration, 4000ms) linear forwards;
+}
+.toast-progress-paused {
+  animation-play-state: paused !important;
+}
+
+/* ============================================================
+   MOBILE-FIRST PREMIUM SAAS UTILITIES
+   ============================================================ */
+
+/* Safe Area Utilities (iOS notch/home-bar support) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pb-nav-safe {
+  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Bottom Nav Glassmorphic Surface */
+.bottom-nav-glass {
+  background: rgba(255, 255, 255, 0.88);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+html.dark .bottom-nav-glass {
+  background: rgba(15, 23, 42, 0.92);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Glassmorphism Blur Helper classes to avoid inline style warnings */
+.glass-blur-nav {
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+.glass-blur-header {
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* Bottom Nav Active Tab Glow */
+@keyframes navTabGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  50% { box-shadow: 0 0 16px 4px rgba(59, 130, 246, 0.25); }
+}
+.nav-tab-active-glow {
+  animation: navTabGlow 2s ease-in-out infinite;
+}
+
+/* Bottom Nav Tap Scale */
+@keyframes navTap {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.88); }
+  70% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.nav-tap {
+  animation: navTap 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Premium floating pill active indicator */
+@keyframes pillSlide {
+  from { opacity: 0; transform: scaleX(0.6); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+.nav-pill-indicator {
+  animation: pillSlide 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Mobile Content Scroll Clearance (accounts for bottom nav + safe area) */
+@media (max-width: 1023px) {
+  main.frozen-main {
+    padding-bottom: calc(68px + env(safe-area-inset-bottom, 8px)) !important;
+  }
+}
+
+/* Mobile Sidebar Drawer Transition */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0.8; }
+  to   { transform: translateX(0);    opacity: 1;   }
+}
+@keyframes slideOutLeft {
+  from { transform: translateX(0);    opacity: 1;   }
+  to   { transform: translateX(-100%); opacity: 0;  }
+}
+.sidebar-slide-in  { animation: slideInLeft  0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.sidebar-slide-out { animation: slideOutLeft 0.22s cubic-bezier(0.4, 0, 0.6, 1); }
+
+/* Mobile Bottom Sheet */
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes sheetSlideDown {
+  from { transform: translateY(0);    opacity: 1; }
+  to   { transform: translateY(100%); opacity: 0; }
+}
+.sheet-slide-up   { animation: sheetSlideUp   0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+.sheet-slide-down { animation: sheetSlideDown 0.22s cubic-bezier(0.4, 0, 0.6, 1); }
+
+/* Mobile Chip / Pill Scroll Row */
+.chip-scroll-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 4px;
+}
+.chip-scroll-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* Notification badge pulse */
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+  50% { transform: scale(1.15); box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+}
+.badge-pulse {
+  animation: badgePulse 1.8s ease-in-out infinite;
+}
+
+/* Premium Shimmer Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-bg {
+  background: linear-gradient(90deg, 
+    rgba(226, 232, 240, 0.6) 25%, 
+    rgba(241, 245, 249, 0.9) 37%, 
+    rgba(226, 232, 240, 0.6) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+.dark .shimmer-bg {
+  background: linear-gradient(90deg, 
+    rgba(30, 41, 59, 0.5) 25%, 
+    rgba(51, 65, 85, 0.8) 37%, 
+    rgba(30, 41, 59, 0.5) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* Responsive Scrollable Tables */
+.responsive-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.responsive-table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.responsive-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.responsive-table-container::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.25);
+  border-radius: 9999px;
+}
+
+.dark .responsive-table-container::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.15);
+}
+
+
+

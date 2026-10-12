@@ -1,0 +1,41 @@
+# Dependencies & builds
+node_modules/
+dist/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secrets & local-only config
+.env
+.env.*
+!.env.example
+_local/
+**/server.env
+**/PRODUCTION_CONFIG.txt
+**/login-credentials.md
+
+# Data that must never enter git (employee documents, DB dumps, logs)
+**/uploads/
+*.sql
+*.dump
+*.backup
+*.log
+**/aadhaar_card.pdf
+**/pan_card.pdf
+**/bank_statement.pdf
+
+# OS / editor
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Legacy archive items that may hold production secrets
+legacy/scripts/archive/DEPLOYMENT_PRODUCTION_CONFIG.md
+legacy/scripts/archive/*.zip
+
+legacy/scripts/archive/
+legacy/timesheet-backend/scripts/archive/
+
+.eslintcache

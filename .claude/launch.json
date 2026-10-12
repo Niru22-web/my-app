@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "asa-portal-web",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeArgs": ["--prefix", "apps/web", "run", "dev", "--", "--port", "3000"],
+      "port": 3000
+    }
+  ]
+}

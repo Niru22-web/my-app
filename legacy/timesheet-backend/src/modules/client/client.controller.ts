@@ -1,0 +1,295 @@
+import { Request, Response } from 'express';
+import { ClientService } from './client.service';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
+import { ExcelService } from '../../utils/ExcelService';
+import { validate as isUUID } from 'uuid';
+
+const clientService = new ClientService();
+
+// Configure multer for Excel file upload
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel files are allowed'));
+    }
+  }
+});
+
+export const getAllClients = async (req: any, res: Response) => {
+  try {
+    const { q, status, all } = req.query;
+    const clients = await clientService.getAllClients(req.user, { 
+      q: q as string, 
+      status: status as string,
+      all: all === 'true'
+    });
+    res.json({
+      success: true,
+      data: clients,
+      message: 'Clients retrieved successfully'
+    });
+  } catch (error: any) {
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch clients',
+      error: error.message 
+    });
+  }
+};
+
+export const getClientById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const client = await clientService.getClientById(id);
+    
+    if (!client) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Client not found' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: client,
+      message: 'Client details retrieved successfully'
+    });
+  } catch (error: any) {
+    console.error('Error fetching client:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch client',
+      error: error.message
+    });
+  }
+};
+
+export const createClient = async (req: Request, res: Response) => {
+  try {
+    console.log('Create Client Request Body:', JSON.stringify(req.body, null, 2));
+    const client = await clientService.createClient(req.body, (req as any).user);
+    res.status(201).json({
+      success: true,
+      data: client,
+      message: 'Client created successfully'
+    });
+  } catch (error: any) {
+    console.error('Error creating client:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: error.message || 'Failed to create client' 
+    });
+  }
+};
+
+export const updateClient = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    console.log(`Update Client Request [${id}] Body:`, JSON.stringify(req.body, null, 2));
+    const client = await clientService.updateClient(id, req.body);
+    res.json({
+      success: true,
+      data: client,
+      message: 'Client updated successfully'
+    });
+  } catch (error: any) {
+    console.error('Error updating client:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: error.message || 'Failed to update client' 
+    });
+  }
+};
+
+export const deleteClient = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    // Add detailed logging for debugging
+    console.log('Delete Client Request:', {
+      clientId: id,
+      method: req.method,
+      userAgent: req.get('User-Agent')
+    });
+    
+    // Validate UUID format
+    if (!id || !isUUID(id)) {
+      console.log('Invalid client ID format:', id);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid client ID format' 
+      });
+    }
+    
+    // Check if client exists before attempting deletion
+    const existingClient = await clientService.getClientById(id);
+    if (!existingClient) {
+      console.log('Client not found:', id);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Client not found' 
+      });
+    }
+    
+    console.log('Client found, attempting deletion:', existingClient.name);
+    const result = await clientService.deleteClient(id);
+    
+    console.log('Client deleted successfully:', result);
+    res.json({
+      success: true,
+      message: 'Client deleted successfully'
+    });
+  } catch (error: any) {
+    console.error('Delete Client Error:', {
+      clientId: req.params.id,
+      error: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    
+    // Handle foreign key constraint violations specifically
+    if (error.code === 'P2003') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot delete client. It is linked to existing records (projects, reimbursements, or other data).' 
+      });
+    }
+    
+    // Handle record not found errors
+    if (error.code === 'P2025') {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Client not found' 
+      });
+    }
+    
+    res.status(400).json({ 
+      success: false, 
+      message: error.message || 'Failed to delete client' 
+    });
+  }
+};
+
+export const bulkUploadClients = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Parse Excel file
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+    // Validate required columns
+    const requiredColumns = ['name'];
+    const firstRow = jsonData[0] as any;
+    const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+    
+    if (missingColumns.length > 0) {
+      return res.status(400).json({ 
+        error: 'Missing required columns',
+        missingColumns,
+        requiredColumns: ['name', 'alias', 'address', 'pin', 'state', 'country', 'gstStatus', 'gstin', 'pan']
+      });
+    }
+
+    // Process bulk creation
+    const results = await clientService.bulkCreateClients(jsonData, (req as any).user);
+    
+    res.json({
+      success: true,
+      message: 'Bulk upload completed',
+      data: results
+    });
+  } catch (error: any) {
+    console.error('Error in bulk upload:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: error.message || 'Failed to process bulk upload' 
+    });
+  }
+};
+
+export const exportClients = async (req: any, res: Response) => {
+  try {
+    const { q, status } = req.query;
+    const clients = await clientService.getAllClients(req.user, { 
+      q: q as string, 
+      status: status as string 
+    });
+
+    const exportData = clients.map(c => ({
+      'Client ID': c.clientId,
+      'Name': c.name,
+      'Alias': c.alias || '',
+      'Status': c.status,
+      'GST Status': c.gstStatus,
+      'GSTIN': c.gstin || '',
+      'PAN': c.pan || '',
+      'Country': c.country || '',
+      'State': c.state || '',
+      'Address': c.address || '',
+      'PIN': c.pin || ''
+    }));
+
+    ExcelService.exportToExcel(res, exportData, 'clients');
+  } catch (error: any) {
+    console.error('Error exporting clients:', error);
+    res.status(500).json({ error: 'Failed to export clients' });
+  }
+};
+
+export const downloadClientTemplate = async (req: Request, res: Response) => {
+  try {
+    const columns = ['name', 'alias', 'address', 'pin', 'state', 'country', 'gstStatus', 'gstin', 'pan'];
+    ExcelService.generateTemplate(res, columns, 'client_template');
+  } catch (error) {
+    console.error('Error generating template:', error);
+    res.status(500).json({ error: 'Failed to generate template' });
+  }
+};
+
+export const toggleClientStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const client = await clientService.getClientById(id);
+    if (!client) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Client not found' 
+      });
+    }
+
+    const newStatus = client.status === 'Active' ? 'Inactive' : 'Active';
+    const updatedClient = await clientService.updateClient(id, { status: newStatus });
+    
+    res.json({
+      success: true,
+      data: updatedClient,
+      message: `Client ${newStatus.toLowerCase()}d successfully`
+    });
+  } catch (error: any) {
+    console.error('Error toggling client status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to toggle client status',
+      error: error.message 
+    });
+  }
+};
+
+// Middleware for file upload
+export const uploadClientFile = upload.single('file');

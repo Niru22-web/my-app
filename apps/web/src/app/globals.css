@@ -1,0 +1,164 @@
+﻿@import "tailwindcss";
+
+/* Dark mode is driven by a class on <html> so the user's choice can override the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   ASA Portal design tokens
+   Brand: #003887 (primary), #8E8E93 (neutral), #FFFFFF.
+   Status colours exist only to carry meaning (approved / pending / overdue).
+   --------------------------------------------------------------------------- */
+:root {
+  --brand: #003887;
+  --brand-hover: #002c6b;
+  --brand-soft: #e8eef7;
+  --brand-softer: #f3f6fb;
+  --brand-ink: #ffffff;
+
+  --neutral: #8e8e93;
+
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fb;
+  --border: #e6e7eb;
+  --border-strong: #d4d6dc;
+
+  --text: #0f1729;
+  --text-muted: #5f6470;
+  --text-subtle: #8e8e93;
+
+  --success: #13795b;
+  --success-soft: #e7f5ef;
+  --warning: #a35c00;
+  --warning-soft: #fdf3e2;
+  --danger: #c0262d;
+  --danger-soft: #fdecec;
+
+  --chart-current: #003887;
+  --chart-previous: #8e8e93;
+  --chart-grid: #eceef2;
+
+  --ring: rgb(0 56 135 / 0.35);
+  --shadow-card: 0 1px 2px rgb(15 23 41 / 0.04), 0 1px 3px rgb(15 23 41 / 0.06);
+  --shadow-pop: 0 10px 30px -10px rgb(15 23 41 / 0.25);
+}
+
+.dark {
+  --brand: #4c82d6;
+  --brand-hover: #6595e0;
+  --brand-soft: #14274a;
+  --brand-softer: #101d36;
+  --brand-ink: #ffffff;
+
+  --neutral: #8e8e93;
+
+  --bg: #0a1020;
+  --surface: #111a2e;
+  --surface-muted: #0e1628;
+  --border: #1f2a42;
+  --border-strong: #2b3854;
+
+  --text: #e8ecf4;
+  --text-muted: #a3abbb;
+  --text-subtle: #8e8e93;
+
+  --success: #3cc496;
+  --success-soft: #0f2e25;
+  --warning: #f0a845;
+  --warning-soft: #33250e;
+  --danger: #f2686e;
+  --danger-soft: #3a1518;
+
+  /* Validated for CVD/normal separation on #111a2e (dataviz validator, dE 17.7). */
+  --chart-current: #5b8fe0;
+  --chart-previous: #6a6a70;
+  --chart-grid: #1c263c;
+
+  --ring: rgb(76 130 214 / 0.45);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-pop: 0 12px 32px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-softer: var(--brand-softer);
+  --color-brand-ink: var(--brand-ink);
+  --color-neutral: var(--neutral);
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-subtle: var(--text-subtle);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-chart-current: var(--chart-current);
+  --color-chart-previous: var(--chart-previous);
+  --color-chart-grid: var(--chart-grid);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
+
+  --radius-card: 14px;
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers line up in tables and KPI tiles. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Quiet scrollbars that match the surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

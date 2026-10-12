@@ -1,0 +1,216 @@
+.signup-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f9fafb;
+  padding: 1rem;
+}
+
+.signup-card {
+  width: 100%;
+  max-width: 32rem;
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 2rem;
+}
+
+.signup-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.signup-logo-container {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background-color: #eef2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.signup-logo-text {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #4f46e5;
+}
+
+.signup-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #111827;
+  margin: 0;
+}
+
+.signup-step-info {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+.signup-progress-container {
+  margin-bottom: 2rem;
+}
+
+.signup-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.signup-progress-bar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.signup-progress-step {
+  flex: 1;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+}
+
+.signup-progress-step-active {
+  background-color: #4f46e5;
+}
+
+.signup-progress-step-inactive {
+  background-color: #e5e7eb;
+}
+
+.signup-terms-summary {
+  margin-bottom: 0.5rem;
+}
+
+.signup-flex-1 {
+  flex: 1;
+}
+
+.signup-flex-2 {
+  flex: 2;
+}
+
+.signup-footer-text {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.signup-error-message {
+  background-color: #fef2f2;
+  color: #dc2626;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+}
+
+.signup-form-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.signup-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.signup-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.signup-password-hint {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.signup-terms-box {
+  background-color: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+  font-size: 0.875rem;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.signup-terms-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.signup-terms-list {
+  padding-left: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.signup-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.signup-checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+}
+
+.signup-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.signup-btn {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  border: none;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.signup-btn-secondary {
+  background-color: #6b7280;
+  color: white;
+  flex: 1;
+}
+
+.signup-btn-primary {
+  background-color: #4f46e5;
+  color: white;
+}
+
+.signup-btn-disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.signup-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.signup-link-btn {
+  background: none;
+  border: none;
+  color: #4f46e5;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+}
