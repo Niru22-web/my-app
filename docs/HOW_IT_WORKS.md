@@ -91,7 +91,7 @@ Your personal area, with tabs:
   - Managers, partners and HR approve or reject team requests under **Team requests**.
 - **Reimbursements** — submit expense claims (travel, meals and so on) and track them through each stage: manager approval → finance → paid. Approvers see only the actions that fit their stage. Export to CSV is available.
   - Receipt upload is hidden for now because the current server does not save the file. It returns with the new server.
-- **Reports** — 🔜 see below.
+- **Reports** — see below.
 
 ### ✅ Inbox
 All your notifications in one place (the bell shows the latest ones).
@@ -127,8 +127,15 @@ Raise and track support requests (IT, HR, Finance and others).
 - Support staff can start work, resolve, return to the person who raised it, reopen, reassign or escalate.
 - Admin manages **Categories & routing**: teams, SLA hours, who gets tickets automatically, and notification emails.
 
-### 🔜 Reports
-Firm, team and personal reports on hours, projects, attendance, leave and claims, with export. Being rebuilt carefully, because the current server's reports have known errors: billable hours are over-counted, some filters are ignored, totals are cut off on large ranges, and managers can see the whole firm. The new screens will only show figures that are correct and correctly limited to what each role may see.
+### ✅ Reports
+Under **My Portal → Reports** (Admin, Owner, HR, IT, managers, partners, and anyone Admin gives report access).
+- Pick a period (this week, this month, last month, last 30 days, or custom dates), and optionally a client or project.
+- See **hours logged**, **billable hours**, **approved hours**, and how many people logged time.
+- A chart of hours per day (or per week for longer periods), split into billable and non-billable.
+- **Where the time went:** hours by client, project, job or person.
+- **Export entries** downloads every timesheet line in the period as a spreadsheet (CSV).
+- Whose data you see is written at the top: Admin/Owner see **everyone**, managers and partners see **their team**, everyone else sees **their own** entries. HR and IT currently see only their own timesheet lines because of a limit in the current server; the new server will fix this.
+- Admin, Owner, HR and IT also see attendance, leave and expense-claim totals for the period.
 
 ### 🔜 Asset Management / Asset Requests
 - **Employees** request equipment (laptop, phone and so on) and see what is assigned to them.
