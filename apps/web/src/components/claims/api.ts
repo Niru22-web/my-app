@@ -44,6 +44,8 @@ export interface Claim {
   managerApprover?: Person | null;
   partnerApprover?: Person | null;
   processedBy?: Person | null;
+  receiptFile?: string | null;
+  attachments?: { id: string; fileName: string; filePath: string; fileSize?: number | null; mimeType?: string | null; uploadedAt?: string }[];
   logs?: { id: string; action: string; status: string | null; remarks: string | null; performedAt: string; performedBy?: Person | null }[];
 }
 
@@ -160,11 +162,18 @@ export interface ClaimInput {
   clientId: string;
   projectId: string;
   jobId: string;
+  files?: File[];
 }
 
 function toForm(b: ClaimInput) {
   const fd = new FormData();
-  Object.entries(b).forEach(([k, v]) => fd.append(k, String(v)));
+  Object.entries(b).forEach(([k, v]) => {
+    if (k === "files" || v === undefined) return;
+    fd.append(k, String(v));
+  });
+  for (const f of b.files ?? []) {
+    fd.append("receipts", f);
+  }
   return fd;
 }
 

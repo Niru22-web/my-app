@@ -86,9 +86,8 @@ function NotificationMenu() {
                   onClick={() => {
                     if (n.id && !n.isRead) markRead(n.id);
                     setOpen(false);
-                    if (n.actionUrl) {
-                      if (n.actionUrl.startsWith("/")) router.push(n.actionUrl);
-                      else window.location.href = n.actionUrl;
+                    if (n.actionUrl && n.actionUrl.startsWith("/") && !n.actionUrl.startsWith("//")) {
+                      router.push(n.actionUrl);
                     }
                   }}
                   className={cn(

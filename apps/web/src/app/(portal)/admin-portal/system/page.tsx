@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Eraser, Cpu, Database, FileText, HardDrive, RefreshCw, Search, Server } from "lucide-react";
+import { Eraser, Cpu, Database, FileText, HardDrive, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, assetUrl } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -18,7 +18,7 @@ import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { canSystem, useAdminMutations, useSystemStatus } from "@/components/admin/api";
 
-/** Only the folders the server knows about — never free text (the API joins this into a path unchecked). */
+/** Whitelisted storage folders. */
 const CATEGORIES = [
   { value: "all", label: "All" },
   { value: "profile", label: "Profile photos" },
@@ -48,6 +48,7 @@ export default function SystemPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [cleaning, setCleaning] = useState<"clean_temp" | "clean_logs" | null>(null);
+  const [deletingFile, setDeletingFile] = useState<StoredFile | null>(null);
 
   const files = useQuery({
     queryKey: ["admin", "files", cat, search, page],
@@ -116,8 +117,8 @@ export default function SystemPage() {
               <div className="space-y-2.5 p-5 text-[13px]">
                 <StatRow label="Status" value={d.database.status} tone="muted" />
                 <StatRow label="Response time" value={`${d.database.latencyMs} ms`} tone="muted" />
-                {Object.entries(d.database.counts).filter(([k]) => k !== "tickets")
-                  .slice(0, 4)
+                {Object.entries(d.database.counts)
+                  .slice(0, 5)
                   .map(([k, v]) => (
                     <StatRow key={k} label={k[0].toUpperCase() + k.slice(1)} value={formatNumber(v)} tone="muted" />
                   ))}
@@ -172,10 +173,15 @@ export default function SystemPage() {
                     </a>
                     <span className="block truncate text-xs text-ink-subtle">{f.relativePath}</span>
                   </span>
-                  <span className="shrink-0 text-right text-xs text-ink-subtle">
-                    {f.sizeFormatted}
-                    <br />
-                    {formatDate(f.modifiedAt)}
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="text-right text-xs text-ink-subtle">
+                      {f.sizeFormatted}
+                      <br />
+                      {formatDate(f.modifiedAt)}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setDeletingFile(f)} aria-label={`Delete ${f.name}`}>
+                      <Trash2 className="h-3.5 w-3.5 text-danger" />
+                    </Button>
                   </span>
                 </li>
               ))}
@@ -213,6 +219,26 @@ export default function SystemPage() {
             onSuccess: (r) => (toast.success(r.message || "Done"), setCleaning(null), void files.refetch()),
             onError: (e) => (toast.error("Clean-up failed", e instanceof ApiError ? e.message : undefined), setCleaning(null)),
           })
+        }
+      />
+
+      <ConfirmDialog
+        open={!!deletingFile}
+        onClose={() => setDeletingFile(null)}
+        tone="danger"
+        title="Delete uploaded file?"
+        description={deletingFile ? `Permanently delete "${deletingFile.name}" (${deletingFile.sizeFormatted}) from the server?` : ""}
+        confirmLabel="Delete file"
+        busy={m.deleteStorageFile.isPending}
+        onConfirm={() =>
+          deletingFile &&
+          m.deleteStorageFile.mutate(
+            { relativePath: deletingFile.relativePath, category: deletingFile.category },
+            {
+              onSuccess: () => (toast.success("File deleted"), setDeletingFile(null)),
+              onError: (e) => (toast.error("Couldn’t delete file", e instanceof ApiError ? e.message : undefined), setDeletingFile(null)),
+            },
+          )
         }
       />
     </div>

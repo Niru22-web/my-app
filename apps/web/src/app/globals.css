@@ -117,35 +117,38 @@
   --radius-card: 14px;
 }
 
-html {
-  color-scheme: light;
-}
-html.dark {
-  color-scheme: dark;
-}
+/* Base rules live in a layer so utility classes (outline-none, [scrollbar-width:none]...) can override them. */
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-feature-settings: "cv11", "ss01";
-  -webkit-font-smoothing: antialiased;
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Quiet scrollbars that match the surface. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }
 
 /* Numbers line up in tables and KPI tiles. */
 .tabular {
   font-variant-numeric: tabular-nums;
-}
-
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* Quiet scrollbars that match the surface. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
 }
 
 @keyframes shimmer {

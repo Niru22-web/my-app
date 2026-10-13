@@ -89,8 +89,8 @@ export const MODULES: { key: string; label: string; group: string; viewOnly?: bo
   { key: "admin_panel", label: "Administration", group: "Administration" },
   { key: "email_templates", label: "Email templates", group: "Administration" },
 ];
-/** The API never returns jobs View/Create/Edit (it only selects jobsDelete), so those three are unknown until set. */
-export const UNREADABLE = new Set(["jobs:canView", "jobs:canCreate", "jobs:canEdit"]);
+/** All module permissions including jobs View/Create/Edit are now returned by the API (AD1 fixed). */
+export const UNREADABLE = new Set<string>();
 
 export const useAdminUsers = (enabled: boolean) =>
   useQuery({ queryKey: ["admin", "users"], queryFn: async () => (await api<{ users: AdminUser[] }>("admin/users")).users ?? [], enabled });
@@ -167,10 +167,22 @@ export interface EmailTemplate {
   status: string;
   updatedAt: string;
 }
+export interface EmailLogEntry {
+  id: string;
+  recipient: string;
+  subject: string;
+  status: string;
+  errorMessage: string | null;
+  sentAt: string;
+  provider: string;
+  category: string;
+}
 export const useEmailStatus = (on: boolean) =>
   useQuery({ queryKey: ["admin", "email", "status"], queryFn: () => api<{ connected: boolean; providers: Record<string, { connected: boolean; email?: string }> }>("email/status"), enabled: on });
 export const useEmailTemplates = (on: boolean) =>
   useQuery({ queryKey: ["admin", "email", "templates"], queryFn: async () => (await api<{ templates: EmailTemplate[] }>("email/templates")).templates ?? [], enabled: on });
+export const useEmailLogs = (on: boolean) =>
+  useQuery({ queryKey: ["admin", "email", "logs"], queryFn: async () => (await api<{ logs: EmailLogEntry[] }>("email/logs")).logs ?? [], enabled: on });
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -208,12 +220,18 @@ export function useAdminMutations() {
       [["admin", "essl", "mappings"]],
     ),
     autoMatch: useAdminMutation(() => api<{ message: string; data: { matchedCount: number } }>("essl/mappings/auto-match", { method: "POST" }), [["admin", "essl", "mappings"]]),
-    cleanup: useAdminMutation((action: "clean_temp" | "clean_logs") => api<{ message: string }>("system/storage/cleanup", { method: "POST", body: { action } }), [["admin", "system"]]),
+    cleanup: useAdminMutation((action: "clean_temp" | "clean_logs") => api<{ message: string }>("system/storage/cleanup", { method: "POST", body: { action } }), [["admin", "system"], ["admin", "files"]]),
+    deleteStorageFile: useAdminMutation(
+      (b: { relativePath: string; category?: string }) => api<{ message: string }>("system/storage/file", { method: "DELETE", body: b }),
+      [["admin", "system"], ["admin", "files"]],
+    ),
     saveTemplate: useAdminMutation(
       ({ id, ...body }: Partial<EmailTemplate> & { name: string; category: string; subject: string; body: string }) =>
         id ? api(`email/templates/${id}`, { method: "PUT", body }) : api("email/templates", { method: "POST", body }),
       [["admin", "email", "templates"]],
     ),
-    testEmail: useAdminMutation((b: { to: string; subject: string; text: string; html: string }) => api("email/test-email-configuration", { method: "POST", body: b }), []),
+    testEmail: useAdminMutation((b: { to: string; subject: string; text: string; html: string }) => api("email/test-email-configuration", { method: "POST", body: b }), [["admin", "email", "logs"]]),
+    connectMailbox: useAdminMutation((b: { provider: "outlook" | "gmail"; email: string }) => api<{ message: string }>("email/connect", { method: "POST", body: b }), [["admin", "email", "status"]]),
+    disconnectMailbox: useAdminMutation((provider: string) => api<{ message: string }>(`email/disconnect/${encodeURIComponent(provider)}`, { method: "DELETE" }), [["admin", "email", "status"]]),
   };
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Banknote, Check, RotateCcw, X } from "lucide-react";
+import { Banknote, Check, Paperclip, RotateCcw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { ApiError } from "@/lib/api";
+import { ApiError, assetUrl } from "@/lib/api";
 import { fmtDay, workDate } from "@/lib/dates";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { timeAgo } from "@/lib/notifications";
@@ -119,6 +119,42 @@ function Detail({ claim: c, onClose, reviewer }: { claim: Claim; onClose: () => 
                 <dd className="mt-0.5 whitespace-pre-wrap text-ink">{c.description || "—"}</dd>
               </div>
             </dl>
+            {((c.attachments?.length ?? 0) > 0 || c.receiptFile) && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Receipts & attachments</p>
+                <ul className="flex flex-wrap gap-2">
+                  {(c.attachments ?? []).map((att) => {
+                    const href = assetUrl(att.filePath);
+                    return (
+                      <li key={att.id}>
+                        <a
+                          href={href ?? "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-3 py-1.5 text-xs font-medium text-brand hover:underline"
+                        >
+                          <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                          {att.fileName}
+                        </a>
+                      </li>
+                    );
+                  })}
+                  {!(c.attachments?.length) && c.receiptFile && (
+                    <li>
+                      <a
+                        href={assetUrl(c.receiptFile) ?? "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-3 py-1.5 text-xs font-medium text-brand hover:underline"
+                      >
+                        <Paperclip className="h-3.5 w-3.5" aria-hidden />
+                        Receipt
+                      </a>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
             {(c.logs?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">History</p>

@@ -68,7 +68,7 @@ export function buildNav(r: RoleInfo, can: Can): NavSection[] {
               },
             ]
           : []),
-        ...(can("accounts")
+        ...(can("accounts") && (r.isAdmin || r.isAccounts)
           ? [{ label: "Accounts & Finance", href: "/accounts/dashboard", icon: Landmark, match: ["/accounts"] }]
           : []),
         ...(can("asset_management")

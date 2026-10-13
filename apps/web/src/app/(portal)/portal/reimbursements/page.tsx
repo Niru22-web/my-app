@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { Banknote, Clock3, Download, Pencil, Plus, ReceiptText, Trash2, Wallet } from "lucide-react";
@@ -51,7 +51,7 @@ export default function MyClaimsPage() {
       hideBelow: "lg",
       cell: (c) => (
         <span className="block max-w-[240px] truncate text-ink-muted">
-          {[c.client?.name, c.project?.name].filter(Boolean).join(" Â· ") || "â€”"}
+          {[c.client?.name, c.project?.name].filter(Boolean).join(" · ") || "—"}
         </span>
       ),
     },
@@ -65,7 +65,7 @@ export default function MyClaimsPage() {
         const s = stageOf(c);
         return (
           <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            {s === "manager" && (
+            {(s === "manager" || s === "returned") && (
               <button onClick={() => setEditor({ claim: c })} className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink" aria-label="Edit claim" title="Edit">
                 <Pencil className="h-4 w-4" />
               </button>
@@ -118,7 +118,7 @@ export default function MyClaimsPage() {
 
       {all.some((c) => stageOf(c) === "returned") && (
         <p className="rounded-xl border border-danger/20 bg-danger-soft px-4 py-3 text-[13px] text-ink">
-          <span className="font-semibold text-danger">You have claims returned for changes.</span> Open the claim to see what your reviewer asked for, then submit a new claim with the corrections and delete the returned one.
+          <span className="font-semibold text-danger">You have claims returned for changes.</span> Edit the returned claim to make the corrections and resubmit it for approval.
         </p>
       )}
 
@@ -166,12 +166,12 @@ export default function MyClaimsPage() {
         title="Delete this claim?"
         confirmLabel="Delete claim"
         busy={m.remove.isPending}
-        description={del.value ? `${del.value.claimId} Â· ${formatCurrency(del.value.amount)} will be removed permanently.` : undefined}
+        description={del.value ? `${del.value.claimId} · ${formatCurrency(del.value.amount)} will be removed permanently.` : undefined}
         onConfirm={() =>
           del.value &&
           m.remove.mutate(del.value.id, {
             onSuccess: () => (toast.success("Claim deleted"), del.close()),
-            onError: (e) => toast.error("Couldnâ€™t delete", e instanceof ApiError ? e.message : undefined),
+            onError: (e) => toast.error("Couldn’t delete", e instanceof ApiError ? e.message : undefined),
           })
         }
       />

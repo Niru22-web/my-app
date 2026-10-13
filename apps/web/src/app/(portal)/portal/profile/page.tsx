@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, BadgeCheck, Briefcase, Camera, Download, FileText, IdCard, KeyRound, Lock, ShieldAlert, UserRound, Users } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Briefcase, Camera, Download, FileText, IdCard, KeyRound, Pencil, ShieldAlert, UserRound, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, assetUrl, downloadFile } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Dialog } from "@/components/ui/dialog";
-import { FormRow, Input } from "@/components/ui/inputs";
+import { FormRow, Input, Textarea } from "@/components/ui/inputs";
 import { useToast } from "@/components/ui/toast";
 import { mask, real, realDate, useMyDetails, useMyDocuments, useProfileMutations, type EmployeeDetails } from "@/components/profile/api";
 
@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const m = useProfileMutations();
   const fileInput = useRef<HTMLInputElement>(null);
   const [pwOpen, setPwOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   async function onPhoto(file: File | undefined) {
     if (!file) return;
@@ -86,17 +87,17 @@ export default function ProfilePage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {d?.status && <Badge tone={statusTone(d.status)}>{d.status.replace(/_/g, " ")}</Badge>}
+            {d && (
+              <Button variant="secondary" onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" /> Edit details
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => setPwOpen(true)}>
               <KeyRound className="h-4 w-4" /> Change password
             </Button>
           </div>
         </div>
       </Card>
-
-      <div className="flex gap-2.5 rounded-xl border border-line bg-surface px-4 py-3 text-[13px] text-ink-muted">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
-        <p>Your details are maintained by HR. To correct anything on this page, raise a request with HR. You can change your photo and password here.</p>
-      </div>
 
       {noManager && (
         <div className="flex gap-2.5 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-[13px] text-ink">
@@ -214,7 +215,102 @@ export default function ProfilePage() {
       </div>
 
       {pwOpen && <PasswordDialog onClose={() => setPwOpen(false)} />}
+      {editOpen && d && <EditProfileDialog details={d} onClose={() => setEditOpen(false)} />}
     </div>
+  );
+}
+
+function EditProfileDialog({ details: d, onClose }: { details: EmployeeDetails; onClose: () => void }) {
+  const toast = useToast();
+  const { update } = useProfileMutations();
+  const p = d.profile;
+  const [personalEmail, setPersonalEmail] = useState(real(p?.personalEmail) ?? "");
+  const [personalMobile, setPersonalMobile] = useState(real(p?.personalMobile) ?? "");
+  const [education, setEducation] = useState(real(p?.education) ?? "");
+  const [currentAddress, setCurrentAddress] = useState(real(p?.currentAddress) ?? "");
+  const [currentPinCode, setCurrentPinCode] = useState(real(p?.currentPinCode) ?? "");
+  const [permanentAddress, setPermanentAddress] = useState(real(p?.permanentAddress) ?? "");
+  const [emergencyContactName, setEmergencyContactName] = useState(real(p?.emergencyContactName) ?? "");
+  const [emergencyContactRelation, setEmergencyContactRelation] = useState(real(p?.emergencyContactRelation) ?? "");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState(real(p?.emergencyContactPhone) ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  function save() {
+    setError(null);
+    update.mutate(
+      {
+        id: d.id,
+        body: {
+          personalEmail: personalEmail.trim(),
+          personalMobile: personalMobile.trim(),
+          education: education.trim(),
+          currentAddress: currentAddress.trim(),
+          currentPinCode: currentPinCode.trim(),
+          permanentAddress: permanentAddress.trim(),
+          emergencyContactName: emergencyContactName.trim(),
+          emergencyContactRelation: emergencyContactRelation.trim(),
+          emergencyContactPhone: emergencyContactPhone.trim(),
+        },
+      },
+      {
+        onSuccess: () => (toast.success("Profile updated"), onClose()),
+        onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn’t update profile."),
+      },
+    );
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="lg"
+      title="Edit personal details"
+      description="Update your contact, address and emergency contact details."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={update.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={update.isPending}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => (e.preventDefault(), save())}>
+        <FormRow label="Personal email" htmlFor="ep-email">
+          <Input id="ep-email" type="email" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} />
+        </FormRow>
+        <FormRow label="Personal mobile" htmlFor="ep-mob">
+          <Input id="ep-mob" value={personalMobile} onChange={(e) => setPersonalMobile(e.target.value)} />
+        </FormRow>
+        <FormRow label="Education" htmlFor="ep-edu" className="sm:col-span-2">
+          <Input id="ep-edu" value={education} onChange={(e) => setEducation(e.target.value)} />
+        </FormRow>
+        <FormRow label="Current address" htmlFor="ep-caddr" className="sm:col-span-2">
+          <Textarea id="ep-caddr" rows={2} value={currentAddress} onChange={(e) => setCurrentAddress(e.target.value)} />
+        </FormRow>
+        <FormRow label="Current PIN code" htmlFor="ep-pin">
+          <Input id="ep-pin" maxLength={6} value={currentPinCode} onChange={(e) => setCurrentPinCode(e.target.value)} />
+        </FormRow>
+        <FormRow label="Permanent address" htmlFor="ep-paddr" className="sm:col-span-2">
+          <Textarea id="ep-paddr" rows={2} value={permanentAddress} onChange={(e) => setPermanentAddress(e.target.value)} />
+        </FormRow>
+        <FormRow label="Emergency contact name" htmlFor="ep-emname">
+          <Input id="ep-emname" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} />
+        </FormRow>
+        <FormRow label="Emergency contact relation" htmlFor="ep-emrel">
+          <Input id="ep-emrel" value={emergencyContactRelation} onChange={(e) => setEmergencyContactRelation(e.target.value)} />
+        </FormRow>
+        <FormRow label="Emergency contact phone" htmlFor="ep-emph" className="sm:col-span-2">
+          <Input id="ep-emph" value={emergencyContactPhone} onChange={(e) => setEmergencyContactPhone(e.target.value)} />
+        </FormRow>
+        {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger sm:col-span-2">{error}</p>}
+        <button type="submit" className="sr-only">
+          Save changes
+        </button>
+      </form>
+    </Dialog>
   );
 }
 

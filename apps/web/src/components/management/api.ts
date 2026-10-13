@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -97,7 +97,7 @@ function toPerson(e: Record<string, unknown>): Person {
   };
 }
 
-export const fullName = (p?: { firstName?: string; lastName?: string } | null) => (p ? `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() : "â€”");
+export const fullName = (p?: { firstName?: string | null; lastName?: string | null } | null) => (p ? `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() : "—");
 
 // ---- Status vocabularies ----------------------------------------------------------------
 

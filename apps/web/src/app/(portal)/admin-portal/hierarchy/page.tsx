@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Download, GitBranch, Info, Search, Users } from "lucide-react";
+import { AlertTriangle, Download, GitBranch, Search, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { roleLabel } from "@/lib/roles";
 import type { Envelope } from "@/lib/types";
@@ -39,9 +40,9 @@ const uniq = (...ids: (string | null | undefined | (string | null)[])[]) => [...
 const nameOf = (e?: Pick<Emp, "firstName" | "lastName">) => (e ? `${e.firstName} ${e.lastName ?? ""}`.trim() : "—");
 
 export default function HierarchyPage() {
+  const router = useRouter();
   const q = useQuery({
     queryKey: ["admin", "hierarchy"],
-    // Same source the legacy hierarchy page used; read-only here because PUT /employees wipes reporting lines.
     queryFn: async () => {
       const res = await api<Envelope<Emp[]> | Emp[]>("employees", { query: { all: "true" } });
       return Array.isArray(res) ? res : (res.data ?? []);
@@ -115,11 +116,7 @@ export default function HierarchyPage() {
     <div className="space-y-6">
       <PageHeader
         title="Organisation hierarchy"
-        description={
-          <span className="inline-flex items-center gap-1.5">
-            <Info className="h-3.5 w-3.5" aria-hidden /> Read-only until the new server is live (the current one wipes reporting lines on other edits). Until then, change lines in the current portal. Active employees only.
-          </span>
-        }
+        description="Reporting lines across active employees. Select any person to view or update their managers and partners."
         actions={
           <Button
             variant="secondary"
@@ -141,7 +138,7 @@ export default function HierarchyPage() {
         <button onClick={() => setView("nomanager")} className="flex w-full items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4 text-left">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
           <span className="text-[13px] text-ink">
-            <strong>{noManager.length} active {noManager.length === 1 ? "person has" : "people have"} no manager or partner.</strong> Their timesheets, leave and claims have no one to approve them. Older profile saves are known to have wiped these links — review and re-link them.
+            <strong>{noManager.length} active {noManager.length === 1 ? "person has" : "people have"} no manager or partner.</strong> Their timesheets, leave and claims have no one to approve them. Click a person below to assign their reporting line.
           </span>
         </button>
       )}
@@ -174,7 +171,16 @@ export default function HierarchyPage() {
               </div>
             </div>
           </div>
-          <DataTable rows={shown} columns={columns} rowKey={(r) => r.id} loading={q.isLoading} initialSort={{ key: "name", dir: "asc" }} pageSize={25} empty={{ icon: Users, title: "No one matches" }} />
+          <DataTable
+            rows={shown}
+            columns={columns}
+            rowKey={(r) => r.id}
+            loading={q.isLoading}
+            onRowClick={(r) => router.push(`/management/employees/edit/${r.id}`)}
+            initialSort={{ key: "name", dir: "asc" }}
+            pageSize={25}
+            empty={{ icon: Users, title: "No one matches" }}
+          />
         </div>
 
         <Card className="self-start">

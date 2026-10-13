@@ -75,9 +75,82 @@ export function DataTable<T>({
   const toggleSort = (key: string) =>
     setSort((s) => (s?.key === key ? (s.dir === "asc" ? { key, dir: "desc" } : null) : { key, dir: "asc" }));
 
+  // Phones get stacked cards: first column as the title, an untitled column (row actions) top-right,
+  // the rest as label / value pairs. Tables from 640px up.
+  const [titleCol, ...restCols] = columns;
+  const actionCols = restCols.filter((c) => !c.header);
+  const detailCols = restCols.filter((c) => c.header);
+  const sortable = columns.filter((c) => c.sortValue);
+
   return (
     <div className="overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface shadow-card">
-      <div className="overflow-x-auto">
+      <div className="sm:hidden">
+        {sortable.length > 1 && !loading && !error && slice.length > 1 && (
+          <div className="flex items-center justify-end gap-2 border-b border-line bg-surface-muted px-4 py-2 text-xs text-ink-subtle">
+            <label htmlFor={`sort-${sortable.map((c) => c.key).join("-")}`}>Sort by</label>
+            <select
+              id={`sort-${sortable.map((c) => c.key).join("-")}`}
+              value={sort ? `${sort.key}:${sort.dir}` : ""}
+              onChange={(e) => {
+                const [key, dir] = e.target.value.split(":");
+                setSort(key ? { key, dir: dir as "asc" | "desc" } : null);
+              }}
+              className="rounded-lg border border-line bg-surface px-2 py-1 text-xs font-medium text-ink"
+            >
+              <option value="">Default</option>
+              {sortable.flatMap((c) => [
+                <option key={`${c.key}:asc`} value={`${c.key}:asc`}>
+                  {c.header || c.key} ↑
+                </option>,
+                <option key={`${c.key}:desc`} value={`${c.key}:desc`}>
+                  {c.header || c.key} ↓
+                </option>,
+              ])}
+            </select>
+          </div>
+        )}
+        {loading ? (
+          <div className="space-y-3 p-4">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        ) : error ? (
+          <ErrorState onRetry={onRetry} />
+        ) : slice.length === 0 ? (
+          <EmptyState icon={empty?.icon} title={empty?.title ?? "Nothing here yet"} description={empty?.description} action={empty?.action} />
+        ) : (
+          <ul className="divide-y divide-line">
+            {slice.map((row) => (
+              <li
+                key={rowKey(row)}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={cn("space-y-2 px-4 py-3.5", onRowClick && "cursor-pointer active:bg-brand-softer")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 text-sm text-ink [&_.w-40]:w-auto [&_.w-44]:w-auto [&_.w-48]:w-auto">{titleCol?.cell(row)}</div>
+                  {actionCols.map((c) => (
+                    <div key={c.key} className="shrink-0">
+                      {c.cell(row)}
+                    </div>
+                  ))}
+                </div>
+                {detailCols.length > 0 && (
+                  <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-[13px]">
+                    {detailCols.map((c) => (
+                      <div key={c.key} className="contents">
+                        <dt className="text-xs text-ink-subtle">{c.header}</dt>
+                        <dd className="min-w-0 justify-self-end text-right text-ink [&_.w-28]:w-24">{c.cell(row)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line bg-surface-muted">

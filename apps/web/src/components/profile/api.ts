@@ -77,6 +77,32 @@ export function useMyDocuments(id: string | undefined) {
   });
 }
 
+export interface UpdateEmployeeInput {
+  firstName?: string;
+  lastName?: string;
+  officeEmail?: string;
+  designation?: string;
+  department?: string;
+  role?: string;
+  status?: string;
+  personalEmail?: string;
+  personalMobile?: string;
+  currentAddress?: string;
+  currentPinCode?: string;
+  permanentAddress?: string;
+  education?: string;
+  maritalStatus?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  ifscCode?: string;
+  reportingManagerIds?: string[];
+  reportingPartnerIds?: string[];
+  subManagerIds?: string[];
+}
+
 export function useProfileMutations() {
   const qc = useQueryClient();
   return {
@@ -90,6 +116,14 @@ export function useProfileMutations() {
     }),
     password: useMutation({
       mutationFn: (b: { currentPassword: string; newPassword: string }) => api("auth/change-password", { method: "POST", body: b }),
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: UpdateEmployeeInput }) =>
+        api(`employees/${id}`, { method: "PUT", body }),
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: ["profile"] });
+        void qc.invalidateQueries({ queryKey: ["employees"] });
+      },
     }),
   };
 }

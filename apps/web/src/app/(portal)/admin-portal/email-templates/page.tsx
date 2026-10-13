@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { CheckCircle2, Mail, MailWarning, Pencil, Plus, Search, Send, Info } from "lucide-react";
+import { CheckCircle2, History, Link2, Mail, MailWarning, Pencil, Plus, RefreshCw, Search, Send, Unplug } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -11,23 +11,49 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
-import { canEmail, useAdminMutations, useEmailStatus, useEmailTemplates, type EmailTemplate } from "@/components/admin/api";
+import {
+  canEmail,
+  useAdminMutations,
+  useEmailLogs,
+  useEmailStatus,
+  useEmailTemplates,
+  type EmailTemplate,
+} from "@/components/admin/api";
 
 export default function EmailPage() {
   const { user } = useAuth();
   const on = canEmail(user?.role);
+  const toast = useToast();
   const status = useEmailStatus(on);
   const q = useEmailTemplates(on);
+  const logs = useEmailLogs(on);
+  const m = useAdminMutations();
+
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("");
   const [editing, setEditing] = useState<EmailTemplate | null | undefined>(undefined);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [logStatus, setLogStatus] = useState<"all" | "sent" | "failed" | "pending">("all");
+  const [logSearch, setLogSearch] = useState("");
 
   const cats = useMemo(() => [...new Set((q.data ?? []).map((t) => t.category))].sort(), [q.data]);
   const rows = (q.data ?? []).filter((t) => (!cat || t.category === cat) && (!search.trim() || `${t.name} ${t.subject}`.toLowerCase().includes(search.trim().toLowerCase())));
   const providers = Object.entries(status.data?.providers ?? {}).filter(([, p]) => p?.connected);
+
+  const filteredLogs = useMemo(() => {
+    const s = logSearch.trim().toLowerCase();
+    return (logs.data ?? []).filter((l) => {
+      if (logStatus !== "all" && l.status.toLowerCase() !== logStatus) return false;
+      if (s && !`${l.recipient} ${l.subject} ${l.category}`.toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }, [logs.data, logStatus, logSearch]);
 
   if (!on)
     return (
@@ -40,7 +66,7 @@ export default function EmailPage() {
     <div className="space-y-6">
       <PageHeader
         title="Email"
-        description="The mailbox the portal sends from, and the templates it uses"
+        description="The mailbox the portal sends from, the templates it uses, and the delivery log"
         actions={
           <Button onClick={() => setEditing(null)}>
             <Plus className="h-4 w-4" /> New template
@@ -56,25 +82,30 @@ export default function EmailPage() {
           <ErrorState message="Mailbox status couldn’t be loaded." onRetry={() => status.refetch()} />
         ) : (
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-[13px]">
+            <div className="space-y-2 text-[13px]">
               {providers.length ? (
                 providers.map(([name, p]) => (
-                  <p key={name} className="text-ink">
-                    <Badge tone="success">Connected</Badge> <span className="ml-1 capitalize">{name}</span>
-                    {p.email && <span className="text-ink-muted"> · {p.email}</span>}
-                  </p>
+                  <div key={name} className="flex flex-wrap items-center gap-2 text-ink">
+                    <Badge tone="success">Connected</Badge>
+                    <span className="font-medium capitalize">{name}</span>
+                    {p.email && <span className="text-ink-muted">· {p.email}</span>}
+                    <Button variant="ghost" size="sm" onClick={() => setDisconnecting(name)}>
+                      <Unplug className="h-3.5 w-3.5 text-danger" /> Disconnect
+                    </Button>
+                  </div>
                 ))
               ) : (
                 <p className="text-ink">
-                  <Badge tone="warning">Not connected</Badge> <span className="ml-1 text-ink-muted">Portal emails (approvals, reminders, invitations) won’t be delivered.</span>
+                  <Badge tone="warning">Not connected</Badge> <span className="ml-1 text-ink-muted">Connect an Outlook or Gmail sender address so portal emails can be dispatched.</span>
                 </p>
               )}
-              <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-subtle">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                Connecting or replacing the mailbox stays in the current portal for now — its sign-in flow puts your session token in the web address, which the new server will fix.
-              </p>
             </div>
-            <TestEmail to={user?.email ?? ""} />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setConnectOpen(true)}>
+                <Link2 className="h-4 w-4" /> {providers.length ? "Change mailbox" : "Connect mailbox"}
+              </Button>
+              <TestEmail to={user?.email ?? ""} />
+            </div>
           </div>
         )}
       </Card>
@@ -127,8 +158,143 @@ export default function EmailPage() {
         </ul>
       )}
 
+      <Card>
+        <CardHeader
+          icon={History}
+          title="Delivery log"
+          description="Recent invitations, reminders, and test emails recorded by the server"
+          actions={
+            <Button variant="secondary" size="sm" loading={logs.isFetching} onClick={() => logs.refetch()}>
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          }
+        />
+        <div className="flex flex-col gap-3 px-5 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <Segmented
+            aria-label="Delivery status"
+            value={logStatus}
+            onChange={setLogStatus}
+            options={[
+              { value: "all", label: "All" },
+              { value: "sent", label: "Sent" },
+              { value: "pending", label: "Queued" },
+              { value: "failed", label: "Failed" },
+            ]}
+          />
+          <div className="relative sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
+            <Input placeholder="Recipient or subject…" value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className="pl-9" />
+          </div>
+        </div>
+        {logs.isLoading ? (
+          <Skeleton className="mx-5 mb-5 h-32" />
+        ) : !filteredLogs.length ? (
+          <EmptyState icon={Mail} title="No email logs found" className="py-8" />
+        ) : (
+          <div className="overflow-x-auto border-t border-line">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-line bg-surface-muted/40 text-left text-xs text-ink-subtle">
+                  <th className="px-5 py-2.5 font-medium">Sent</th>
+                  <th className="px-4 py-2.5 font-medium">Recipient</th>
+                  <th className="px-4 py-2.5 font-medium">Subject</th>
+                  <th className="px-4 py-2.5 font-medium">Category</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line text-[13px]">
+                {filteredLogs.slice(0, 50).map((l) => (
+                  <tr key={l.id}>
+                    <td className="whitespace-nowrap px-5 py-2.5 tabular text-ink-muted">
+                      {formatDate(l.sentAt)}{" "}
+                      <span className="text-xs text-ink-subtle">
+                        {new Date(l.sentAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-medium text-ink">{l.recipient}</td>
+                    <td className="max-w-xs truncate px-4 py-2.5 text-ink-muted">{l.subject}</td>
+                    <td className="px-4 py-2.5 capitalize text-ink-subtle">{l.category}</td>
+                    <td className="px-5 py-2.5">
+                      <Badge tone={l.status === "sent" ? "success" : l.status === "failed" ? "danger" : "warning"}>{l.status}</Badge>
+                      {l.errorMessage && <span className="mt-0.5 block max-w-xs truncate text-xs text-danger">{l.errorMessage}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
       {editing !== undefined && <TemplateDialog tpl={editing} categories={cats} onClose={() => setEditing(undefined)} />}
+      {connectOpen && <ConnectMailboxDialog defaultEmail={providers[0]?.[1]?.email ?? user?.email ?? ""} onClose={() => setConnectOpen(false)} />}
+      <ConfirmDialog
+        open={!!disconnecting}
+        onClose={() => setDisconnecting(null)}
+        tone="danger"
+        title={`Disconnect ${disconnecting} mailbox?`}
+        description="Outbound portal emails will pause until a sender mailbox is connected again."
+        confirmLabel="Disconnect"
+        busy={m.disconnectMailbox.isPending}
+        onConfirm={() =>
+          disconnecting &&
+          m.disconnectMailbox.mutate(disconnecting, {
+            onSuccess: () => (toast.success("Mailbox disconnected"), setDisconnecting(null)),
+            onError: (e) => (toast.error("Couldn’t disconnect", e instanceof ApiError ? e.message : undefined), setDisconnecting(null)),
+          })
+        }
+      />
     </div>
+  );
+}
+
+function ConnectMailboxDialog({ defaultEmail, onClose }: { defaultEmail: string; onClose: () => void }) {
+  const toast = useToast();
+  const m = useAdminMutations();
+  const [provider, setProvider] = useState<"outlook" | "gmail">("outlook");
+  const [email, setEmail] = useState(defaultEmail);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    try {
+      const res = await m.connectMailbox.mutateAsync({ provider, email: email.trim() });
+      toast.success(res.message || "Mailbox connected");
+      onClose();
+    } catch (err) {
+      toast.error("Couldn’t connect mailbox", err instanceof ApiError ? err.message : undefined);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Connect sending mailbox"
+      description="Configure the sender mailbox used for invitations, compliance reminders, and notifications."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="connect-mail-form" disabled={!email.trim()} loading={m.connectMailbox.isPending}>
+            Save mailbox
+          </Button>
+        </>
+      }
+    >
+      <form id="connect-mail-form" onSubmit={submit} className="space-y-4">
+        <FormRow label="Provider" htmlFor="cm-prov" required>
+          <Select id="cm-prov" value={provider} onChange={(e) => setProvider(e.target.value as "outlook" | "gmail")}>
+            <option value="outlook">Microsoft 365 / Outlook</option>
+            <option value="gmail">Google Workspace / Gmail</option>
+          </Select>
+        </FormRow>
+        <FormRow label="Sender email address" htmlFor="cm-email" required>
+          <Input id="cm-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="noreply@asaind.co.in" />
+        </FormRow>
+      </form>
+    </Dialog>
   );
 }
 

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Info } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { today, workDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { FileDrop } from "@/components/ui/file-drop";
 import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
 import { useToast } from "@/components/ui/toast";
 import { useClients, useJobs, useProjects } from "@/components/timesheet/api";
@@ -29,6 +29,7 @@ function ClaimForm({ onClose, claim }: { onClose: () => void; claim?: Claim | nu
   const [amount, setAmount] = useState(claim ? String(claim.amount) : "");
   const [date, setDate] = useState(claim ? workDate(claim.date) : today());
   const [description, setDescription] = useState(claim?.description ?? "");
+  const [files, setFiles] = useState<File[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -54,7 +55,7 @@ function ClaimForm({ onClose, claim }: { onClose: () => void; claim?: Claim | nu
     setErrors(errs);
     if (Object.keys(errs).length) return;
 
-    const body = { category, amount: Math.round(n * 100) / 100, description: description.trim(), date, clientId, projectId, jobId };
+    const body = { category, amount: Math.round(n * 100) / 100, description: description.trim(), date, clientId, projectId, jobId, files };
     try {
       if (claim) await m.update.mutateAsync({ id: claim.id, body });
       else await m.create.mutateAsync(body);
@@ -131,12 +132,9 @@ function ClaimForm({ onClose, claim }: { onClose: () => void; claim?: Claim | nu
         <FormRow label="Description" htmlFor="cl-desc" required error={errors.description} className="sm:col-span-2">
           <Textarea id="cl-desc" rows={3} maxLength={1000} value={description} invalid={!!errors.description} onChange={(e) => setDescription(e.target.value)} placeholder="What was the expense for?" />
         </FormRow>
-        <div className="flex gap-2.5 rounded-xl bg-brand-softer px-3.5 py-3 text-[13px] text-ink sm:col-span-2">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
-          <p>
-            Receipt upload will be switched on with the next system update — the current server doesn’t store attachments. Keep your receipts and share them with Accounts if asked.
-          </p>
-        </div>
+        <FormRow label="Receipts & bills" htmlFor="cl-files" hint="Optional · PDF, JPG, PNG or WEBP up to 10 MB each" className="sm:col-span-2">
+          <FileDrop id="cl-files" files={files} onChange={setFiles} accept=".pdf,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,application/pdf" maxMb={10} />
+        </FormRow>
         {serverError && <p role="alert" className="rounded-xl bg-danger-soft px-3.5 py-2.5 text-[13px] text-danger sm:col-span-2">{serverError}</p>}
       </form>
     </Dialog>

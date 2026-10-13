@@ -26,7 +26,7 @@ export function Segmented<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={cn("inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-line bg-surface p-1", className)}
+      className={cn("inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-line bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className)}
     >
       {options.map((o) => {
         const active = o.value === value;

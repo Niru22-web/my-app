@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { MonthGrid } from "@/components/ui/month-grid";
 import { Skeleton } from "@/components/ui/skeleton";
 import { leaveState, useLeaves } from "@/components/leave/api";
+import { realDate, useMyDetails } from "@/components/profile/api";
 import { statusOf, type Timelog } from "./api";
 
 const DOT: Record<string, string> = { draft: "bg-neutral", submitted: "bg-brand", approved: "bg-success", rejected: "bg-danger" };
@@ -53,6 +54,9 @@ export function MonthCalendar({
     staleTime: 5 * 60_000,
   });
   const leaves = useLeaves({ employeeId: user?.id }, !!user);
+  // Days before someone joined are never "missed".
+  const me = useMyDetails(user?.id);
+  const joinedOn = workDate(realDate(me.data?.profile?.doj) ?? me.data?.createdAt ?? "") || "0000-00-00";
 
   const holidays = useMemo(() => new Map((events.data ?? []).filter((e) => e.type === "Holiday").map((e) => [workDate(e.date), e.title])), [events.data]);
   const onLeave = useMemo(() => {
@@ -76,18 +80,21 @@ export function MonthCalendar({
     return m;
   }, [entries]);
 
+  // Count from the joining date, or the first day with time logged if that is earlier.
+  const firstLogged = useMemo(() => [...perDay.keys()].sort()[0] ?? "9999-99-99", [perDay]);
+  const startOn = joinedOn < firstLogged ? joinedOn : firstLogged;
   const stats = useMemo(() => {
     const workday = (d: YMD) => !isWeekend(d) && !holidays.has(d) && !onLeave.has(d);
     let logged = 0, expectedDays = 0, missed = 0;
     for (let d = from; d <= to; d = addDays(d, 1)) {
       logged += perDay.get(d)?.hours ?? 0;
-      if (d <= now && workday(d)) {
+      if (d <= now && d >= startOn && workday(d)) {
         expectedDays++;
         if (!perDay.get(d)?.hours && d < now) missed++;
       }
     }
     return { logged, target: expectedDays * 8, expectedDays, missed };
-  }, [from, to, now, perDay, holidays, onLeave]);
+  }, [from, to, now, perDay, holidays, onLeave, startOn]);
   const workday = (d: YMD) => !isWeekend(d) && !holidays.has(d) && !onLeave.has(d);
 
   if (loading) return <Skeleton className="h-[560px]" />;
@@ -135,7 +142,7 @@ export function MonthCalendar({
           const v = perDay.get(d);
           const holiday = holidays.get(d);
           const leave = onLeave.get(d);
-          const missed = !v?.hours && d < now && workday(d);
+          const missed = !v?.hours && d < now && d >= startOn && workday(d);
           return (
             <div className="flex h-full flex-col justify-between gap-1">
               {v?.hours ? (
