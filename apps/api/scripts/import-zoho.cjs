@@ -1,7 +1,7 @@
 // One-off migration: Zoho People exports + ASA Asset Lifecycle register → portal database.
 // Idempotent: re-running updates rows it created before (matched on employee ID / name / serial).
 //
-//   node scripts/import-zoho.cjs --dir "C:/Users/SHIVA/Downloads" --assets "<path to asa-laptop-lifecycle/src/data/seed.json>" [--as admin@email] [--dry-run]
+//   node scripts/import-zoho.cjs --dir "C:/Users/SHIVA/Downloads" --assets "<path to asa-laptop-lifecycle/src/data/seed.json>" --timesheets "Timesheets.xlsx" [--as admin@email] [--dry-run]
 //
 // Rules agreed with the firm (13 Oct 2026):
 //   • Employees are imported ACTIVE + APPROVED with NO password (they get invites at go-live).
@@ -402,6 +402,143 @@ async function main() {
     const unmatchedPurchases = seed.purchases.filter((p) => !seed.assets.some((a) => a.serial === p.serial)).length;
     if (unmatchedPurchases) note(`Asset purchases: ${unmatchedPurchases} purchase lines have no matching asset — kept for the upcoming Purchases feature, not imported`);
     console.log(`Assets: ${astNew} new, ${seed.assets.length - astNew} updated, ${alloc} allocations · Vendors: ${venNew} new`);
+  }
+
+  // ── 6. Timesheets (Zoho "Timesheets" export) ───────────────────────────────
+  // Zoho exports two header rows and repeats column names, so columns are read by position.
+  // Weekend / holiday placeholder rows (no client, 0 h) are skipped. Client/project/job combinations
+  // that people logged time against but that were missing from the Projects/Jobs exports are created.
+  if (args.timesheets) {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(path.join(DIR, args.timesheets));
+    const ws = wb.worksheets[0];
+    const head = ws.getRow(1).values.slice(1).map(text);
+    const col = (name, nth = 0) => head.reduce((acc, h, i) => (h === name ? [...acc, i] : acc), [])[nth];
+    const C_ = {
+      emp: col("Employee Id"), date: col("Date"), client: col("Client Name"), project: col("Project Name"), job: col("Job Name"),
+      workItem: col("Work Item"), desc: col("Description", 1), billable: col("Billable Status"), hours: col("Logged Hours"),
+      status: col("Approval Status"), approver: col("Approver"), approvedAt: col("Approval Time (Asia/Kolkata)"),
+    };
+    const hoursOf = (v) => {
+      const m = text(v).match(/^(\d+):(\d{2})$/);
+      return m ? +m[1] + +m[2] / 60 : Number(text(v)) || 0;
+    };
+    const rows = [];
+    ws.eachRow((row, n) => {
+      if (n <= 2) return;
+      const v = row.values.slice(1);
+      const hours = Math.round(hoursOf(v[C_.hours]) * 100) / 100;
+      if (!title(v[C_.client]) || !title(v[C_.project]) || !title(v[C_.job]) || hours <= 0) return;
+      rows.push({
+        code: text(v[C_.emp]), date: day(v[C_.date]), client: title(v[C_.client]), project: title(v[C_.project]), job: title(v[C_.job]),
+        workItem: title(v[C_.workItem]) || null, desc: title(v[C_.desc]), billable: !/non/i.test(text(v[C_.billable])), hours,
+        status: text(v[C_.status]).toLowerCase(), approver: text(v[C_.approver]), approvedAt: v[C_.approvedAt],
+      });
+    });
+    const skippedEmp = new Set();
+
+    // Resolve (or create) client → project → job for every combination used
+    const jobCache = new Map();
+    let cliMade = 0, prjMade = 0, jobMade = 0;
+    async function resolveJob(r) {
+      const k = `${r.client}::${r.project}::${r.job}`.toLowerCase();
+      if (jobCache.has(k)) return jobCache.get(k);
+      let client = clientByName.get(r.client.toLowerCase()) || (DRY ? null : await prisma.client.findFirst({ where: { name: { equals: r.client, mode: "insensitive" } } }));
+      if (!client) {
+        cliMade++;
+        client = DRY ? { id: `dry-${r.client}` } : await prisma.client.create({ data: { name: r.client, clientId: nextCli(), alias: r.client.slice(0, 12), gstStatus: "No", pan: "", status: "Active", createdBy: actor.id } });
+        clientByName.set(r.client.toLowerCase(), client);
+      }
+      let proj = DRY ? null : await prisma.project.findFirst({ where: { clientId: client.id, name: { equals: r.project, mode: "insensitive" } }, include: { client: true } });
+      if (!proj) {
+        prjMade++;
+        const used = rows.filter((x) => x.client === r.client && x.project === r.project);
+        if (!DRY) {
+          proj = await prisma.project.create({
+            data: {
+              name: r.project, projectId: nextPrj(), clientId: client.id, status: "Started", billable: used.some((x) => x.billable),
+              startDate: used.map((x) => x.date).filter(Boolean).sort((a, b) => a - b)[0] ?? new Date(), createdBy: actor.id, createdByEmail: actor.officeEmail,
+            },
+            include: { client: true },
+          });
+          note(`Created from timesheets: project "${r.project}" (${r.client})`);
+        }
+      }
+      let job = DRY ? null : await prisma.job.findFirst({ where: { projectId: proj.id, name: { equals: r.job, mode: "insensitive" } } });
+      if (!job) {
+        jobMade++;
+        if (!DRY) {
+          const jobId = nextJob();
+          job = await prisma.job.create({
+            data: {
+              name: r.job, jobId, combinedId: `${proj.client.clientId}-${proj.projectId}-${jobId}`, projectId: proj.id, status: "Started",
+              billable: rows.some((x) => x.client === r.client && x.project === r.project && x.job === r.job && x.billable),
+              createdBy: actor.id, createdByEmail: actor.officeEmail,
+            },
+          });
+        }
+      }
+      const out = DRY ? null : { job, proj };
+      jobCache.set(k, out);
+      return out;
+    }
+
+    const emps = new Map(
+      (await prisma.employee.findMany({ where: { employeeId: { in: [...new Set(rows.map((r) => r.code))] } }, select: { id: true, employeeId: true, managerId: true, partnerId: true } }))
+        .map((e) => [e.employeeId, e]),
+    );
+    const toInsert = [];
+    const team = new Map(); // job/project → people who logged time (added to project/job teams)
+    for (const r of rows) {
+      const e = emps.get(r.code);
+      if (!e) { skippedEmp.add(r.code); continue; }
+      if (!r.date) continue;
+      const res = await resolveJob(r);
+      if (DRY) { toInsert.push(r); continue; }
+      const approverCode = (r.approver.match(/^(\S+)\s/) || [])[1];
+      const approvedBy = r.status === "approved" ? (approverCode && byCode.get(approverCode)) || null : null;
+      toInsert.push({
+        employeeId: e.id, jobId: res.job.id, projectId: res.proj.id, clientId: res.proj.clientId, combinedJobCode: res.job.combinedId,
+        hours: r.hours, description: r.desc || r.workItem || "", workItem: r.workItem, date: r.date,
+        weekStart: (() => { const d = new Date(r.date); const w = d.getUTCDay(); d.setUTCDate(d.getUTCDate() + (w === 0 ? -6 : 1 - w)); return d; })(),
+        billableStatus: r.billable ? "billable" : "non_billable",
+        submissionStatus: r.status === "approved" ? "approved" : "submitted",
+        submittedAt: r.date,
+        approvedAt: r.status === "approved" ? day(r.approvedAt) ?? r.date : null,
+        approvedBy,
+        reportingManagerId: e.managerId, reportingPartnerId: e.partnerId,
+      });
+      if (!team.has(res.job.id)) team.set(res.job.id, { projectId: res.proj.id, people: new Set() });
+      team.get(res.job.id).people.add(e.id);
+    }
+
+    // Idempotent: for each identical entry signature, only insert what's not already there.
+    let inserted = 0, already = 0;
+    if (!DRY) {
+      const sig = (t) => `${t.employeeId}|${t.jobId}|${new Date(t.date).toISOString().slice(0, 10)}|${t.hours}|${t.description}`;
+      const range = toInsert.map((t) => t.date.getTime());
+      const existing = await prisma.timelog.findMany({
+        where: { employeeId: { in: [...new Set(toInsert.map((t) => t.employeeId))] }, date: { gte: new Date(Math.min(...range)), lte: new Date(Math.max(...range) + 86_399_999) } },
+        select: { employeeId: true, jobId: true, date: true, hours: true, description: true },
+      });
+      const have = new Map();
+      for (const t of existing) have.set(sig(t), (have.get(sig(t)) ?? 0) + 1);
+      const batch = [];
+      for (const t of toInsert) {
+        const k = sig(t);
+        if (have.get(k)) { have.set(k, have.get(k) - 1); already++; continue; }
+        batch.push(t);
+      }
+      for (let i = 0; i < batch.length; i += 500) await prisma.timelog.createMany({ data: batch.slice(i, i + 500) });
+      inserted = batch.length;
+      for (const [jobId, v] of team) {
+        await prisma.jobUser.createMany({ data: [...v.people].map((employeeId) => ({ jobId, employeeId })), skipDuplicates: true });
+        await prisma.projectUser.createMany({ data: [...v.people].map((employeeId) => ({ projectId: v.projectId, employeeId })), skipDuplicates: true });
+      }
+    }
+    if (skippedEmp.size) note(`Timesheet rows skipped — employee not in employee export: ${[...skippedEmp].join(", ")}`);
+    const hrs = toInsert.reduce((s, t) => s + t.hours, 0);
+    console.log(`Timesheets: ${toInsert.length} entries (${Math.round(hrs)} h) → ${DRY ? "would insert" : `${inserted} inserted, ${already} already present`} · created ${cliMade} clients, ${prjMade} projects, ${jobMade} jobs`);
   }
 
   console.log(`\nNotes (${report.length}):`);
