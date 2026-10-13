@@ -1,9 +1,20 @@
-import type { FastifyInstance } from "fastify";
+import ExcelJS from "exceljs";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { prisma } from "../config/db";
 import { authenticate, requireRoles } from "../plugins/auth";
 import { createNotification } from "../utils/notify";
 
 const ASSET_ADMIN_ROLES = ["admin", "owner", "it", "hr", "accounts"];
+
+const isoDate = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "");
+
+async function sendWorkbook(reply: FastifyReply, wb: ExcelJS.Workbook, filename: string) {
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
+  return reply
+    .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    .header("Content-Disposition", `attachment; filename=${filename}`)
+    .send(buf);
+}
 
 async function nextAssetCode(): Promise<string> {
   const rows = await prisma.assetInventory.findMany({ select: { assetId: true } });
@@ -95,6 +106,94 @@ export async function assetRoutes(app: FastifyInstance) {
   });
 
   // ── Allocations ────────────────────────────────────────────────────────────
+  // Excel exports — same columns as the legacy portal's downloads
+  app.get("/api/assets/export", { preHandler: [requireRoles(ASSET_ADMIN_ROLES)] }, async (_req, reply) => {
+    const assets = await prisma.assetInventory.findMany({
+      where: { isDeleted: false },
+      include: { vendorRelation: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Asset Inventory");
+    ws.columns = [
+      { header: "Asset ID", key: "assetId", width: 15 },
+      { header: "Asset Name", key: "assetName", width: 25 },
+      { header: "Category", key: "category", width: 15 },
+      { header: "Type", key: "type", width: 15 },
+      { header: "Serial Number", key: "serialNumber", width: 20 },
+      { header: "Office Tag No", key: "officeTagNo", width: 20 },
+      { header: "Purchase Date", key: "purchaseDate", width: 15 },
+      { header: "Purchase Cost (INR)", key: "purchaseCost", width: 18 },
+      { header: "Vendor", key: "vendorName", width: 20 },
+      { header: "Warranty Expiry", key: "warrantyExpiry", width: 15 },
+      { header: "Location", key: "location", width: 15 },
+      { header: "Status", key: "status", width: 15 },
+      { header: "Condition", key: "condition", width: 15 },
+      { header: "Description", key: "description", width: 30 },
+    ];
+    for (const a of assets) {
+      ws.addRow({
+        assetId: a.assetId,
+        assetName: a.assetName,
+        category: a.category,
+        type: a.type,
+        serialNumber: a.serialNumber,
+        officeTagNo: a.officeTagNo ?? "",
+        purchaseDate: isoDate(a.purchaseDate),
+        purchaseCost: a.purchaseCost ?? "",
+        vendorName: a.vendorRelation?.vendorName ?? "",
+        warrantyExpiry: isoDate(a.warrantyExpiry),
+        location: a.location ?? "",
+        status: a.status,
+        condition: a.condition,
+        description: a.description ?? "",
+      });
+    }
+    return sendWorkbook(reply, wb, "asset_inventory.xlsx");
+  });
+
+  app.get("/api/assets/allocations/export", { preHandler: [requireRoles(ASSET_ADMIN_ROLES)] }, async (_req, reply) => {
+    const rows = await prisma.assetAllocation.findMany({
+      where: { inventory: { isDeleted: false } },
+      include: {
+        employee: { select: { firstName: true, lastName: true, employeeId: true, department: true } },
+        inventory: true,
+      },
+      orderBy: { allocatedAt: "desc" },
+    });
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Asset Allocations");
+    ws.columns = [
+      { header: "Employee Name", key: "employeeName", width: 25 },
+      { header: "Employee ID", key: "employeeId", width: 15 },
+      { header: "Department", key: "department", width: 20 },
+      { header: "Asset Name", key: "assetName", width: 25 },
+      { header: "Serial Number", key: "serialNumber", width: 20 },
+      { header: "Office Tag No", key: "officeTagNo", width: 20 },
+      { header: "Category", key: "category", width: 15 },
+      { header: "Type", key: "type", width: 15 },
+      { header: "Allocated At", key: "allocatedAt", width: 18 },
+      { header: "Status", key: "status", width: 12 },
+      { header: "Remarks", key: "remarks", width: 35 },
+    ];
+    for (const r of rows) {
+      ws.addRow({
+        employeeName: r.employee ? `${r.employee.firstName} ${r.employee.lastName ?? ""}`.trim() : "Unassigned",
+        employeeId: r.employee?.employeeId ?? "",
+        department: r.employee?.department ?? "",
+        assetName: r.inventory?.assetName ?? "",
+        serialNumber: r.inventory?.serialNumber ?? "",
+        officeTagNo: r.inventory?.officeTagNo ?? "",
+        category: r.inventory?.category ?? "",
+        type: r.inventory?.type ?? "",
+        allocatedAt: isoDate(r.allocatedAt),
+        status: r.status,
+        remarks: r.remarks ?? "",
+      });
+    }
+    return sendWorkbook(reply, wb, "asset_allocations_export.xlsx");
+  });
+
   app.get("/api/assets/allocations", { preHandler: [authenticate] }, async (_req, reply) => {
     const rows = await prisma.assetAllocation.findMany({
       include: {

@@ -1,5 +1,7 @@
 import crypto from "crypto";
-import type { FastifyInstance } from "fastify";
+import fs from "fs";
+import path from "path";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
 import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
 import { parseBodyOrMultipart } from "../utils/uploads";
@@ -19,6 +21,9 @@ async function nextEmployeeCode(): Promise<string> {
   }
   return `EMP${String(max + 1).padStart(3, "0")}`;
 }
+
+const PHOTO_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PHOTO_EXT = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
 export async function employeeRoutes(app: FastifyInstance) {
   // GET /api/employees — role-scoped list with loggedHours (fixes M10, P2)
@@ -519,9 +524,10 @@ export async function employeeRoutes(app: FastifyInstance) {
     },
   );
 
-  // POST /api/employees/profile/photo/:employeeId — never creates fake EmployeeProfile row (fixes P1)
-  app.post("/api/employees/profile/photo/:employeeId", { preHandler: [authenticate] }, async (req, reply) => {
-    const { employeeId } = req.params as { employeeId: string };
+  // Profile photo upload — never creates fake EmployeeProfile row (fixes P1)
+  // POST /api/employees/profile-photo           — own photo (legacy path, used by the web app)
+  // POST /api/employees/profile/photo/:employeeId — own photo, or anyone's for Admin/Owner/HR
+  const uploadProfilePhoto = async (req: FastifyRequest, reply: FastifyReply, employeeId: string) => {
     const u = req.user!;
     const r = normRole(u.role);
     if (u.id !== employeeId && !["admin", "owner", "hr"].includes(r)) {
@@ -542,6 +548,10 @@ export async function employeeRoutes(app: FastifyInstance) {
     if (!file) {
       return reply.code(400).send({ success: false, message: "No photo file provided." });
     }
+    if (!PHOTO_MIME.has(file.mimeType) || !PHOTO_EXT.has(path.extname(file.savedName).toLowerCase())) {
+      fs.rmSync(file.diskPath, { force: true });
+      return reply.code(400).send({ success: false, message: "Use a JPG, PNG or WEBP image." });
+    }
 
     const updated = await prisma.employee.update({
       where: { id: employeeId },
@@ -559,9 +569,17 @@ export async function employeeRoutes(app: FastifyInstance) {
 
     return reply.send({
       success: true,
+      profileImage: updated.profileImage,
       data: { profileImage: updated.profileImage, employeePhotoUrl: updated.profileImage },
     });
-  });
+  };
+
+  app.post("/api/employees/profile-photo", { preHandler: [authenticate] }, (req, reply) =>
+    uploadProfilePhoto(req, reply, req.user!.id),
+  );
+  app.post("/api/employees/profile/photo/:employeeId", { preHandler: [authenticate] }, (req, reply) =>
+    uploadProfilePhoto(req, reply, (req.params as { employeeId: string }).employeeId),
+  );
 
   // DELETE /api/employees/:id — restricted to Admin only (fixes M3, M7)
   app.delete("/api/employees/:id", { preHandler: [requireRoles(["admin", "owner"])] }, async (_req, reply) => {
