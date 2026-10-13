@@ -19,6 +19,8 @@ _local/
 # Data that must never enter git (employee documents, DB dumps, logs)
 **/uploads/
 *.sql
+# …except reviewed schema migrations, which must ship with the code
+!apps/api/prisma/migrations-additive/*.sql
 *.dump
 *.backup
 *.log
