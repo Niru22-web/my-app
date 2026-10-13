@@ -19,15 +19,13 @@ It is a **redesign** of the existing timesheet portal (timesheet.asaind.co.in). 
 ### How the pieces fit together
 
 ```
-  Your browser  ──►  New ASA Portal website  ──►  Existing portal server (API)  ──►  Database
-   (screens)          (apps/web — new)            (legacy/timesheet-backend)        (PostgreSQL)
+  Your browser  ──►  New ASA Portal website  ──►  New ASA Portal server (API)  ──►  Database
+   (screens)          (apps/web — Next.js)         (apps/api — Fastify)             (PostgreSQL)
 ```
 
-- **Website (new):** the screens you see. Built with Next.js.
-- **Server (existing, unchanged for now):** checks who you are, saves and reads data.
-- **Database:** where everything is stored — employees, hours, leave, claims, tickets and so on.
-
-Later phases replace the old server with a new, safer one (see section 6). The database stays the same.
+- **Website (`apps/web`):** the screens you see. Built with Next.js.
+- **Server (`apps/api`):** the new hardened Phase 3 API server built with Fastify, Prisma and Socket.IO. It connects to the exact same PostgreSQL database while fixing every security and data-integrity issue recorded in `docs/BACKEND_FINDINGS.md`.
+- **Database:** where everything is stored — employees, hours, leave, claims, tickets, assets, finance records and so on.
 
 ---
 
@@ -64,7 +62,7 @@ Admin can also give individual people extra access per module (view / add / edit
 
 ## 4. Modules, one by one
 
-Status key: ✅ ready in the new design · 🔜 being moved next (the menu shows a "being moved" page until then).
+Status key: ✅ ready in the new design and backed by the new `apps/api` server.
 
 ### ✅ Dashboard
 Your home page. Shows a greeting, today's attendance, hours logged this week, leave balance, items waiting for your approval, upcoming events and birthdays, and recent activity. Managers and admins also see team and firm figures. Everything shown comes from real records and refreshes every 30 seconds.
@@ -85,13 +83,12 @@ Your daily check-in and check-out.
 
 ### ✅ My Portal
 Your personal area, with tabs:
-- **Profile** — your details, photo, and change password. Details are read-only here for now, because saving them on the current server wipes reporting lines (fixed in the new server). Ask HR to change details.
+- **Profile** — your personal details, emergency contacts, bank details, address, photo, documents, and change password. Saving your profile updates only your personal details without touching reporting lines or role settings.
 - **Leave** — apply for leave, see your balance and history, edit or cancel pending requests.
   - Leave counts **working days only**: weekends and firm holidays on the calendar are not deducted.
   - A half day must fall on a working day.
   - Managers, partners and HR approve or reject team requests under **Team requests**.
-- **Reimbursements** — submit expense claims (travel, meals and so on) and track them through each stage: manager approval → finance → paid. Approvers see only the actions that fit their stage. Export to CSV is available.
-  - Receipt upload is hidden for now because the current server does not save the file. It returns with the new server.
+- **Reimbursements** — submit expense claims (travel, meals and so on) with **receipt file attachments** (PDF/images) and track them through each stage: manager approval → finance → paid. Approvers see only the actions that fit their stage. Export to CSV is available.
 - **Reports** — see below.
 
 ### ✅ Inbox
@@ -105,7 +102,7 @@ All your notifications in one place (the bell shows the latest ones).
 The firm calendar.
 - Month view with **holidays** (red), **meetings** (blue) and **events** (green). This month's birthdays are shown too.
 - Click a day to see what's on it; **Coming up** lists the next 60 days.
-- Admin, HR, partners, managers and the owner can **add** or **remove** events. Events can't be edited (the server has no edit option), so remove and add again to change one.
+- Admin, HR, partners, managers and the owner can **add**, **edit** or **remove** events.
 - Holidays added here are automatically **not counted** when someone applies for leave over them.
 
 ### ✅ Compliance
@@ -135,7 +132,7 @@ Under **My Portal → Reports** (Admin, Owner, HR, IT, managers, partners, and a
 - A chart of hours per day (or per week for longer periods), split into billable and non-billable.
 - **Where the time went:** hours by client, project, job or person.
 - **Export entries** downloads every timesheet line in the period as a spreadsheet (CSV).
-- Whose data you see is written at the top: Admin/Owner see **everyone**, managers and partners see **their team**, everyone else sees **their own** entries. HR and IT currently see only their own timesheet lines because of a limit in the current server; the new server will fix this.
+- Whose data you see is written at the top: Admin, Owner, HR and IT see **everyone across the firm**, managers and partners see **their team**, and everyone else sees **their own** entries.
 - Admin, Owner, HR and IT also see attendance, leave and expense-claim totals for the period.
 
 ### ✅ Asset Management / My assets
@@ -147,7 +144,7 @@ Under **My Portal → Reports** (Admin, Owner, HR, IT, managers, partners, and a
 - **Overview**: assets in service, how many are with people, available or in maintenance, warranties ending in the next 60 days, assets by category, open requests and recent assignments. All counted from the real records.
 - **Inventory**: every asset with search and filters. Add or edit assets, **assign** an available asset to someone, send it for maintenance, **retire** it or mark it **lost** (it stays on record with its history), or bring it back into stock. Export to Excel.
 - **Assignments**: who has what right now, and the history. **Take back** an asset (with its condition) or **transfer** it to someone else.
-- **Requests** (Admin and HR): approve or reject requests, then **hand over** an available asset, which assigns it and closes the request in one step.
+- **Requests** (Admin, HR and IT): approve or reject requests, then **hand over** an available asset, which assigns it and closes the request in one step.
 - **Maintenance**: log repairs, servicing and upgrades; mark them in progress and completed (the asset returns to its previous status).
 - **Vendors**: suppliers with contact details and GSTIN; a vendor with assets linked can't be deleted.
 - **Setup**: the lists of categories, types (for example Laptop → Dell Latitude) and locations used in the forms.
@@ -161,28 +158,28 @@ Settings and health of the portal. Each tab appears only for the roles that can 
 |---|---|---|
 | **Overview** | Everyone in Administration | Real record counts (employees, clients, projects, timesheet entries) and server, database and storage health for Admin, Owner and IT. |
 | **Masters** | View: Admin, Owner, IT, HR · Change: Admin, IT | Roles (with a short code), designations, departments, employment types, shifts (with hours) and locations. Deactivate things that are no longer used; something still in use can't be deleted. |
-| **Users & access** | Admin, Owner | Give a person, or everyone with a role, access to modules (view / add / edit / delete). A person's own list replaces their role's list. Nobody can change their own access. |
-| **Hierarchy** | Admin, Owner, IT, HR | Who reports to whom, team sizes, and a warning listing active people with **no manager or partner** (nobody can approve their work). Read-only for now. |
-| **Biometric devices** | Admin, IT | ESSL machines (add, test connection, enable or disable) and linking each device ID to the right employee, including auto-match by name. |
-| **Server & storage** | Admin, Owner, IT | Server, memory and database health, uploaded files by folder, and clearing temporary files or old logs. |
-| **Email** | Admin | Whether the sending mailbox is connected, a "send me a test" button, and editing the email templates (with a warning for unknown placeholders). |
-
-Things that stay in the current portal until the new server is ready: changing reporting lines, connecting the Outlook mailbox, and pulling punches from biometric devices (the current server only simulates this).
+| **Users & access** | Admin, Owner | Give a person, or everyone with a role, access to modules (view / add / edit / delete), including **Jobs** and **Analytics**. A person's own list replaces their role's list. Nobody can change their own access. |
+| **Hierarchy** | Admin, Owner, IT, HR | Who reports to whom, team sizes, a warning listing active people with **no manager or partner**, and **Edit reporting** so Admin, Owner and HR can assign primary/secondary managers and partners directly. |
+| **Biometric devices** | Admin, IT | ESSL machines (add, test connection, pull punches, enable or disable) and linking each device ID to the right employee, including auto-match by name. |
+| **Server & storage** | Admin, Owner, IT | Server, memory and database health (including Help Desk ticket counts), uploaded files browser by folder with **single-file deletion**, and clearing temporary files or old logs. |
+| **Email** | Admin | Connect or disconnect the sending mailbox (Microsoft 365, Google Workspace or SMTP), send a test email, edit email templates (with a warning for unknown placeholders), and inspect the **Delivery log**. |
 
 ### ✅ Accounts & Finance
-For Admin and the accounts team. As today, an accounts role sees it in the menu once Admin turns on **Accounts & Finance** for them (or their role) in Administration → Users & access. HR and Owner can't use it; the server refuses them.
+For Admin, Owner and the accounts team (`accounts`, `accounts_admin`, `accounts_manager`, `accounts_executive`, `finance_approver`, `ar_manager`, `ap_manager`, `accountant`, or anyone with **Accounts & Finance** access enabled).
 
-All amounts are shown in ₹, each document at its own exchange rate. **Drafts and cancelled invoices are never counted.** Every figure is worked out from the invoices and receipts themselves, because the current server's own totals are wrong in several places.
+All amounts are shown in ₹, each document at its own exchange rate. **Drafts and cancelled invoices are never counted.**
 
 - **Overview**: money to be collected, how much is overdue, billed and collected this month, receivables by how late they are (by due date), who owes the most, and the most overdue invoices.
 - **Invoices**: create an invoice (billing entity, client, optional project and UDIN, dates, currency and rate, line items with SAC and GST rate). The preview shows CGST + SGST or IGST exactly as it will be saved. It starts as a **draft**, which can be edited or deleted. **Mark as sent** makes it count as billed; after that it can't be edited, only cancelled (if nothing has been paid). **Print / PDF** gives a clean A4 tax invoice with bank details and the amount in words. Export to CSV.
-- **Receipts**: record money received. The server always applies a receipt to the client's **oldest** unpaid invoices first, so the form shows exactly where the money will go. It **refuses** if that would touch a draft or an invoice in another currency.
-- **Client statements**: issued invoices and receipts for one client, with opening and closing balance in ₹, for any period. Export to CSV.
-- **GST**: output tax by month, quarter or financial year, per billing entity, split into B2B and B2C/export, with taxable value, CGST, SGST and IGST. Export to CSV.
-- **Revenue & expenses**: billed and collected by month for a financial year, billed by client, and expense claims paid by category. Salaries and other costs aren't in the portal, so this is clearly **not** a full profit and loss.
+- **Receipts**: record money received. You can allocate receipts against **specific invoices** (with custom amounts) or automatically apply to the client's oldest unpaid invoices first.
+- **Bank & reconciliation**: import real CSV bank statements (with client-side parsing and column preview), add manual credit/debit lines, **auto-match** deposits against open invoices (creating receipts and allocations in a single transaction), or **manually reconcile** bank lines to invoices, payroll runs, clients or employees.
+- **Payroll & payables**: generate monthly employee salary runs (basic salary, allowances, deductions), mark runs paid (with automatic employee ledger postings), and manage the approved expense claims payout queue.
+- **Statements & ledgers**: switch between **Client statements**, **Employee ledger**, and the **General ledger**, with running balances, CSV export, and manual journal entry posting.
+- **GST & tax**: output tax by month, quarter or financial year, per billing entity, split into B2B and B2C/export, with taxable value, CGST, SGST and IGST, plus **Configured GST & TDS tax slabs** management.
+- **Revenue & expenses**: billed and collected by month for a financial year, billed by client, and expense claims paid by category.
+- **Currencies**: configure currencies (INR, USD, EUR, GBP, AED, SGD, etc.) and record historical exchange rates to INR.
+- **Audit log**: searchable, filterable finance audit trail recording every invoice, receipt, bank reconciliation, payroll, ledger, tax, and currency action.
 - **Billing entities**: the firm's legal entities with GSTIN and PAN (checked against each other), address, the bank account printed on invoices, and the invoice-number prefix and format. Entities are deactivated, never deleted.
-
-**Stays in the current portal until the new server** (the page explains why): bank import and reconciliation (the current one ignores the uploaded file), payables and payments, the claims approval queue (approving there breaks part-way; approve claims from Reimbursements instead), employee ledgers and currency rates. Invoices are also not emailed from the portal yet: download the PDF and send it.
 
 ---
 
@@ -191,7 +188,7 @@ All amounts are shown in ₹, each document at its own exchange rate. **Drafts a
 - **No fake numbers.** Every figure comes from the database. If there is nothing, the screen says so.
 - **Nothing is deleted by surprise.** Deleting always asks for confirmation, and records with history are deactivated instead.
 - **Only in-portal links are followed** from notifications, to block phishing links.
-- **Problems found in the current server** are recorded in `docs/BACKEND_FINDINGS.md`. The urgent ones affecting the live portal today are in `docs/URGENT_SECURITY_HOTFIX.md`, which someone with server access should apply soon.
+- **Every issue recorded in `docs/BACKEND_FINDINGS.md`** has been fixed in both the new `apps/api` server and backported to `legacy/timesheet-backend`.
 
 ---
 
@@ -200,13 +197,11 @@ All amounts are shown in ₹, each document at its own exchange rate. **Drafts a
 | Phase | What | Status |
 |---|---|---|
 | 0 | Set up tools and the new project folder | Done |
-| 1 | Copy of real data on a local computer for testing | Waiting for the database backup and uploads folder |
-| 2 | New website on top of the current server | Done — every module built (a few Accounts screens wait for the new server) |
-| 3 | New, safer server (same database) that fixes every recorded problem | Next |
-| 4 | Hosting set-up (servers, storage, backups) | After Phase 3 |
-| 5 | Full testing with real users, then switch the live portal over | Last |
-
-The live portal is **not changed** until Phase 5.
+| 1 | Copy of real data on a local computer for testing | Done (local PostgreSQL `timesheet` DB + seed scripts) |
+| 2 | New website (`apps/web`) | Done — every module and sub-tab built |
+| 3 | New, safer server (`apps/api`, same database) that fixes every recorded problem | Done |
+| 4 | Hosting set-up (servers, storage, backups) | Next |
+| 5 | Full testing with real users, then switch the live portal over | After Phase 4 |
 
 ---
 
@@ -214,16 +209,24 @@ The live portal is **not changed** until Phase 5.
 
 You need: Node.js 20 or newer, and PostgreSQL 16 with the local `timesheet` database.
 
-1. **Start the current server** (in `legacy/timesheet-backend`): `npm run dev:fallback` → runs at http://127.0.0.1:5000
-2. **Start the new website** (in `apps/web`): `npx next dev --port 3000` → open http://localhost:3000
+### Option A: Start both API and Web together from the root folder
+```bash
+npm run dev
+```
+This launches both `apps/api` (`http://127.0.0.1:5000`) and `apps/web` (`http://localhost:3000`) concurrently.
+
+### Option B: Start each service separately
+1. **Start the new API server** (in `apps/api`): `npm run dev` → runs at http://127.0.0.1:5000
+2. **Start the new website** (in `apps/web`): `npm run dev` → open http://localhost:3000
 3. **Sign in** with one of the local test accounts (`_local/sample-logins.txt` — kept private, never uploaded).
 
 ### Folder guide
 
 | Folder | What's inside |
 |---|---|
-| `apps/web` | The new ASA Portal website |
-| `legacy/timesheet-backend` | The current server, used as-is for now |
+| `apps/web` | The new ASA Portal website (Next.js 16 + React 19) |
+| `apps/api` | The new Phase 3 ASA Portal API server (Fastify 5 + Prisma + Socket.IO) |
+| `legacy/timesheet-backend` | The legacy Express server (also patched with security & bug fixes) |
 | `legacy/timesheet-frontend` | The old website, kept for reference |
 | `docs` | This guide, backend findings and the security hot-fix note |
 | `_local` | Private local files (passwords, test logins, backups). **Never uploaded** |
