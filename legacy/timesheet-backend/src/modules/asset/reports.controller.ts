@@ -3,6 +3,12 @@ import { prisma } from '../../config/prisma';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 
+const sanitizeReportEmployee = (emp: any) => {
+  if (!emp || typeof emp !== 'object') return emp;
+  const { password, ...safeEmp } = emp;
+  return safeEmp;
+};
+
 export const getReportData = async (req: Request, res: Response) => {
   try {
     const { type, startDate, endDate, category } = req.query;
@@ -22,7 +28,7 @@ export const getReportData = async (req: Request, res: Response) => {
         if (category && category !== 'All') {
           where.category = category as string;
         }
-        data = await prisma.assetInventory.findMany({
+        const rows = await prisma.assetInventory.findMany({
           where,
           include: {
             allocations: {
@@ -32,6 +38,15 @@ export const getReportData = async (req: Request, res: Response) => {
           },
           orderBy: { createdAt: 'desc' }
         });
+        data = rows.map((row: any) => ({
+          ...row,
+          allocations: Array.isArray(row.allocations)
+            ? row.allocations.map((alloc: any) => ({
+                ...alloc,
+                employee: sanitizeReportEmployee(alloc.employee)
+              }))
+            : row.allocations
+        }));
         break;
       }
       case 'Assignment': {
@@ -39,7 +54,7 @@ export const getReportData = async (req: Request, res: Response) => {
         if (startDate || endDate) {
           where.allocatedAt = dateFilter;
         }
-        data = await prisma.assetAllocation.findMany({
+        const rows = await prisma.assetAllocation.findMany({
           where,
           include: {
             employee: true,
@@ -47,6 +62,10 @@ export const getReportData = async (req: Request, res: Response) => {
           },
           orderBy: { allocatedAt: 'desc' }
         });
+        data = rows.map((row: any) => ({
+          ...row,
+          employee: sanitizeReportEmployee(row.employee)
+        }));
         break;
       }
       case 'Maintenance': {
@@ -68,13 +87,17 @@ export const getReportData = async (req: Request, res: Response) => {
         if (startDate || endDate) {
           where.createdAt = dateFilter;
         }
-        data = await prisma.ticket.findMany({
+        const rows = await prisma.ticket.findMany({
           where,
           include: {
             createdBy: true
           },
           orderBy: { createdAt: 'desc' }
         });
+        data = rows.map((row: any) => ({
+          ...row,
+          createdBy: sanitizeReportEmployee(row.createdBy)
+        }));
         break;
       }
       case 'Inventory':

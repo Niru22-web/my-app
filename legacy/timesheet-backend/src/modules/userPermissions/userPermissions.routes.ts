@@ -21,14 +21,16 @@ router.get("/users", authorize(["admin", "manager", "partner", "owner"]), getAll
 // Get permissions for a specific user (admin only)
 router.get("/user-permissions/:userId", authorize(["admin", "manager", "partner", "owner"]), getUserPermissions);
 
-// Save permissions for a user (admin only)
-router.post("/user-permissions", authorize(["admin", "manager", "partner", "owner"]), saveUserPermissions);
+// Save permissions for a user (admin/owner only)
+router.post("/user-permissions", authorize(["admin", "owner"]), saveUserPermissions);
+router.put("/user-permissions/:userId", authorize(["admin", "owner"]), saveUserPermissions);
 
 // Get role-based permissions (admin only)
 router.get("/role-permissions/:role", authorize(["admin", "manager", "partner", "owner"]), getRolePermissions);
 
-// Save role-based permissions (admin only)
-router.post("/role-permissions", authorize(["admin", "manager", "partner", "owner"]), saveRolePermissions);
+// Save role-based permissions (admin/owner only)
+router.post("/role-permissions", authorize(["admin", "owner"]), saveRolePermissions);
+router.put("/role-permissions/:role", authorize(["admin", "owner"]), saveRolePermissions);
 
 // Get current user's permissions (for route guards)
 router.get("/my-permissions", getCurrentUserPermissions);

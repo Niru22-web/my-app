@@ -83,6 +83,9 @@ export const getUserPermissions = async (req: Request, res: Response) => {
         clientsCreate: true,
         clientsEdit: true,
         clientsDelete: true,
+        jobsView: true,
+        jobsCreate: true,
+        jobsEdit: true,
         jobsDelete: true,
         analyticsView: true,
         reimbursementView: true,
@@ -151,10 +154,10 @@ export const getUserPermissions = async (req: Request, res: Response) => {
     const modulePermissions = allModules.map(({ moduleName, viewField, createField, editField, deleteField }) => {
       return {
         moduleName,
-        canView: permission ? permission[viewField as keyof typeof permission] : false,
-        canCreate: permission ? permission[createField as keyof typeof permission] : false,
-        canEdit: permission ? permission[editField as keyof typeof permission] : false,
-        canDelete: permission ? permission[deleteField as keyof typeof permission] : false
+        canView: permission ? Boolean(permission[viewField as keyof typeof permission]) : false,
+        canCreate: permission && createField !== viewField ? Boolean(permission[createField as keyof typeof permission]) : false,
+        canEdit: permission && editField !== viewField ? Boolean(permission[editField as keyof typeof permission]) : false,
+        canDelete: permission && deleteField !== viewField ? Boolean(permission[deleteField as keyof typeof permission]) : false
       };
     });
 
@@ -174,12 +177,21 @@ export const getUserPermissions = async (req: Request, res: Response) => {
 // Save or update permissions for a user
 export const saveUserPermissions = async (req: Request, res: Response) => {
   try {
-    const { userId, permissions } = req.body;
+    const userId = req.body.userId || req.params.userId;
+    const { permissions } = req.body;
 
     if (!userId || !permissions) {
       return res.status(400).json({
         success: false,
         message: "User ID and permissions are required"
+      });
+    }
+
+    // Prevent a user from modifying their own permissions (AD3)
+    if (userId === (req as any).user?.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You cannot modify your own permissions"
       });
     }
 
@@ -202,9 +214,15 @@ export const saveUserPermissions = async (req: Request, res: Response) => {
       const fieldMapping = getFieldMappingForModule(permission.moduleName);
       if (fieldMapping) {
         permissionData[fieldMapping.view] = permission.canView || false;
-        permissionData[fieldMapping.create] = permission.canCreate || false;
-        permissionData[fieldMapping.edit] = permission.canEdit || false;
-        permissionData[fieldMapping.delete] = permission.canDelete || false;
+        if (fieldMapping.create && fieldMapping.create !== fieldMapping.view) {
+          permissionData[fieldMapping.create] = permission.canCreate || false;
+        }
+        if (fieldMapping.edit && fieldMapping.edit !== fieldMapping.view) {
+          permissionData[fieldMapping.edit] = permission.canEdit || false;
+        }
+        if (fieldMapping.delete && fieldMapping.delete !== fieldMapping.view) {
+          permissionData[fieldMapping.delete] = permission.canDelete || false;
+        }
       }
     });
 
@@ -378,8 +396,85 @@ export const getCurrentUserPermissions = async (req: any, res: Response) => {
     const userId = req.user.id;
 
     // Get user-specific permissions
+    const permissionSelect = {
+      dashboardView: true,
+      dashboardCreate: true,
+      dashboardEdit: true,
+      dashboardDelete: true,
+      timesheetView: true,
+      timesheetCreate: true,
+      timesheetEdit: true,
+      timesheetDelete: true,
+      projectsView: true,
+      projectsCreate: true,
+      projectsEdit: true,
+      projectsDelete: true,
+      reportsView: true,
+      reportsCreate: true,
+      reportsEdit: true,
+      reportsDelete: true,
+      employeesView: true,
+      employeesCreate: true,
+      employeesEdit: true,
+      employeesDelete: true,
+      adminPanelView: true,
+      adminPanelCreate: true,
+      adminPanelEdit: true,
+      adminPanelDelete: true,
+      emailTemplatesView: true,
+      emailTemplatesCreate: true,
+      emailTemplatesEdit: true,
+      emailTemplatesDelete: true,
+      clientsView: true,
+      clientsCreate: true,
+      clientsEdit: true,
+      clientsDelete: true,
+      jobsView: true,
+      jobsCreate: true,
+      jobsEdit: true,
+      jobsDelete: true,
+      analyticsView: true,
+      reimbursementView: true,
+      reimbursementCreate: true,
+      reimbursementEdit: true,
+      reimbursementDelete: true,
+      leaveManagementView: true,
+      leaveManagementCreate: true,
+      leaveManagementEdit: true,
+      leaveManagementDelete: true,
+      attendanceView: true,
+      attendanceCreate: true,
+      attendanceEdit: true,
+      attendanceDelete: true,
+      inboxView: true,
+      inboxCreate: true,
+      inboxEdit: true,
+      inboxDelete: true,
+      calendarView: true,
+      calendarCreate: true,
+      calendarEdit: true,
+      calendarDelete: true,
+      complianceView: true,
+      complianceCreate: true,
+      complianceEdit: true,
+      complianceDelete: true,
+      helpDeskView: true,
+      helpDeskCreate: true,
+      helpDeskEdit: true,
+      helpDeskDelete: true,
+      assetManagementView: true,
+      assetManagementCreate: true,
+      assetManagementEdit: true,
+      assetManagementDelete: true,
+      accountsView: true,
+      accountsCreate: true,
+      accountsEdit: true,
+      accountsDelete: true
+    };
+
     const userPermission = await prisma.userPermission.findUnique({
-      where: { userId }
+      where: { userId },
+      select: permissionSelect
     });
 
     // Get role-based permissions as fallback - handle casing
@@ -390,7 +485,8 @@ export const getCurrentUserPermissions = async (req: any, res: Response) => {
           equals: userRole,
           mode: 'insensitive'
         }
-      }
+      },
+      select: permissionSelect
     });
 
     // Priority logic: user-specific permissions override role permissions
@@ -425,9 +521,9 @@ export const getCurrentUserPermissions = async (req: any, res: Response) => {
       if (permission) {
         permissionMap[mod.name] = {
           canView: !!permission[mod.view],
-          canCreate: !!permission[mod.create] || !!permission[mod.edit],
-          canEdit: !!permission[mod.edit],
-          canDelete: !!permission[mod.del] || false,
+          canCreate: mod.create !== mod.view ? (!!permission[mod.create] || !!permission[mod.edit]) : false,
+          canEdit: mod.edit !== mod.view ? !!permission[mod.edit] : false,
+          canDelete: mod.del !== mod.view ? (!!permission[mod.del] || false) : false,
         };
       } else {
         // Safe defaults if no record in DB
@@ -554,6 +650,9 @@ export const getRolePermissions = async (req: Request, res: Response) => {
         clientsCreate: true,
         clientsEdit: true,
         clientsDelete: true,
+        jobsView: true,
+        jobsCreate: true,
+        jobsEdit: true,
         jobsDelete: true,
         analyticsView: true,
         reimbursementView: true,
@@ -622,10 +721,10 @@ export const getRolePermissions = async (req: Request, res: Response) => {
     const modulePermissions = allModules.map(({ moduleName, viewField, createField, editField, deleteField }) => {
       return {
         moduleName,
-        canView: permission ? permission[viewField as keyof typeof permission] : false,
-        canCreate: permission ? permission[createField as keyof typeof permission] : false,
-        canEdit: permission ? permission[editField as keyof typeof permission] : false,
-        canDelete: permission ? permission[deleteField as keyof typeof permission] : false
+        canView: permission ? Boolean(permission[viewField as keyof typeof permission]) : false,
+        canCreate: permission && createField !== viewField ? Boolean(permission[createField as keyof typeof permission]) : false,
+        canEdit: permission && editField !== viewField ? Boolean(permission[editField as keyof typeof permission]) : false,
+        canDelete: permission && deleteField !== viewField ? Boolean(permission[deleteField as keyof typeof permission]) : false
       };
     });
 
@@ -645,7 +744,8 @@ export const getRolePermissions = async (req: Request, res: Response) => {
 // Save or update role permissions
 export const saveRolePermissions = async (req: Request, res: Response) => {
   try {
-    const { role, permissions } = req.body;
+    const role = req.body.role || req.params.role;
+    const { permissions } = req.body;
 
     if (!role || !permissions) {
       return res.status(400).json({
@@ -661,9 +761,15 @@ export const saveRolePermissions = async (req: Request, res: Response) => {
       const fieldMapping = getFieldMappingForModule(permission.moduleName);
       if (fieldMapping) {
         permissionData[fieldMapping.view] = permission.canView || false;
-        permissionData[fieldMapping.create] = permission.canCreate || false;
-        permissionData[fieldMapping.edit] = permission.canEdit || false;
-        permissionData[fieldMapping.delete] = permission.canDelete || false;
+        if (fieldMapping.create && fieldMapping.create !== fieldMapping.view) {
+          permissionData[fieldMapping.create] = permission.canCreate || false;
+        }
+        if (fieldMapping.edit && fieldMapping.edit !== fieldMapping.view) {
+          permissionData[fieldMapping.edit] = permission.canEdit || false;
+        }
+        if (fieldMapping.delete && fieldMapping.delete !== fieldMapping.view) {
+          permissionData[fieldMapping.delete] = permission.canDelete || false;
+        }
       }
     });
 

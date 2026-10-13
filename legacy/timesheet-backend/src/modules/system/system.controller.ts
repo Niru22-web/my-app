@@ -106,7 +106,7 @@ export const getSystemStatus = async (req: Request, res: Response) => {
         const [empCount, timeCount, tktCount, leaveCount, attCount, clientCount, projCount, notifCount] = await Promise.all([
           prisma.employee.count(),
           prisma.timelog.count(),
-          (prisma as any).supportTicket ? (prisma as any).supportTicket.count() : 0,
+          prisma.ticket.count(),
           prisma.leave.count(),
           prisma.attendance.count(),
           prisma.client.count(),
@@ -233,15 +233,28 @@ export const getSystemStatus = async (req: Request, res: Response) => {
 export const getStorageFiles = async (req: Request, res: Response) => {
   try {
     const { category = 'all', search = '', page = '1', limit = '50' } = req.query;
+    const categoryStr = String(category);
+    const allowedCategories = ['all', 'profile', 'documents', 'tickets', 'temp', 'logs'];
+    if (
+      !allowedCategories.includes(categoryStr) ||
+      categoryStr.includes('..') ||
+      categoryStr.includes('/') ||
+      categoryStr.includes('\\')
+    ) {
+      return res.status(400).json({ success: false, message: 'Invalid storage category' });
+    }
+
     const pageNum = parseInt(page as string, 10) || 1;
     const limitNum = parseInt(limit as string, 10) || 50;
 
     const uploadsDir = getUploadsDir();
     const allFiles: FileItem[] = [];
 
-    const targetCategories = category === 'all' 
+    const targetCategories = categoryStr === 'all'
       ? ['profile', 'documents', 'tickets', 'temp']
-      : [category as string];
+      : categoryStr === 'logs'
+        ? []
+        : [categoryStr];
 
     for (const cat of targetCategories) {
       const catPath = path.join(uploadsDir, cat);
@@ -251,7 +264,7 @@ export const getStorageFiles = async (req: Request, res: Response) => {
     }
 
     // Also include logs if category is logs or all
-    if (category === 'all' || category === 'logs') {
+    if (categoryStr === 'all' || categoryStr === 'logs') {
       const logsDir = path.join(process.cwd(), 'logs');
       if (fs.existsSync(logsDir)) {
         scanDirectory(logsDir, process.cwd(), 'logs', allFiles);
@@ -295,22 +308,30 @@ export const deleteStorageFile = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'File path is required' });
     }
 
-    // Security guard: Prevent directory traversal
-    const safeRelPath = relativePath.replace(/^(\.\.[\/\\])+/, '').replace(/^[\\\/]+/, '');
+    if (relativePath.includes('..') || relativePath.includes('\0')) {
+      return res.status(403).json({ success: false, message: 'Access denied: Invalid file path' });
+    }
+
     const uploadsDir = getUploadsDir();
-    
-    let targetFilePath = path.join(uploadsDir, safeRelPath);
+    const logsDir = path.join(process.cwd(), 'logs');
+    const resolvedUploadsDir = path.resolve(uploadsDir);
+    const resolvedLogsDir = path.resolve(logsDir);
+
+    const cleanRelPath = relativePath.replace(/^[\\\/]+/, '');
+    let targetFilePath = path.join(uploadsDir, cleanRelPath);
 
     if (category === 'logs') {
-      targetFilePath = path.join(process.cwd(), safeRelPath);
+      targetFilePath = cleanRelPath.startsWith('logs/') || cleanRelPath.startsWith('logs\\')
+        ? path.join(process.cwd(), cleanRelPath)
+        : path.join(logsDir, cleanRelPath);
     }
 
     const resolvedPath = path.resolve(targetFilePath);
-    const resolvedUploadsDir = path.resolve(uploadsDir);
-    const resolvedLogsDir = path.resolve(path.join(process.cwd(), 'logs'));
 
     // Check that resolved path is safely inside uploads or logs
-    const isSafe = resolvedPath.startsWith(resolvedUploadsDir) || resolvedPath.startsWith(resolvedLogsDir);
+    const isSafe =
+      resolvedPath.startsWith(resolvedUploadsDir + path.sep) ||
+      (category === 'logs' && resolvedPath.startsWith(resolvedLogsDir + path.sep));
     if (!isSafe) {
       return res.status(403).json({ success: false, message: 'Access denied: Invalid file path' });
     }

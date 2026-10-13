@@ -261,6 +261,90 @@ export const getAllReimbursements = async (req: Request, res: Response) => {
   }
 };
 
+const ACCOUNTS_ROLES = [
+  'ACCOUNTS',
+  'ACCOUNTS_ADMIN',
+  'ACCOUNTS_MANAGER',
+  'ACCOUNTS_EXECUTIVE',
+  'FINANCE_APPROVER',
+  'FINANCE MANAGER',
+  'FINANCE_MANAGER',
+  'AR_MANAGER',
+  'AP_MANAGER',
+  'ACCOUNTANT',
+  'CFO'
+];
+
+const APPROVER_ROLES = [
+  'MANAGER',
+  'SUB MANAGER',
+  'SUB-MANAGER',
+  'PARTNER',
+  'ADMIN',
+  'OWNER',
+  'HR',
+  ...ACCOUNTS_ROLES
+];
+
+const PAID_ROLES = [
+  'ADMIN',
+  'OWNER',
+  ...ACCOUNTS_ROLES
+];
+
+const sanitizeClaimEmployee = (claim: any) => {
+  if (!claim || typeof claim !== 'object') return claim;
+  const copy = { ...claim };
+  if (copy.employee && typeof copy.employee === 'object') {
+    const { password, ...safeEmp } = copy.employee;
+    copy.employee = safeEmp;
+  }
+  if (copy.manager && typeof copy.manager === 'object') {
+    const { password, ...safeMgr } = copy.manager;
+    copy.manager = safeMgr;
+  }
+  if (copy.partner && typeof copy.partner === 'object') {
+    const { password, ...safePtr } = copy.partner;
+    copy.partner = safePtr;
+  }
+  return copy;
+};
+
+const extractUploadedFiles = (req: Request): Express.Multer.File[] => {
+  const files: Express.Multer.File[] = [];
+  if ((req as any).file) {
+    files.push((req as any).file);
+  }
+  const reqFiles = (req as any).files;
+  if (Array.isArray(reqFiles)) {
+    files.push(...reqFiles);
+  } else if (reqFiles && typeof reqFiles === 'object') {
+    Object.values(reqFiles).forEach((arr: any) => {
+      if (Array.isArray(arr)) files.push(...arr);
+    });
+  }
+  return files;
+};
+
+const persistAttachmentsForClaim = async (reimbursementId: string, req: Request) => {
+  const uploadedFiles = extractUploadedFiles(req);
+  for (const file of uploadedFiles) {
+    const fileName = file.originalname || file.filename || 'receipt';
+    const filePath = file.filename
+      ? `/uploads/reimbursements/${file.filename}`
+      : file.path || `/uploads/reimbursements/${fileName}`;
+    await prisma.reimbursementAttachment.create({
+      data: {
+        reimbursementId,
+        fileName,
+        filePath,
+        fileSize: file.size || 0,
+        mimeType: file.mimetype || 'application/octet-stream'
+      }
+    });
+  }
+};
+
 export const createReimbursement = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -310,6 +394,13 @@ export const createReimbursement = async (req: Request, res: Response) => {
       }
     });
 
+    await persistAttachmentsForClaim(newClaim.id, req);
+
+    const claimWithAttachments = await prisma.reimbursement.findUnique({
+      where: { id: newClaim.id },
+      include: { attachments: true }
+    });
+
     // Notify Managers & Sub Manager
     const allManagerIds = new Set<string>();
     if ((employee as any)?.managers) {
@@ -332,7 +423,7 @@ export const createReimbursement = async (req: Request, res: Response) => {
       ));
     }
     
-    return res.status(201).json({ success: true, data: newClaim, message: 'Reimbursement submitted' });
+    return res.status(201).json({ success: true, data: claimWithAttachments || newClaim, message: 'Reimbursement submitted' });
   } catch (error: any) {
     console.error("🔥 [createReimbursement] Error:", error.message);
     return res.status(500).json({ success: false, message: "Error creating claim" });
@@ -340,16 +431,16 @@ export const createReimbursement = async (req: Request, res: Response) => {
 };
 
 const hasWritePermission = async (existingClaim: any, user: any): Promise<boolean> => {
-  const userRole = user.role?.toUpperCase();
+  const userRole = user.role?.toUpperCase()?.trim() || '';
   // 1. Creator of the claim
   if (existingClaim.employeeId === user.id) return true;
   // 2. Power users (Admin, Partner, Owner, HR, Accountant, Finance Manager, Accounts)
-  if (['ADMIN', 'PARTNER', 'OWNER', 'HR', 'ACCOUNTANT', 'FINANCE MANAGER', 'ACCOUNTS'].includes(userRole)) return true;
+  if (['ADMIN', 'PARTNER', 'OWNER', 'HR', ...ACCOUNTS_ROLES].includes(userRole)) return true;
   // 3. Designated Manager or Partner
   if (existingClaim.managerId === user.id || existingClaim.partnerId === user.id) return true;
   
   // 4. Check if manager of the employee who submitted
-  if (userRole === 'MANAGER') {
+  if (userRole === 'MANAGER' || userRole === 'SUB MANAGER' || userRole === 'SUB-MANAGER') {
     const isEmpManager = await (prisma as any).employeeManager.findUnique({
       where: {
         employeeId_managerId: {
@@ -397,28 +488,71 @@ export const updateReimbursement = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
+    const currentStatus = (existingClaim.status || '').toUpperCase();
+    // Block edits of APPROVED or PAID claims (R4)
+    if (['APPROVED', 'PAID', 'APPROVED_DIRECTOR', 'APPROVED_CFO'].includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot edit a reimbursement claim that is already ${existingClaim.status}`
+      });
+    }
+
+    const userRole = (user.role || '').toUpperCase().trim();
+    const isOwnerOfClaim = existingClaim.employeeId === user.id;
+    if (isOwnerOfClaim && !['ADMIN', 'OWNER'].includes(userRole)) {
+      if (!['PENDING_MANAGER', 'SENT_BACK', 'PENDING'].includes(currentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `You can only edit your claim when its status is PENDING_MANAGER or SENT_BACK (current: ${existingClaim.status})`
+        });
+      }
+    }
+
     const updateData: any = {};
     if (category) updateData.category = category;
-    if (amount) updateData.amount = Number(amount);
-    if (description) updateData.description = description;
+    if (amount !== undefined) {
+      const parsedAmount = Number(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid amount." });
+      }
+      updateData.amount = parsedAmount;
+    }
+    if (description !== undefined) updateData.description = description;
     if (date) updateData.date = new Date(date);
-    if (clientId) updateData.clientId = isValidUUID(clientId) ? clientId : null;
-    if (projectId) updateData.projectId = isValidUUID(projectId) ? projectId : null;
-    if (jobId) updateData.jobId = isValidUUID(jobId) ? jobId : null;
+    if (clientId !== undefined) updateData.clientId = isValidUUID(clientId) ? clientId : null;
+    if (projectId !== undefined) updateData.projectId = isValidUUID(projectId) ? projectId : null;
+    if (jobId !== undefined) updateData.jobId = isValidUUID(jobId) ? jobId : null;
 
-    const updatedClaim = await prisma.reimbursement.update({
+    // When editing a SENT_BACK claim, reset its status to PENDING_MANAGER
+    let nextStatus = existingClaim.status;
+    let actionLabel = 'updated';
+    if (currentStatus === 'SENT_BACK') {
+      nextStatus = 'PENDING_MANAGER';
+      updateData.status = 'PENDING_MANAGER';
+      updateData.approvalLevel = 1;
+      actionLabel = 'resubmitted';
+    }
+
+    await prisma.reimbursement.update({
       where: { id },
       data: {
         ...updateData,
         logs: {
           create: {
-            action: 'updated',
-            status: existingClaim.status,
+            action: actionLabel,
+            status: nextStatus,
             performedById: user.id,
-            remarks: 'Reimbursement request updated'
+            remarks: currentStatus === 'SENT_BACK' ? 'Reimbursement request corrected and resubmitted' : 'Reimbursement request updated'
           }
         }
       }
+    });
+
+    await persistAttachmentsForClaim(id, req);
+
+    const updatedClaim = await prisma.reimbursement.findUnique({
+      where: { id },
+      include: { attachments: true }
     });
 
     return res.json({ success: true, data: updatedClaim, message: 'Reimbursement updated' });
@@ -441,6 +575,14 @@ export const deleteReimbursement = async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
+    const currentStatus = (existingClaim.status || '').toUpperCase();
+    if (['APPROVED', 'PAID', 'APPROVED_DIRECTOR', 'APPROVED_CFO'].includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete a reimbursement claim with status ${existingClaim.status}`
+      });
+    }
+
     await prisma.reimbursement.delete({ where: { id } });
 
     return res.json({ success: true, message: 'Reimbursement deleted' });
@@ -455,25 +597,35 @@ export const approveReimbursement = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { remarks } = req.body;
     const user = (req as any).user;
+    const userRole = (user?.role || '').toUpperCase().trim();
+
+    if (!APPROVER_ROLES.includes(userRole) && !user?.hasAccountsAccess) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to approve reimbursements." });
+    }
 
     const existingClaim = await prisma.reimbursement.findUnique({ where: { id } });
     if (!existingClaim) return res.status(404).json({ success: false, message: "Claim not found" });
 
+    // Prevent self-approval unless admin or owner
+    if (existingClaim.employeeId === user.id && !['ADMIN', 'OWNER'].includes(userRole)) {
+      return res.status(403).json({ success: false, message: "Forbidden: You cannot approve your own reimbursement claim." });
+    }
+
     let updateData: any = { remarks };
     let nextStatus = '';
 
-    const userRole = user.role?.toUpperCase();
-    const isManager = userRole === 'MANAGER' || 
+    const isManager = ['MANAGER', 'SUB MANAGER', 'SUB-MANAGER'].includes(userRole) || 
                       (existingClaim.managerId === user.id && existingClaim.status === 'PENDING_MANAGER') ||
-                      (await (prisma as any).employeeManager.findUnique({ 
+                      Boolean(await (prisma as any).employeeManager.findUnique({ 
                         where: { employeeId_managerId: { employeeId: existingClaim.employeeId, managerId: user.id } } 
                       }));
-    const isPartnerOrAdmin = ['PARTNER', 'ADMIN', 'OWNER'].includes(userRole) ||
-                             (await (prisma as any).employeePartner.findUnique({ 
+    const isPartnerOrAdmin = ['PARTNER', 'ADMIN', 'OWNER', 'HR', ...ACCOUNTS_ROLES].includes(userRole) ||
+                             Boolean(user?.hasAccountsAccess) ||
+                             Boolean(await (prisma as any).employeePartner.findUnique({ 
                                where: { employeeId_partnerId: { employeeId: existingClaim.employeeId, partnerId: user.id } } 
                              }));
 
-    if (isManager && existingClaim.status === 'PENDING_MANAGER') {
+    if (isManager && !isPartnerOrAdmin && existingClaim.status === 'PENDING_MANAGER') {
       nextStatus = 'MANAGER_APPROVED';
       updateData = {
         ...updateData,
@@ -510,7 +662,7 @@ export const approveReimbursement = async (req: Request, res: Response) => {
           }
         }
       },
-      include: { employee: true, manager: true, partner: true }
+      include: { employee: true, manager: true, partner: true, attachments: true }
     });
 
     // Notify Next level or Employee
@@ -534,7 +686,7 @@ export const approveReimbursement = async (req: Request, res: Response) => {
     }
 
     // Notify Manager if Sub Manager takes action
-    if ((claim.employee as any).subManagerId === user.id) {
+    if ((claim.employee as any)?.subManagerId === user.id) {
       const managers = await (prisma as any).employeeManager.findMany({
         where: { employeeId: claim.employeeId },
         select: { managerId: true }
@@ -551,7 +703,7 @@ export const approveReimbursement = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ success: true, data: claim, message: 'Reimbursement approved' });
+    return res.json({ success: true, data: sanitizeClaimEmployee(claim), message: 'Reimbursement approved' });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: "Error approving request" });
   }
@@ -562,6 +714,22 @@ export const rejectReimbursement = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { remarks } = req.body;
     const user = (req as any).user;
+    const userRole = (user?.role || '').toUpperCase().trim();
+
+    if (!APPROVER_ROLES.includes(userRole) && !user?.hasAccountsAccess) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to reject reimbursements." });
+    }
+
+    const existingClaim = await prisma.reimbursement.findUnique({ where: { id } });
+    if (!existingClaim) return res.status(404).json({ success: false, message: "Claim not found" });
+
+    if (existingClaim.employeeId === user.id && !['ADMIN', 'OWNER'].includes(userRole)) {
+      return res.status(403).json({ success: false, message: "Forbidden: You cannot reject your own reimbursement claim." });
+    }
+
+    if (['PAID', 'REJECTED'].includes((existingClaim.status || '').toUpperCase())) {
+      return res.status(400).json({ success: false, message: `Cannot reject a claim that is already ${existingClaim.status}` });
+    }
 
     const claim = await prisma.reimbursement.update({
       where: { id },
@@ -591,7 +759,7 @@ export const rejectReimbursement = async (req: Request, res: Response) => {
     });
 
     // Notify Manager if Sub Manager takes action
-    if ((claim.employee as any).subManagerId === user.id) {
+    if ((claim.employee as any)?.subManagerId === user.id) {
       const managers = await (prisma as any).employeeManager.findMany({
         where: { employeeId: claim.employeeId },
         select: { managerId: true }
@@ -608,7 +776,7 @@ export const rejectReimbursement = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ success: true, data: claim, message: 'Reimbursement rejected' });
+    return res.json({ success: true, data: sanitizeClaimEmployee(claim), message: 'Reimbursement rejected' });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: "Error rejecting request" });
   }
@@ -619,6 +787,22 @@ export const sendBackReimbursement = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { remarks } = req.body;
     const user = (req as any).user;
+    const userRole = (user?.role || '').toUpperCase().trim();
+
+    if (!APPROVER_ROLES.includes(userRole) && !user?.hasAccountsAccess) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to send back reimbursements." });
+    }
+
+    const existingClaim = await prisma.reimbursement.findUnique({ where: { id } });
+    if (!existingClaim) return res.status(404).json({ success: false, message: "Claim not found" });
+
+    if (existingClaim.employeeId === user.id && !['ADMIN', 'OWNER'].includes(userRole)) {
+      return res.status(403).json({ success: false, message: "Forbidden: You cannot send back your own reimbursement claim." });
+    }
+
+    if (['APPROVED', 'PAID', 'REJECTED'].includes((existingClaim.status || '').toUpperCase())) {
+      return res.status(400).json({ success: false, message: `Cannot send back a claim with status ${existingClaim.status}` });
+    }
 
     const claim = await prisma.reimbursement.update({
       where: { id },
@@ -654,25 +838,48 @@ export const bulkApproveReimbursements = async (req: Request, res: Response) => 
   try {
     const { ids, remarks } = req.body;
     const user = (req as any).user;
-    const userRole = user.role?.toLowerCase() || '';
+    const userRoleUpper = (user?.role || '').toUpperCase().trim();
+    const userRole = (user?.role || '').toLowerCase().trim();
+
+    if (!APPROVER_ROLES.includes(userRoleUpper) && !user?.hasAccountsAccess) {
+      return res.status(403).json({ success: false, message: "Forbidden: Insufficient permissions for bulk approval." });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: "No claim IDs provided for bulk approval." });
+    }
+
+    const existingClaims = await prisma.reimbursement.findMany({
+      where: { id: { in: ids } }
+    });
+
+    if (!['ADMIN', 'OWNER'].includes(userRoleUpper)) {
+      const hasSelfClaim = existingClaims.some((c) => c.employeeId === user.id);
+      if (hasSelfClaim) {
+        return res.status(403).json({ success: false, message: "Forbidden: You cannot approve your own reimbursement claim." });
+      }
+    }
+
+    const isFinalApprover = ['partner', 'admin', 'owner', 'hr'].includes(userRole) || ACCOUNTS_ROLES.includes(userRoleUpper);
+    const targetStatus = isFinalApprover ? 'APPROVED' : 'MANAGER_APPROVED';
 
     const results = await prisma.$transaction(
       ids.map((id: string) =>
         prisma.reimbursement.update({
           where: { id },
           data: {
-            status: ['partner', 'admin', 'owner'].includes(userRole) ? 'APPROVED' : 'MANAGER_APPROVED',
+            status: targetStatus,
             remarks,
-            managerApprovedBy: userRole === 'manager' ? user.id : undefined,
-            managerApprovedAt: userRole === 'manager' ? new Date() : undefined,
-            partnerApprovedBy: ['partner', 'admin', 'owner'].includes(userRole) ? user.id : undefined,
-            partnerApprovedAt: ['partner', 'admin', 'owner'].includes(userRole) ? new Date() : undefined,
-            approvedBy: ['partner', 'admin', 'owner'].includes(userRole) ? user.id : undefined,
-            approvedAt: ['partner', 'admin', 'owner'].includes(userRole) ? new Date() : undefined,
+            managerApprovedBy: !isFinalApprover ? user.id : undefined,
+            managerApprovedAt: !isFinalApprover ? new Date() : undefined,
+            partnerApprovedBy: isFinalApprover ? user.id : undefined,
+            partnerApprovedAt: isFinalApprover ? new Date() : undefined,
+            approvedBy: isFinalApprover ? user.id : undefined,
+            approvedAt: isFinalApprover ? new Date() : undefined,
             logs: {
               create: {
                 action: 'approved',
-                status: ['partner', 'admin', 'owner'].includes(userRole) ? 'APPROVED' : 'MANAGER_APPROVED',
+                status: targetStatus,
                 performedById: user.id,
                 remarks: remarks || 'Bulk approved'
               }
@@ -692,6 +899,26 @@ export const bulkRejectReimbursements = async (req: Request, res: Response) => {
   try {
     const { ids, remarks } = req.body;
     const user = (req as any).user;
+    const userRoleUpper = (user?.role || '').toUpperCase().trim();
+
+    if (!APPROVER_ROLES.includes(userRoleUpper) && !user?.hasAccountsAccess) {
+      return res.status(403).json({ success: false, message: "Forbidden: Insufficient permissions for bulk rejection." });
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: "No claim IDs provided for bulk rejection." });
+    }
+
+    const existingClaims = await prisma.reimbursement.findMany({
+      where: { id: { in: ids } }
+    });
+
+    if (!['ADMIN', 'OWNER'].includes(userRoleUpper)) {
+      const hasSelfClaim = existingClaims.some((c) => c.employeeId === user.id);
+      if (hasSelfClaim) {
+        return res.status(403).json({ success: false, message: "Forbidden: You cannot reject your own reimbursement claim." });
+      }
+    }
 
     const results = await prisma.$transaction(
       ids.map((id: string) =>
@@ -726,6 +953,35 @@ export const markAsPaid = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { paymentMode, bankReference, utrNumber, remarks } = req.body;
     const user = (req as any).user;
+    const userRoleUpper = (user?.role || '').toUpperCase().trim();
+
+    if (!PAID_ROLES.includes(userRoleUpper) && !user?.hasAccountsAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: Only Admin, Owner, or Accounts/Finance roles can mark reimbursements as paid."
+      });
+    }
+
+    const existingClaim = await prisma.reimbursement.findUnique({ where: { id } });
+    if (!existingClaim) return res.status(404).json({ success: false, message: "Claim not found" });
+
+    if (existingClaim.employeeId === user.id && !['ADMIN', 'OWNER'].includes(userRoleUpper)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You cannot mark your own reimbursement claim as paid."
+      });
+    }
+
+    const currentStatus = (existingClaim.status || '').toUpperCase();
+    if (currentStatus === 'PAID') {
+      return res.status(400).json({ success: false, message: "Claim is already marked as paid." });
+    }
+    if (!['APPROVED', 'APPROVED_DIRECTOR', 'APPROVED_CFO', 'PENDING_PAYMENT'].includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Only approved claims can be marked as paid (current status: ${existingClaim.status}).`
+      });
+    }
 
     const claim = await prisma.reimbursement.update({
       where: { id },
@@ -760,11 +1016,28 @@ export const markAsPaid = async (req: Request, res: Response) => {
       relatedId: claim.id
     });
 
-    return res.json({ success: true, data: claim, message: 'Reimbursement marked as paid' });
+    return res.json({ success: true, data: sanitizeClaimEmployee(claim), message: 'Reimbursement marked as paid' });
   } catch (error: any) {
     console.error("🔥 [markAsPaid] Error:", error.message);
     return res.status(500).json({ success: false, message: "Error marking as paid" });
   }
+};
+
+export const updateReimbursementStatus = async (req: Request, res: Response) => {
+  const targetStatus = String(req.body?.status || '').toUpperCase().trim();
+  if (targetStatus === 'PAID') {
+    return markAsPaid(req, res);
+  }
+  if (targetStatus === 'APPROVED' || targetStatus === 'MANAGER_APPROVED') {
+    return approveReimbursement(req, res);
+  }
+  if (targetStatus === 'REJECTED') {
+    return rejectReimbursement(req, res);
+  }
+  if (targetStatus === 'SENT_BACK' || targetStatus === 'SEND_BACK') {
+    return sendBackReimbursement(req, res);
+  }
+  return res.status(400).json({ success: false, message: `Unsupported status transition: ${req.body?.status}` });
 };
 
 export const getReimbursementKPIs = async (req: Request, res: Response) => {

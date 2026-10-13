@@ -43,8 +43,8 @@ const checkManagerRole = (req: any, res: any, next: any) => {
   try {
     const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkey');
-    const userRole = (decoded.role as string).toLowerCase();
-    if (['manager', 'admin', 'partner', 'owner', 'hr', 'it', 'accountant', 'accounts', 'sub manager', 'sub-manager'].includes(userRole)) {
+    const userRole = (decoded.role as string || '').toLowerCase().trim();
+    if (['manager', 'admin', 'partner', 'owner', 'hr', 'it', 'accountant', 'accounts', 'accounts_admin', 'accounts_manager', 'finance_approver', 'sub manager', 'sub-manager'].includes(userRole)) {
       req.user = decoded;
       next();
     } else {
@@ -55,10 +55,19 @@ const checkManagerRole = (req: any, res: any, next: any) => {
   }
 };
 
+const checkAdminOrHrRole = (req: any, res: any, next: any) => {
+  const userRole = (req.user?.role as string || '').toLowerCase().trim();
+  if (['admin', 'hr', 'owner'].includes(userRole)) {
+    next();
+  } else {
+    res.status(403).json({ error: "Access denied. Action restricted to Admin or HR." });
+  }
+};
+
 // Employee document routes - more specific routes first
 router.get("/documents/:documentId/download", authenticate, downloadEmployeeDocument);
-router.delete("/documents/:documentId", authenticate, checkManagerRole, deleteEmployeeDocument);
-router.post("/:employeeId/documents", authenticate, checkManagerRole, uploadDocument, uploadEmployeeDocument);
+router.delete("/documents/:documentId", authenticate, deleteEmployeeDocument);
+router.post("/:employeeId/documents", authenticate, uploadDocument, uploadEmployeeDocument);
 router.get("/:employeeId/documents", authenticate, getEmployeeDocuments);
 
 // Employee management routes - specific routes first
@@ -84,7 +93,7 @@ router.get("/pending-approvals", authenticate, checkManagerRole, async (req: any
 
     res.json({
       success: true,
-      data: pendingEmployees
+      data: pendingEmployees.map(({ password, ...rest }: any) => rest)
     });
   } catch (error) {
     console.error("Error fetching pending approvals:", error);
@@ -103,11 +112,12 @@ router.post("/approve-employee/:id", authenticate, checkManagerRole, async (req:
       where: { id },
       data: { status: 'active' }
     });
+    const { password: _pw, ...safeEmployee } = employee as any;
 
     res.json({ 
       success: true,
       message: "Employee approved successfully",
-      data: employee
+      data: safeEmployee
     });
   } catch (error) {
     console.error("Error approving employee:", error);
@@ -127,12 +137,13 @@ router.post("/reject-employee/:id", authenticate, checkManagerRole, async (req: 
       where: { id },
       data: { status: 'rejected' }
     });
+    const { password: _pw, ...safeEmployee } = employee as any;
 
     res.json({ 
       success: true,
       message: "Employee rejected successfully",
       data: {
-        employee,
+        employee: safeEmployee,
         reason
       }
     });
@@ -145,40 +156,32 @@ router.post("/reject-employee/:id", authenticate, checkManagerRole, async (req: 
   }
 });
 
-router.get("/team", async (req, res) => {
+router.get("/team", authenticate, async (req: any, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    let user = null;
-    
-    if (token) {
-      try {
-        const jwt = require('jsonwebtoken');
-        user = jwt.verify(token, process.env.JWT_SECRET || 'supersecretkey');
-      } catch (error) {
-        return res.status(401).json({ error: "Invalid token" });
-      }
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     let whereClause = {};
+    const userRole = (user.role || '').toLowerCase().trim();
     
-    if (user) {
-      if (user.role === 'Admin' || user.role === 'admin') {
-        whereClause = {};
-      } else if (['manager', 'sub manager', 'sub-manager'].includes(user.role?.toLowerCase())) {
-        whereClause = {
-          OR: [
-            { managers: { some: { managerId: user.id } } },
-            { partners: { some: { partnerId: user.id } } },
-            { subManagerId: user.id },
-            { subManagerIds: { has: user.id } },
-            { id: user.id }
-          ]
-        };
-      } else {
-        whereClause = {
-          officeEmail: user.email
-        };
-      }
+    if (userRole === 'admin' || userRole === 'owner' || userRole === 'hr') {
+      whereClause = {};
+    } else if (['manager', 'partner', 'sub manager', 'sub-manager'].includes(userRole)) {
+      whereClause = {
+        OR: [
+          { managers: { some: { managerId: user.id } } },
+          { partners: { some: { partnerId: user.id } } },
+          { reportingManagerIds: { has: user.id } },
+          { reportingPartnerIds: { has: user.id } },
+          { subManagerId: user.id },
+          { subManagerIds: { has: user.id } },
+          { id: user.id }
+        ]
+      };
+    } else {
+      whereClause = user.email ? { officeEmail: user.email } : { id: user.id };
     }
 
     const teamMembers = await prisma.employee.findMany({
@@ -215,11 +218,11 @@ router.post("/complete-profile", uploadProfileDocuments, completeEmployeeProfile
 // Profile photo upload route
 router.post("/profile-photo", authenticate, uploadProfilePhoto, updateProfilePhoto);
 
-router.post("/", authenticate, createEmployee);
+router.post("/", authenticate, checkManagerRole, createEmployee);
 router.get("/", authenticate, getEmployees);
 router.get("/:id", authenticate, getEmployeeById);
 router.put("/:id", authenticate, uploadDocument, updateEmployee);
-router.delete("/:id", authenticate, deleteEmployee);
+router.delete("/:id", authenticate, checkAdminOrHrRole, deleteEmployee);
 router.patch("/:id/toggle-status", authenticate, checkManagerRole, toggleEmployeeStatus);
 
 export default router;

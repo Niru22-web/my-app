@@ -1,4 +1,5 @@
 import { sendEmail } from "./email.service";
+import { prisma } from "../config/prisma";
 
 // Helper to format date in IST (Indian Standard Time)
 const formatDateIST = (dateStr: Date | string) => {
@@ -285,7 +286,7 @@ export const sendStatusUpdateMail = async (ticket: any, categoryConfig: any, eve
 
   // 2. Send to Assignee (if ticket is assigned and performer is not the assignee)
   if (ticket.assignedTo && ticket.assignedTo !== performer?.id) {
-    const assignee = await (global as any).prisma.employee.findUnique({
+    const assignee = await prisma.employee.findUnique({
       where: { id: ticket.assignedTo },
       select: { officeEmail: true }
     }).catch(() => null);

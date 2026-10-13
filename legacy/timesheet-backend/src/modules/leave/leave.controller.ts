@@ -230,6 +230,15 @@ export const getLeaves = async (req: Request, res: Response) => {
   }
 };
 
+const sanitizeLeaveEmployee = (leave: any) => {
+  if (!leave || typeof leave !== 'object') return leave;
+  if (leave.employee && typeof leave.employee === 'object') {
+    const { password, ...safeEmployee } = leave.employee;
+    return { ...leave, employee: safeEmployee };
+  }
+  return leave;
+};
+
 // Create new leave request
 
 export const createLeave = async (req: Request, res: Response) => {
@@ -244,6 +253,17 @@ export const createLeave = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
 
+    const parsedTotalDays = parseFloat(totalDays);
+    if (isNaN(parsedTotalDays) || parsedTotalDays <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid totalDays: must be greater than 0" });
+    }
+
+    const parsedFromDate = new Date(fromDate);
+    const parsedToDate = new Date(toDate);
+    if (isNaN(parsedFromDate.getTime()) || isNaN(parsedToDate.getTime()) || parsedToDate < parsedFromDate) {
+      return res.status(400).json({ success: false, message: "Invalid leave date range" });
+    }
+
     // Generate unique leave ID
     const count = await prisma.leave.count();
     const leaveId = `LV-${String(count + 1).padStart(3, '0')}`;
@@ -251,13 +271,9 @@ export const createLeave = async (req: Request, res: Response) => {
     // Validate against available balance
     const currentYear = new Date().getFullYear();
     const balance = await calculateLeaveBalance(user.id);
-    const parsedTotalDays = parseFloat(totalDays);
     
     // Optional: Add warning but don't block
     const willGoNegative = parsedTotalDays > balance.available;
-
-
-
 
     // Fetch employee details for reporting structure and notifications
     const employee = await prisma.employee.findUnique({
@@ -277,7 +293,8 @@ export const createLeave = async (req: Request, res: Response) => {
     const employeeName = `${employee.firstName} ${employee.lastName || ''}`.trim();
 
     let status = 'pending';
-    if (['Partner', 'Admin', 'Owner'].includes(user.role)) {
+    const callerRole = user.role?.toLowerCase()?.trim() || '';
+    if (['partner', 'admin', 'owner'].includes(callerRole)) {
       status = 'auto_approved';
     }
 
@@ -287,8 +304,8 @@ export const createLeave = async (req: Request, res: Response) => {
         type,
         reason: reason || '',
         duration: duration || 'full_day',
-        fromDate: new Date(fromDate),
-        toDate: new Date(toDate),
+        fromDate: parsedFromDate,
+        toDate: parsedToDate,
         totalDays: parsedTotalDays,
         employeeId: user.id,
         status
@@ -312,7 +329,7 @@ export const createLeave = async (req: Request, res: Response) => {
       await notifyReportingManager(
         user.id,
         'Leave Application 🏖️',
-        `${employeeName} applied for leave: ${new Date(fromDate).toLocaleDateString()} to ${new Date(toDate).toLocaleDateString()}`,
+        `${employeeName} applied for leave: ${parsedFromDate.toLocaleDateString()} to ${parsedToDate.toLocaleDateString()}`,
         'leave',
         `/approvals/leaves`
       );
@@ -343,12 +360,26 @@ export const updateLeaveStatus = async (req: Request, res: Response) => {
 
     if (!isValidUUID(id)) return res.status(400).json({ success: false, message: 'Invalid ID format' });
 
+    // Role check: Only Manager, Partner, HR, Admin, Owner, or Sub Manager can approve/reject
+    const userRoleNormalized = user.role?.toLowerCase()?.trim() || '';
+    if (!['admin', 'manager', 'partner', 'owner', 'hr', 'sub manager', 'sub-manager'].includes(userRoleNormalized)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to approve leaves' });
+    }
+
     const existingLeave = await prisma.leave.findUnique({ 
       where: { id },
       include: { employee: true }
     });
     
     if (!existingLeave) return res.status(404).json({ success: false, message: 'Leave not found' });
+
+    // Prevent self-approval unless caller is admin or owner (L1)
+    if (existingLeave.employeeId === user.id && !['admin', 'owner'].includes(userRoleNormalized)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You cannot approve or reject your own leave request'
+      });
+    }
 
     // 1. Single-Level Approval Logic: Only PENDING leaves can be processed
     if (existingLeave.status !== 'pending') {
@@ -358,13 +389,7 @@ export const updateLeaveStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Role check: Only Manager, Partner, HR, Admin, or Sub Manager can approve/reject
-    const userRoleNormalized = user.role?.toLowerCase() || '';
-    if (!['admin', 'manager', 'partner', 'owner', 'hr', 'sub manager', 'sub-manager'].includes(userRoleNormalized)) {
-      return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to approve leaves' });
-    }
-
-    const isApproved = status === 'approved';
+    const isApproved = String(status).toLowerCase() === 'approved';
     const newStatus = isApproved ? 'approved' : 'rejected';
 
     // Update leave record with approver info
@@ -474,7 +499,7 @@ export const updateLeaveStatus = async (req: Request, res: Response) => {
 
     return res.json({ 
       success: true, 
-      data: updatedLeave, 
+      data: sanitizeLeaveEmployee(updatedLeave), 
       message: `Leave request has been ${newStatus} successfully.` 
     });
   } catch (error: any) {
@@ -554,7 +579,13 @@ export const updateLeave = async (req: Request, res: Response) => {
     if (duration) updateData.duration = duration;
     if (fromDate) updateData.fromDate = new Date(fromDate);
     if (toDate) updateData.toDate = new Date(toDate);
-    if (totalDays !== undefined) updateData.totalDays = parseFloat(totalDays);
+    if (totalDays !== undefined) {
+      const parsedDays = parseFloat(totalDays);
+      if (isNaN(parsedDays) || parsedDays <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid totalDays: must be greater than 0' });
+      }
+      updateData.totalDays = parsedDays;
+    }
 
     const updatedLeave = await prisma.leave.update({
       where: { id },

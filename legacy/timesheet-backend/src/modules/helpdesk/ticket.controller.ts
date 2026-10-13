@@ -259,8 +259,25 @@ export const createTicket = async (req: any, res: Response) => {
         }
       },
       include: {
-        createdBy: true,
-        history: true,
+        createdBy: {
+          select: {
+            id: true,
+            employeeId: true,
+            firstName: true,
+            lastName: true,
+            officeEmail: true,
+            department: true,
+            designation: true,
+            role: true
+          }
+        },
+        history: {
+          include: {
+            performer: {
+              select: { id: true, firstName: true, lastName: true, officeEmail: true }
+            }
+          }
+        },
         attachments: true
       }
     });
@@ -491,7 +508,9 @@ export const updateTicketStatus = async (req: Request, res: Response) => {
         history: {
           orderBy: { performedAt: 'desc' },
           include: { 
-            performer: true,
+            performer: {
+              select: { id: true, firstName: true, lastName: true, officeEmail: true }
+            },
             attachments: true
           }
         }

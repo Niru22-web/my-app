@@ -5,6 +5,51 @@ import { v4 as uuidv4 } from 'uuid';
 import { getLocationName } from '../../utils/location';
 import { logActivity } from '../activity/activity.service';
 
+const PRIVILEGED_ATTENDANCE_ROLES = [
+  'admin',
+  'owner',
+  'hr',
+  'it',
+  'manager',
+  'partner',
+  'sub manager',
+  'sub-manager'
+];
+
+const ADMIN_ATTENDANCE_ROLES = ['admin', 'owner', 'hr', 'it'];
+
+const sanitizeEmployee = (emp: any) => {
+  if (!emp || typeof emp !== 'object') return emp;
+  const { password, ...safeEmp } = emp;
+  return safeEmp;
+};
+
+const canModifyEmployeeAttendance = async (caller: any, targetEmployeeCode?: string): Promise<boolean> => {
+  if (!caller || !caller.role) return false;
+  const role = String(caller.role).toLowerCase().trim();
+  if (ADMIN_ATTENDANCE_ROLES.includes(role)) return true;
+
+  if (['manager', 'partner', 'sub manager', 'sub-manager'].includes(role)) {
+    if (!targetEmployeeCode) return true;
+    const targetEmp: any = await prisma.employee.findUnique({
+      where: { employeeId: targetEmployeeCode },
+      include: { managers: true, partners: true }
+    });
+    if (!targetEmp) return true;
+    return (
+      targetEmp.managerId === caller.id ||
+      targetEmp.partnerId === caller.id ||
+      targetEmp.subManagerId === caller.id ||
+      (targetEmp.reportingManagerIds || []).includes(caller.id) ||
+      (targetEmp.reportingPartnerIds || []).includes(caller.id) ||
+      (targetEmp.subManagerIds || []).includes(caller.id) ||
+      (targetEmp.managers || []).some((m: any) => m.managerId === caller.id) ||
+      (targetEmp.partners || []).some((p: any) => p.partnerId === caller.id)
+    );
+  }
+  return false;
+};
+
 // ✅ Check-in (Login)
 export const checkIn = async (req: any, res: Response) => {
   try {
@@ -152,6 +197,11 @@ export const checkIn = async (req: any, res: Response) => {
 // ✅ Standalone Attendance Login (with Credentials)
 export const attendanceLogin = async (req: Request, res: Response) => {
   try {
+    const authUser = (req as any).user;
+    if (!authUser) {
+      return res.status(403).json({ success: false, message: "Forbidden: Authentication required" });
+    }
+
     const { employeeId, password, latitude, longitude, location, manualCheckIn } = req.body;
     
     // Requirement 2: Manual Check-In validation
@@ -170,6 +220,10 @@ export const attendanceLogin = async (req: Request, res: Response) => {
         message: "Missing credentials: employeeId and password are required",
         errorCode: "MISSING_CREDENTIALS"
       });
+    }
+
+    if (authUser.employeeId && employeeId !== authUser.employeeId && !ADMIN_ATTENDANCE_ROLES.includes(String(authUser.role || '').toLowerCase())) {
+      return res.status(403).json({ success: false, message: "Forbidden: Cannot check in on behalf of another employee" });
     }
 
     // Find employee
@@ -340,11 +394,14 @@ export const checkOut = async (req: any, res: Response) => {
     }
 
     const checkOutTime = new Date();
-    const durationMs = checkOutTime.getTime() - activeSession.check_in_time.getTime();
-    const durationMinutes = Math.round(durationMs / (1000 * 60));
+    const durationMs = Math.max(0, checkOutTime.getTime() - activeSession.check_in_time.getTime());
+    const durationMinutes = Math.max(0, Math.round(durationMs / (1000 * 60)));
 
-    const sessionDate = activeSession.date ? new Date(activeSession.date) : new Date(activeSession.check_in_time);
-    sessionDate.setHours(0, 0, 0, 0);
+    // Use UTC midnight matching check-in date (never local setHours(0,0,0,0) which shifts to previous day in IST)
+    const sessionDateStr = activeSession.date
+      ? new Date(activeSession.date).toISOString().split('T')[0]
+      : new Date(activeSession.check_in_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const sessionDate = new Date(`${sessionDateStr}T00:00:00.000Z`);
 
     // Update session
     await prisma.attendance_sessions.update({
@@ -356,49 +413,77 @@ export const checkOut = async (req: any, res: Response) => {
       } as any
     });
 
+    // Locate the active attendance record for this session (or fallback to open attendance row)
+    const existingAttendance =
+      (await prisma.attendance.findUnique({
+        where: {
+          employee_id_date: {
+            employee_id: employeeId,
+            date: sessionDate
+          }
+        }
+      })) ||
+      (await prisma.attendance.findFirst({
+        where: {
+          employee_id: employeeId,
+          check_out_time: null
+        },
+        orderBy: { date: 'desc' }
+      })) ||
+      (await prisma.attendance.findUnique({
+        where: {
+          employee_id_date: {
+            employee_id: employeeId,
+            date: today
+          }
+        }
+      }));
+
+    const targetRecordDate = existingAttendance ? existingAttendance.date : sessionDate;
+
     // Recalculate daily total hours for the day the session was checked in
     const allSessions = await prisma.attendance_sessions.findMany({
       where: {
         employee_id: employeeId,
-        date: sessionDate
+        date: targetRecordDate
       }
     });
 
     const totalMinutes = allSessions.reduce((acc: number, sess: any) => acc + (sess.duration || 0), 0);
     const totalHours = parseFloat((totalMinutes / 60).toFixed(2));
 
-    // Requirement 3: Only update check_out_time and check_out_location. DO NOT update location_name, check_in_location or check-in coordinates.
-    await prisma.attendance.upsert({
-      where: {
-        employee_id_date: {
+    // Requirement 3: Only update check_out_time and check_out_location on the active row; never create a phantom previous-day row
+    if (existingAttendance) {
+      await prisma.attendance.update({
+        where: { id: existingAttendance.id },
+        data: {
+          check_out_time: checkOutTime,
+          check_out_location: location || null,
+          total_hours: totalHours,
+          status: 'Present',
+          is_auto_checkout: false
+        } as any
+      });
+    } else {
+      await prisma.attendance.create({
+        data: {
+          id: uuidv4(),
           employee_id: employeeId,
-          date: sessionDate
-        }
-      },
-      update: {
-        check_out_time: checkOutTime,
-        check_out_location: location || null,
-        total_hours: totalHours,
-        status: 'Present',
-        is_auto_checkout: false
-      } as any,
-      create: {
-        id: uuidv4(),
-        employee_id: employeeId,
-        date: sessionDate,
-        check_in_time: activeSession.check_in_time,
-        check_in_location: activeSession.check_in_location || null,
-        check_out_time: checkOutTime,
-        check_out_location: location || null,
-        location_name: activeSession.location_name || activeSession.check_in_location || null,
-        latitude: activeSession.latitude,
-        longitude: activeSession.longitude,
-        total_hours: totalHours,
-        status: 'Present',
-        is_auto_checkout: false,
-        attendance_source: 'MANUAL'
-      } as any
-    });
+          date: sessionDate,
+          check_in_time: activeSession.check_in_time,
+          check_in_location: activeSession.check_in_location || null,
+          check_out_time: checkOutTime,
+          check_out_location: location || null,
+          location_name: activeSession.location_name || activeSession.check_in_location || null,
+          latitude: activeSession.latitude,
+          longitude: activeSession.longitude,
+          total_hours: totalHours,
+          status: 'Present',
+          is_auto_checkout: false,
+          attendance_source: 'MANUAL'
+        } as any
+      });
+    }
 
     // Requirement 6: Add debugging logs
     const debugDetails = {
@@ -544,7 +629,7 @@ export const getTodaySummary = async (req: any, res: Response) => {
     res.json({
       success: true,
       data: {
-        user,
+        user: sanitizeEmployee(user),
         status: activeSession ? 'Active' : 'Inactive',
         todayRecord: todayRecord ? {
           checkInTime: todayRecord.check_in_time,
@@ -680,10 +765,19 @@ export const getHistory = async (req: any, res: Response) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-// ✅ Get All Attendance (Admin)
+// ✅ Get All Attendance (Admin / Scoped)
 export const getAllAttendance = async (req: any, res: Response) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, employeeId } = req.query;
+    const callerRole = String(req.user?.role || '').toLowerCase().trim();
+    const isPrivileged = PRIVILEGED_ATTENDANCE_ROLES.includes(callerRole);
+
+    if (!isPrivileged && employeeId && employeeId !== req.user?.employeeId && employeeId !== req.user?.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You can only view your own attendance records"
+      });
+    }
 
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, message: "Missing required date range parameters (startDate, endDate)" });
@@ -698,14 +792,22 @@ export const getAllAttendance = async (req: any, res: Response) => {
     
     // Ensure we cover the full end day
     end.setHours(23, 59, 59, 999);
+
+    const whereClause: any = {
+      date: {
+        gte: start,
+        lte: end
+      }
+    };
+
+    if (!isPrivileged) {
+      whereClause.employee_id = req.user?.employeeId;
+    } else if (employeeId) {
+      whereClause.employee_id = String(employeeId);
+    }
     
     const attendance = await prisma.attendance.findMany({
-      where: {
-        date: {
-          gte: start,
-          lte: end
-        }
-      },
+      where: whereClause,
       include: {
         Employee: true,
         attendance_sessions: {
@@ -719,17 +821,21 @@ export const getAllAttendance = async (req: any, res: Response) => {
       }
     });
 
-    const transformedData = attendance.map((log: any) => ({
-      ...log,
-      employee: log.Employee,
-      checkInTime: log.check_in_time,
-      checkOutTime: log.check_out_time,
-      totalHours: log.total_hours ? parseFloat(Number(log.total_hours).toFixed(2)) : 0,
-      employeeId: log.employee_id,
-      latitude: (log as any).latitude,
-      longitude: (log as any).longitude,
-      location_name: (log as any).location_name
-    }));
+    const transformedData = attendance.map((log: any) => {
+      const safeEmployee = sanitizeEmployee(log.Employee);
+      return {
+        ...log,
+        Employee: safeEmployee,
+        employee: safeEmployee,
+        checkInTime: log.check_in_time,
+        checkOutTime: log.check_out_time,
+        totalHours: log.total_hours ? parseFloat(Number(log.total_hours).toFixed(2)) : 0,
+        employeeId: log.employee_id,
+        latitude: (log as any).latitude,
+        longitude: (log as any).longitude,
+        location_name: (log as any).location_name
+      };
+    });
 
     res.json({ success: true, data: transformedData });
   } catch (error: any) {
@@ -741,8 +847,19 @@ export const getAllAttendance = async (req: any, res: Response) => {
 export const getAttendanceReport = async (req: any, res: Response) => {
   try {
     const { employeeId, date } = req.query;
+    const callerRole = String(req.user?.role || '').toLowerCase().trim();
+    const isPrivileged = PRIVILEGED_ATTENDANCE_ROLES.includes(callerRole);
+
+    if (!isPrivileged && employeeId && employeeId !== req.user?.employeeId && employeeId !== req.user?.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You can only view your own attendance report"
+      });
+    }
+
+    const targetEmployeeId = (employeeId as string) || req.user?.employeeId;
     
-    if (!employeeId || !date) {
+    if (!targetEmployeeId || !date) {
       return res.status(400).json({ 
         success: false, 
         message: "Missing required parameters: employeeId and date" 
@@ -757,7 +874,7 @@ export const getAttendanceReport = async (req: any, res: Response) => {
     // Get attendance record with sessions
     const attendance = await prisma.attendance.findFirst({
       where: {
-        employee_id: employeeId,
+        employee_id: targetEmployeeId,
         date: targetDate
       },
       include: {
@@ -793,7 +910,7 @@ export const getAttendanceReport = async (req: any, res: Response) => {
     res.json({
       success: true,
       data: {
-        employee: attendance.Employee,
+        employee: sanitizeEmployee(attendance.Employee),
         attendance: {
           date: attendance.date,
           checkInTime: attendance.check_in_time,
@@ -835,8 +952,19 @@ export const getAttendanceReport = async (req: any, res: Response) => {
 export const getMonthlyTrends = async (req: any, res: Response) => {
   try {
     const { employeeId, month } = req.query;
+    const callerRole = String(req.user?.role || '').toLowerCase().trim();
+    const isPrivileged = PRIVILEGED_ATTENDANCE_ROLES.includes(callerRole);
+
+    if (!isPrivileged && employeeId && employeeId !== req.user?.employeeId && employeeId !== req.user?.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You can only view your own monthly attendance"
+      });
+    }
+
+    const targetEmployeeId = (employeeId as string) || req.user?.employeeId;
     
-    if (!employeeId || !month) {
+    if (!targetEmployeeId || !month) {
       return res.status(400).json({ 
         success: false, 
         message: "Missing required parameters: employeeId and month (YYYY-MM)" 
@@ -855,7 +983,7 @@ export const getMonthlyTrends = async (req: any, res: Response) => {
     // Get all attendance records for the month
     const attendanceRecords = await prisma.attendance.findMany({
       where: {
-        employee_id: employeeId,
+        employee_id: targetEmployeeId,
         date: {
           gte: startDate,
           lte: endDate
@@ -871,7 +999,7 @@ export const getMonthlyTrends = async (req: any, res: Response) => {
 
     // Get employee info
     const employee = await prisma.employee.findUnique({
-      where: { employeeId }
+      where: { employeeId: targetEmployeeId }
     });
 
     // Calculate daily stats
@@ -901,7 +1029,7 @@ export const getMonthlyTrends = async (req: any, res: Response) => {
     res.json({
       success: true,
       data: {
-        employee,
+        employee: sanitizeEmployee(employee),
         month: month,
         period: {
           startDate,
@@ -929,6 +1057,14 @@ export const getMonthlyTrends = async (req: any, res: Response) => {
 export const updateAttendance = async (req: any, res: Response) => {
   try {
     const { employeeId, date, checkInTime, checkOutTime } = req.body;
+
+    const allowed = await canModifyEmployeeAttendance(req.user, employeeId);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You do not have permission to modify attendance records"
+      });
+    }
     
     if (!employeeId || !date) {
       return res.status(400).json({ 
@@ -937,12 +1073,13 @@ export const updateAttendance = async (req: any, res: Response) => {
       });
     }
 
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid date format" });
     }
+    const targetDate = new Date(`${parsedDate.toISOString().split('T')[0]}T00:00:00.000Z`);
 
-    // Find or create attendance record
+    // Find attendance record
     const attendance = await prisma.attendance.findFirst({
       where: {
         employee_id: employeeId,
@@ -1007,7 +1144,7 @@ export const updateAttendance = async (req: any, res: Response) => {
         });
         
         if (lastSession) {
-          const durationMs = checkOutDate.getTime() - lastSession.check_in_time.getTime();
+          const durationMs = Math.max(0, checkOutDate.getTime() - lastSession.check_in_time.getTime());
           const durationMinutes = Math.round(durationMs / (1000 * 60));
           
           await prisma.attendance_sessions.update({
@@ -1054,6 +1191,14 @@ export const updateAttendance = async (req: any, res: Response) => {
 export const forceCheckout = async (req: any, res: Response) => {
   try {
     const { employeeId, date } = req.body;
+
+    const allowed = await canModifyEmployeeAttendance(req.user, employeeId);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You do not have permission to force check-out attendance records"
+      });
+    }
     
     if (!employeeId || !date) {
       return res.status(400).json({ 
@@ -1062,10 +1207,11 @@ export const forceCheckout = async (req: any, res: Response) => {
       });
     }
 
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: "Invalid date format" });
     }
+    const targetDate = new Date(`${parsedDate.toISOString().split('T')[0]}T00:00:00.000Z`);
 
     // Find active session for the employee on that date
     const activeSession = await prisma.attendance_sessions.findFirst({
@@ -1087,7 +1233,7 @@ export const forceCheckout = async (req: any, res: Response) => {
     }
 
     const checkOutTime = new Date();
-    const durationMs = checkOutTime.getTime() - activeSession.check_in_time.getTime();
+    const durationMs = Math.max(0, checkOutTime.getTime() - activeSession.check_in_time.getTime());
     const durationMinutes = Math.round(durationMs / (1000 * 60));
 
     // Update the session

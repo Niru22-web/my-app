@@ -22,9 +22,20 @@ const storage = multer.diskStorage({
   }
 });
 
+const blockedTicketExtensions = new Set([
+  '.html', '.htm', '.svg', '.js', '.mjs', '.exe', '.bat', '.cmd', '.ps1', '.sh'
+]);
+
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit to support photos & large videos
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit to support photos & large videos
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (blockedTicketExtensions.has(ext)) {
+      return cb(new Error(`File extension ${ext} is not allowed for security reasons.`));
+    }
+    cb(null, true);
+  }
 });
 
 const router = Router();

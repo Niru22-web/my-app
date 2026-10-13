@@ -11,17 +11,6 @@ export const authenticate = (req: any, res: Response, next: NextFunction) => {
     token = req.query.token as string;
   }
   
-  // For development, allow requests without token but with a mock user
-  if (!token && process.env.NODE_ENV === 'development') {
-    console.log(' Development mode: Allowing request without authentication');
-    req.user = {
-      id: '3e1c5782-6cf5-42e6-8649-45d7383e516c',
-      role: 'Admin',
-      employeeId: 'EMP001'
-    };
-    return next();
-  }
-
   if (!token) return res.status(401).json({ message: "Unauthorized" });
 
 
@@ -58,7 +47,7 @@ export const authenticate = (req: any, res: Response, next: NextFunction) => {
 export const checkManagerRole = (req: any, res: Response, next: NextFunction) => {
   authenticate(req, res, () => {
     const userRole = (req.user?.role as string)?.toLowerCase();
-    if (['manager', 'admin', 'partner', 'owner', 'hr', 'accounts'].includes(userRole)) {
+    if (['manager', 'admin', 'partner', 'owner', 'hr', 'accounts', 'accounts_admin', 'accounts_manager', 'finance_approver'].includes(userRole)) {
       next();
     } else {
       res.status(403).json({ error: "Access denied. Action restricted to Managers/Admins/Partners/Owners/HR." });

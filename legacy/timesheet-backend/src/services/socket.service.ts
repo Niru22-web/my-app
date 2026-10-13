@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server } from 'http';
+import jwt from 'jsonwebtoken';
 
 let io: SocketIOServer;
 
@@ -17,10 +18,37 @@ export const initSocket = (server: Server) => {
 
     // Join personal room
     socket.on('join_user_room', (userId: string) => {
-      if (userId) {
-        socket.join(userId);
-        console.log(`👤 Authorized User ${userId} joined personal socket room.`);
+      if (typeof userId !== 'string' || !userId.trim()) {
+        return;
       }
+      const trimmedUserId = userId.trim();
+
+      const authHeader = socket.handshake.headers?.authorization;
+      const rawToken =
+        socket.handshake.auth?.token ||
+        (typeof socket.handshake.query?.token === 'string' ? socket.handshake.query.token : undefined) ||
+        (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined);
+
+      if (rawToken && typeof rawToken === 'string') {
+        try {
+          const decoded: any = jwt.verify(
+            rawToken.replace(/^Bearer\s+/i, ''),
+            process.env.JWT_SECRET || 'supersecretkey'
+          );
+          const tokenUserId = decoded?.id;
+          const tokenEmployeeId = decoded?.employeeId;
+          if (tokenUserId && tokenUserId !== trimmedUserId && tokenEmployeeId !== trimmedUserId) {
+            console.warn(`🚫 Socket ${socket.id} blocked from joining room ${trimmedUserId} (token user: ${tokenUserId})`);
+            return;
+          }
+        } catch (err: any) {
+          console.warn(`🚫 Socket ${socket.id} failed token verification on join_user_room:`, err?.message);
+          return;
+        }
+      }
+
+      socket.join(trimmedUserId);
+      console.log(`👤 Authorized User ${trimmedUserId} joined personal socket room.`);
     });
 
     socket.on('disconnect', () => {

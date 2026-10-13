@@ -68,7 +68,7 @@ export const login = async (req: Request, res: Response) => {
     }
 
     if (normalizedStatus !== 'active' && normalizedStatus !== 'on leave') {
-      const isPrivileged = user.role && (['partner', 'owner', 'admin', 'hr', 'it', 'accountant', 'accounts'].includes(user.role.toLowerCase().trim()));
+      const isPrivileged = user.role && (['partner', 'owner', 'admin', 'hr', 'it', 'accountant', 'accounts', 'accounts_admin', 'accounts_manager', 'accounts_executive', 'finance_approver', 'ar_manager', 'ap_manager'].includes(user.role.toLowerCase().trim()));
       if (!isPrivileged) {
         let statusMessage = "Your account is not active.";
         let errorCode = "ACCOUNT_INACTIVE";
@@ -92,8 +92,7 @@ export const login = async (req: Request, res: Response) => {
     }
 
     console.log('Password Compare Started');
-    // Support both bcrypt and plain text (for old migrated users)
-    const isMatch = await bcrypt.compare(password, user.password) || password === user.password;
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       console.log(`❌ Login failed: Password mismatch for ${normalizedEmail}`);
@@ -120,7 +119,16 @@ export const login = async (req: Request, res: Response) => {
     const normalizedProfile = null;
 
     // Role Validation
-    const allowedRoles = ["Admin", "admin", "HR", "hr", "IT", "it", "Accountant", "accountant", "Employee", "employee", "Manager", "manager", "Partner", "partner", "Owner", "owner", "Accounts", "ACCOUNTS", "accounts", "User", "user"];
+    const allowedRoles = [
+      "Admin", "admin", "HR", "hr", "IT", "it",
+      "Accountant", "accountant", "Employee", "employee",
+      "Manager", "manager", "Partner", "partner", "Owner", "owner",
+      "Accounts", "ACCOUNTS", "accounts",
+      "accounts_admin", "accounts_manager", "accounts_executive",
+      "finance_approver", "ar_manager", "ap_manager",
+      "sub manager", "sub-manager", "sub_manager",
+      "User", "user"
+    ];
     const userRoleTrimmed = user.role?.trim() || '';
     const hasAllowedRole = userRoleTrimmed && allowedRoles.some(r => r.toLowerCase() === userRoleTrimmed.toLowerCase());
     if (!hasAllowedRole) {

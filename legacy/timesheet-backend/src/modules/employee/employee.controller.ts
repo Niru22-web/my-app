@@ -246,9 +246,10 @@ export const createEmployee = async (req: any, res: Response) => {
     }
 
     // Prepare response with email status
+    const { password: _createdPw, ...safeCreatedEmployee } = employee as any;
     const response = {
       success: true,
-      data: employee,
+      data: safeCreatedEmployee,
       emailStatus: emailStatus,
       message: isOldEmployee
         ? (emailStatus === 'sent'
@@ -325,7 +326,6 @@ export const updateEmployee = async (req: any, res: Response) => {
       }
     }
 
-
     console.log('🔄 Updating employee with ID:', id);
     console.log('📥 Update data received:', JSON.stringify(updateData, null, 2));
 
@@ -337,6 +337,21 @@ export const updateEmployee = async (req: any, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Employee not found'
+      });
+    }
+
+    // 1. Check authorization: caller must be updating their own record OR have an Admin/HR/Owner/Manager/Partner role
+    const callerId = req.user?.id;
+    const callerEmployeeId = req.user?.employeeId;
+    const callerRole = (req.user?.role || '').toLowerCase().trim();
+    const isSelf = callerId === id || callerId === employee.id || (callerEmployeeId && callerEmployeeId === employee.employeeId);
+    const isManagerOrAbove = ['admin', 'hr', 'owner', 'manager', 'partner', 'sub manager', 'sub-manager'].includes(callerRole);
+    const isAdminHrOwner = ['admin', 'hr', 'owner'].includes(callerRole);
+
+    if (!isSelf && !isManagerOrAbove) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You are not authorized to update this employee.'
       });
     }
 
@@ -361,6 +376,16 @@ export const updateEmployee = async (req: any, res: Response) => {
       }
     });
 
+    // 2. Only allow Admin/HR/Owner to change role, status, isApproved, approvalStatus, hasAccountsAccess
+    if (!isAdminHrOwner) {
+      delete employeeUpdateData.role;
+      delete employeeUpdateData.roleId;
+      delete employeeUpdateData.status;
+      delete employeeUpdateData.isApproved;
+      delete employeeUpdateData.approvalStatus;
+      delete employeeUpdateData.hasAccountsAccess;
+    }
+
     // Normalize email if it's being updated
     if (employeeUpdateData.officeEmail) {
       employeeUpdateData.officeEmail = employeeUpdateData.officeEmail.toLowerCase().trim();
@@ -369,7 +394,21 @@ export const updateEmployee = async (req: any, res: Response) => {
     console.log('👤 Employee update data:', JSON.stringify(employeeUpdateData, null, 2));
     console.log('📋 Profile data:', JSON.stringify(profile, null, 2));
 
-    // Normalize hierarchy arrays
+    // 3. Only update hierarchy fields if explicitly passed in req.body AND caller is Admin/HR/Owner/Manager/Partner
+    const hasPartnerFields =
+      reportingPartnerIds !== undefined ||
+      partnerIds !== undefined ||
+      partnerId !== undefined;
+
+    const hasManagerFields =
+      reportingManagerIds !== undefined ||
+      managerIds !== undefined ||
+      managerId !== undefined;
+
+    const hasSubManagerFields =
+      subManagerIds !== undefined ||
+      subManagerId !== undefined;
+
     const finalPartnerIds = Array.from(new Set([
       ...(reportingPartnerIds || []),
       ...(partnerIds || []),
@@ -401,36 +440,61 @@ export const updateEmployee = async (req: any, res: Response) => {
       if (deptObj) employeeUpdateData.department = deptObj.name;
     }
 
+    const hierarchyUpdateData: any = {};
+    if (isManagerOrAbove) {
+      if (hasPartnerFields) {
+        hierarchyUpdateData.reportingPartnerIds = finalPartnerIds;
+        hierarchyUpdateData.partnerId = finalPartnerIds[0] || null;
+        hierarchyUpdateData.partners = {
+          deleteMany: {},
+          create: finalPartnerIds.map((pId: string) => ({ partnerId: pId }))
+        };
+      }
+      if (hasManagerFields) {
+        hierarchyUpdateData.reportingManagerIds = finalManagerIds;
+        hierarchyUpdateData.managerId = finalManagerIds[0] || null;
+        hierarchyUpdateData.managers = {
+          deleteMany: {},
+          create: finalManagerIds.map((mId: string) => ({ managerId: mId }))
+        };
+      }
+      if (hasSubManagerFields) {
+        hierarchyUpdateData.subManagerIds = finalSubManagerIds;
+        hierarchyUpdateData.subManagerId = finalSubManagerIds[0] || null;
+      }
+    }
+
     // Update employee basic information and relations
     const updatedEmployee = await prisma.employee.update({
       where: { id },
       data: {
         ...employeeUpdateData,
-        // New Array fields
-        reportingPartnerIds: finalPartnerIds,
-        reportingManagerIds: finalManagerIds,
-        subManagerIds: finalSubManagerIds,
-        // Legacy single fields (for backward compatibility)
-        subManagerId: finalSubManagerIds[0] || null,
-        managerId: finalManagerIds[0] || null,
-        partnerId: finalPartnerIds[0] || null,
-        // Relations (junction tables)
-        managers: {
-          deleteMany: {},
-          create: finalManagerIds.map((mId: string) => ({ managerId: mId }))
-        },
-        partners: {
-          deleteMany: {},
-          create: finalPartnerIds.map((pId: string) => ({ partnerId: pId }))
-        },
+        ...hierarchyUpdateData
       } as any
     });
 
-
     console.log('✅ Basic employee info updated');
 
-    // Update profile data if provided
-    if (profile && Object.keys(profile).length > 0) {
+    // 4. Update profile data if provided — only update fields that are !== undefined
+    const profileFieldKeys = [
+      'dob', 'doj', 'education', 'maritalStatus', 'gender',
+      'permanentAddress', 'currentAddress', 'pan', 'aadhaar',
+      'personalEmail', 'personalMobile', 'currentPinCode',
+      'guardianName', 'guardianNumber', 'guardianAddress',
+      'accountHolderName', 'bankAccountNumber', 'bankName', 'branchName', 'ifscCode',
+      'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelation',
+      'seniorityLevel', 'experience', 'employmentType', 'employmentTypeId',
+      'panFileUrl', 'aadhaarFileUrl', 'bankStatementFileUrl', 'salary', 'skills'
+    ];
+
+    const mergedProfile: any = { ...(profile && typeof profile === 'object' ? profile : {}) };
+    profileFieldKeys.forEach(k => {
+      if (employeeUpdateDataRaw[k] !== undefined && mergedProfile[k] === undefined) {
+        mergedProfile[k] = employeeUpdateDataRaw[k];
+      }
+    });
+
+    if (Object.keys(mergedProfile).length > 0) {
       console.log('🔄 Updating profile data...');
 
       // Check if profile exists
@@ -440,74 +504,80 @@ export const updateEmployee = async (req: any, res: Response) => {
 
       console.log('📊 Existing profile found:', !!existingProfile);
 
-      // Resolve employmentType string from master if ID is provided
-      let finalEmploymentType = profile.employmentType || null;
-      if (profile.employmentTypeId) {
-        const empTypeObj = await prisma.employmentTypeMaster.findUnique({ where: { id: profile.employmentTypeId } });
-        if (empTypeObj) finalEmploymentType = empTypeObj.name;
+      const filteredProfile: any = {};
+
+      if (mergedProfile.dob !== undefined) {
+        filteredProfile.dob = mergedProfile.dob ? new Date(mergedProfile.dob) : (existingProfile?.dob || new Date('2000-01-01'));
+      }
+      if (mergedProfile.doj !== undefined) {
+        filteredProfile.doj = mergedProfile.doj ? new Date(mergedProfile.doj) : (existingProfile?.doj || new Date());
       }
 
-      // Filter out null/undefined values for required fields
-      // Filter out null/undefined values and ensure correct types for Prisma
-      const filteredProfile: any = {
-        dob: profile.dob ? new Date(profile.dob) : new Date('2000-01-01'),
-        doj: profile.doj ? new Date(profile.doj) : new Date(),
-        education: profile.education || 'Not specified',
-        maritalStatus: profile.maritalStatus || 'Single',
-        gender: profile.gender || 'Other',
-        permanentAddress: profile.permanentAddress || 'Not provided',
-        currentAddress: profile.currentAddress || 'Not provided',
-        pan: profile.pan || 'Not provided',
-        aadhaar: profile.aadhaar || 'Not provided',
-        personalEmail: profile.personalEmail || null,
-        personalMobile: profile.personalMobile || null,
-        currentPinCode: profile.currentPinCode || null,
-        guardianName: profile.guardianName || null,
-        guardianNumber: profile.guardianNumber || null,
-        guardianAddress: profile.guardianAddress || null,
-        accountHolderName: profile.accountHolderName || null,
-        bankAccountNumber: profile.bankAccountNumber || null,
-        bankName: profile.bankName || null,
-        branchName: profile.branchName || null,
-        ifscCode: profile.ifscCode || null,
-        emergencyContactName: profile.emergencyContactName || null,
-        emergencyContactPhone: profile.emergencyContactPhone || null,
-        emergencyContactRelation: profile.emergencyContactRelation || null,
-        seniorityLevel: profile.seniorityLevel || null,
-        experience: profile.experience || null,
-        employmentType: finalEmploymentType,
-        employmentTypeId: profile.employmentTypeId || null,
-      };
+      const directProfileFields = [
+        'education', 'maritalStatus', 'gender',
+        'permanentAddress', 'currentAddress', 'pan', 'aadhaar',
+        'personalEmail', 'personalMobile', 'currentPinCode',
+        'guardianName', 'guardianNumber', 'guardianAddress',
+        'accountHolderName', 'bankAccountNumber', 'bankName', 'branchName', 'ifscCode',
+        'emergencyContactName', 'emergencyContactPhone', 'emergencyContactRelation',
+        'seniorityLevel', 'experience',
+        'panFileUrl', 'aadhaarFileUrl', 'bankStatementFileUrl'
+      ];
 
-      // Add file URLs only if they exist
-      if (profile.panFileUrl) filteredProfile.panFileUrl = profile.panFileUrl;
-      if (profile.aadhaarFileUrl) filteredProfile.aadhaarFileUrl = profile.aadhaarFileUrl;
-      if (profile.bankStatementFileUrl) filteredProfile.bankStatementFileUrl = profile.bankStatementFileUrl;
+      directProfileFields.forEach(field => {
+        if (mergedProfile[field] !== undefined) {
+          filteredProfile[field] = mergedProfile[field];
+        }
+      });
+
+      if (mergedProfile.employmentTypeId !== undefined) {
+        filteredProfile.employmentTypeId = mergedProfile.employmentTypeId || null;
+        if (mergedProfile.employmentTypeId) {
+          const empTypeObj = await prisma.employmentTypeMaster.findUnique({ where: { id: mergedProfile.employmentTypeId } });
+          if (empTypeObj) filteredProfile.employmentType = empTypeObj.name;
+        }
+      }
+      if (mergedProfile.employmentType !== undefined && !filteredProfile.employmentType) {
+        filteredProfile.employmentType = mergedProfile.employmentType || null;
+      }
 
       // Handle salary (Float)
-      if (profile.salary) {
-        filteredProfile.salary = typeof profile.salary === 'number' ? profile.salary : parseFloat(profile.salary);
+      if (mergedProfile.salary !== undefined) {
+        filteredProfile.salary = mergedProfile.salary === null || mergedProfile.salary === ''
+          ? null
+          : (typeof mergedProfile.salary === 'number' ? mergedProfile.salary : parseFloat(mergedProfile.salary));
       }
 
       // Handle skills (String[])
-      if (profile.skills) {
-        filteredProfile.skills = Array.isArray(profile.skills)
-          ? profile.skills
-          : profile.skills.split(',').map((s: string) => s.trim()).filter((s: string) => s !== '');
+      if (mergedProfile.skills !== undefined) {
+        filteredProfile.skills = Array.isArray(mergedProfile.skills)
+          ? mergedProfile.skills
+          : String(mergedProfile.skills).split(',').map((s: string) => s.trim()).filter((s: string) => s !== '');
       }
 
       console.log('🎯 Final filtered profile data for Prisma:', JSON.stringify(filteredProfile, null, 2));
 
       if (existingProfile) {
-        console.log('📝 Updating existing profile...');
-        await prisma.employeeProfile.update({
-          where: { employeeId: id },
-          data: filteredProfile
-        });
+        if (Object.keys(filteredProfile).length > 0) {
+          console.log('📝 Updating existing profile...');
+          await prisma.employeeProfile.update({
+            where: { employeeId: id },
+            data: filteredProfile
+          });
+        }
       } else {
         console.log('➕ Creating new profile...');
         await prisma.employeeProfile.create({
           data: {
+            dob: filteredProfile.dob || new Date('2000-01-01'),
+            doj: filteredProfile.doj || new Date(),
+            education: filteredProfile.education || 'Not specified',
+            maritalStatus: filteredProfile.maritalStatus || 'Single',
+            gender: filteredProfile.gender || 'Other',
+            permanentAddress: filteredProfile.permanentAddress || 'Not provided',
+            currentAddress: filteredProfile.currentAddress || 'Not provided',
+            pan: filteredProfile.pan || 'Not provided',
+            aadhaar: filteredProfile.aadhaar || 'Not provided',
             ...filteredProfile,
             employee: { connect: { id } }
           }
@@ -544,14 +614,14 @@ export const updateEmployee = async (req: any, res: Response) => {
       }
     }
 
-    // Fetch complete updated employee details
+    // Fetch complete updated employee details and strip password
     const completeUpdatedEmployee = await prisma.employee.findUnique({
       where: { id },
       include: {
         documents: true
       }
     });
-    const normalizedUpdatedEmployee = completeUpdatedEmployee;
+    const { password: _updatedPw, ...normalizedUpdatedEmployee } = (completeUpdatedEmployee || {}) as any;
 
     console.log('🎉 Employee updated successfully');
 
@@ -989,9 +1059,10 @@ export const getEmployees = async (req: any, res: Response) => {
 
       const actualHours = loggedHoursMap.get(emp.id) || 0;
       const loggedHours = (canSeeAllLoggedHours || emp.id === req.user?.id) ? actualHours : null;
+      const { password: _pw, ...safeEmp } = emp as any;
 
       return {
-        ...emp,
+        ...safeEmp,
         profileImage: finalPath,
         subManagers: subManagersList,
         loggedHours
@@ -1022,9 +1093,10 @@ export const getEmployeesByDepartment = async (req: any, res: Response) => {
       where: { department: department as string },
       orderBy: { createdAt: 'desc' }
     });
+    const safeEmployees = employees.map(({ password, ...rest }: any) => rest);
     res.json({
       success: true,
-      data: employees,
+      data: safeEmployees,
       message: 'Employees retrieved successfully'
     });
   } catch (error) {
@@ -1595,10 +1667,11 @@ export const toggleEmployeeStatus = async (req: any, res: Response) => {
       where: { id },
       data: { status: newStatus }
     });
+    const { password: _pw, ...safeUpdatedEmployee } = updatedEmployee as any;
 
     res.json({
       success: true,
-      data: updatedEmployee,
+      data: safeUpdatedEmployee,
       message: `Employee marked as ${newStatus} successfully`
     });
   } catch (error: any) {
@@ -1614,9 +1687,8 @@ export const toggleEmployeeStatus = async (req: any, res: Response) => {
 export const resendRegistrationEmail = async (req: any, res: Response) => {
   try {
     const { employeeId } = req.params;
-    const { type } = req.body;
 
-    console.log(`📧 Resending email (${type || 'new'}) for employee:`, employeeId);
+    console.log(`📧 Resending registration email for employee:`, employeeId);
 
     // Find the employee
     const employee = await prisma.employee.findUnique({
@@ -1642,80 +1714,44 @@ export const resendRegistrationEmail = async (req: any, res: Response) => {
       });
     }
 
-    if (type === 'old') {
-      const tempPassword = 'Welcome@ASA2026';
-      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    // Generate new registration token
+    const registrationToken = generateRegistrationToken();
+    const expiresAt = createTokenExpiry();
 
-      // Reset password to temporary password
-      await prisma.employee.update({
-        where: { id: employee.id },
-        data: { password: hashedPassword }
-      });
+    // Store new registration token
+    await prisma.registrationToken.create({
+      data: {
+        token: registrationToken,
+        email: employee.officeEmail,
+        employeeId: employee.id,
+        expiresAt: expiresAt
+      }
+    });
 
-      const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+    const registrationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/complete-registration?token=${registrationToken}`;
 
-      // Send old employee welcome email
-      await emailService.sendOldEmployeeWelcomeEmail({
-        to: employee.officeEmail,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        employeeId: employee.employeeId,
-        department: employee.department,
-        designation: employee.designation,
-        tempPassword: tempPassword,
-        loginUrl: loginUrl,
-        companyName: process.env.COMPANY_NAME || 'Timesheet Management System'
-      });
+    // Send registration email using email service
+    await emailService.sendRegistrationEmail({
+      to: employee.officeEmail,
+      employeeName: `${employee.firstName} ${employee.lastName}`,
+      employeeId: employee.employeeId,
+      department: employee.department,
+      designation: employee.designation,
+      registrationLink: registrationLink,
+      companyName: process.env.COMPANY_NAME || 'Timesheet Management System'
+    });
 
-      console.log('✅ Welcome email resent successfully to:', employee.officeEmail);
+    console.log('✅ Registration email resent successfully to:', employee.officeEmail);
 
-      return res.json({
-        success: true,
-        message: 'Welcome email sent successfully',
-        data: {
-          employeeId: employee.id,
-          email: employee.officeEmail
-        }
-      });
-    } else {
-      // Generate new registration token
-      const registrationToken = generateRegistrationToken();
-      const expiresAt = createTokenExpiry();
-
-      // Store new registration token
-      await prisma.registrationToken.create({
-        data: {
-          token: registrationToken,
-          email: employee.officeEmail,
-          employeeId: employee.id,
-          expiresAt: expiresAt
-        }
-      });
-
-      const registrationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/complete-registration?token=${registrationToken}`;
-
-      // Send registration email using email service
-      await emailService.sendRegistrationEmail({
-        to: employee.officeEmail,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        employeeId: employee.employeeId,
-        department: employee.department,
-        designation: employee.designation,
-        registrationLink: registrationLink,
-        companyName: process.env.COMPANY_NAME || 'Timesheet Management System'
-      });
-
-      console.log('✅ Registration email resent successfully to:', employee.officeEmail);
-
-      return res.json({
-        success: true,
-        message: 'Registration email sent successfully',
-        data: {
-          employeeId: employee.id,
-          email: employee.officeEmail,
-          tokenExpiry: expiresAt
-        }
-      });
-    }
+    return res.json({
+      success: true,
+      message: 'Registration email sent successfully',
+      data: {
+        employeeId: employee.id,
+        email: employee.officeEmail,
+        tokenExpiry: expiresAt
+      }
+    });
   } catch (error: any) {
     console.error('❌ Error resending email:', error);
     res.status(500).json({

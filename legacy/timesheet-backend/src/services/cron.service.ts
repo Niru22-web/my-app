@@ -89,8 +89,8 @@ export const startCronJobs = () => {
     console.log('⏰ Running Auto Check-Out Cron Job...');
     
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const today = new Date(`${todayStr}T00:00:00.000Z`);
 
       // Find all active attendance records for today that haven't checked out
       const openAttendances = await prisma.attendance.findMany({
@@ -108,24 +108,30 @@ export const startCronJobs = () => {
         // Using 6:30 PM (18:30) as a reasonable shift end fallback
         autoCheckoutTime.setHours(18, 30, 0, 0);
 
-        // Find the active session for this employee
-        const activeSession = await prisma.attendance_sessions.findFirst({
+        const checkoutTime = record.check_in_time
+          ? new Date(Math.max(autoCheckoutTime.getTime(), new Date(record.check_in_time).getTime()))
+          : autoCheckoutTime;
+
+        // Close any open attendance_sessions for this attendance record
+        const openSessions = await prisma.attendance_sessions.findMany({
           where: {
             employee_id: record.employee_id,
-            date: today,
+            date: record.date,
             check_out_time: null
           }
         });
 
-        if (activeSession) {
-          const durationMs = autoCheckoutTime.getTime() - activeSession.check_in_time.getTime();
+        for (const activeSession of openSessions) {
+          const sessCheckoutTime = new Date(
+            Math.max(checkoutTime.getTime(), new Date(activeSession.check_in_time).getTime())
+          );
+          const durationMs = sessCheckoutTime.getTime() - new Date(activeSession.check_in_time).getTime();
           const durationMinutes = Math.max(0, Math.round(durationMs / (1000 * 60)));
 
-          // Update the session
           await prisma.attendance_sessions.update({
             where: { id: activeSession.id },
             data: {
-              check_out_time: autoCheckoutTime,
+              check_out_time: sessCheckoutTime,
               duration: durationMinutes,
               is_auto_checkout: true,
               location_name: 'Auto Check-out (System)'
@@ -133,11 +139,11 @@ export const startCronJobs = () => {
           });
         }
 
-        // Calculate total hours from all sessions today
+        // Calculate total hours from all sessions for this attendance record
         const allSessions = await prisma.attendance_sessions.findMany({
           where: {
             employee_id: record.employee_id,
-            date: today
+            date: record.date
           }
         });
 
@@ -148,7 +154,7 @@ export const startCronJobs = () => {
         await prisma.attendance.update({
           where: { id: record.id },
           data: {
-            check_out_time: autoCheckoutTime,
+            check_out_time: checkoutTime,
             total_hours: totalHours,
             is_auto_checkout: true,
             status: 'INCOMPLETE', // 🔥 Mark as Incomplete
@@ -156,13 +162,20 @@ export const startCronJobs = () => {
           } as any
         });
 
-        // Notify the employee
-        await triggerNotification({
-          userId: record.employee_id, // Note: notification service might need system user ID, let's check
-          title: 'Auto Check-out Notice ⏱️',
-          message: 'You forgot to check out today. The system has automatically checked you out at 6:30 PM. Your status is marked as INCOMPLETE.',
-          type: 'attendance'
+        // Look up the employee's UUID (Employee.id) since record.employee_id is the employee code (e.g. EMP001)
+        const emp = await prisma.employee.findUnique({
+          where: { employeeId: record.employee_id },
+          select: { id: true }
         });
+
+        if (emp?.id) {
+          await triggerNotification({
+            userId: emp.id,
+            title: 'Auto Check-out Notice ⏱️',
+            message: 'You forgot to check out today. The system has automatically checked you out at 6:30 PM. Your status is marked as INCOMPLETE.',
+            type: 'attendance'
+          });
+        }
 
         console.log(`✅ Auto checked-out employee: ${record.employee_id}`);
       }

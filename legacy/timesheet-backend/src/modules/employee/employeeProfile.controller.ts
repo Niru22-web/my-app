@@ -16,7 +16,7 @@ import { getUploadsDir } from "../../utils/assetUrl";
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const folder = file.fieldname === "profilePhoto" ? "profile" : "documents";
+    const folder = (file.fieldname === "profilePhoto" || file.fieldname === "profileImage") ? "profile" : "documents";
     const dest = path.join(getUploadsDir(), folder);
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(dest, { recursive: true });
@@ -42,7 +42,7 @@ const upload = multer({
     const mimetype = allowedTypes.test(file.mimetype);
 
     // Special validation for profile image (images only)
-    if (file.fieldname === 'profilePhoto') {
+    if (file.fieldname === 'profilePhoto' || file.fieldname === 'profileImage') {
       const imageTypes = /jpeg|jpg|png|webp/; // Added webp as requested
       const isImage = imageTypes.test(path.extname(file.originalname).toLowerCase()) &&
         imageTypes.test(file.mimetype);
@@ -429,12 +429,19 @@ export const completeEmployeeProfile = async (req: any, res: Response) => {
       ? `/uploads/documents/${files.bankStatementFile[0].filename}`
       : null;
 
-    const profileImage = files?.profileImage
-      ? `/uploads/profile/${files.profileImage[0].filename}`
-      : null;
-
-    if (profileImage) {
-      console.log("Uploaded file:", files.profileImage[0]);
+    const photoFile = files?.profileImage?.[0] || files?.profilePhoto?.[0];
+    let profileImage: string | null = null;
+    if (photoFile) {
+      const profileDir = path.join(getUploadsDir(), "profile");
+      if (!fs.existsSync(profileDir)) {
+        fs.mkdirSync(profileDir, { recursive: true });
+      }
+      const targetProfilePath = path.join(profileDir, photoFile.filename);
+      if (photoFile.path && path.resolve(photoFile.path) !== path.resolve(targetProfilePath) && fs.existsSync(photoFile.path)) {
+        fs.renameSync(photoFile.path, targetProfilePath);
+      }
+      profileImage = `/uploads/profile/${photoFile.filename}`;
+      console.log("Uploaded file:", photoFile);
       console.log("Saved profile image path:", profileImage);
     }
 
@@ -707,29 +714,12 @@ export const updateProfilePhoto = async (req: any, res: Response) => {
     });
     console.log('✅ Updated Employee.profileImage');
 
-    // Update EmployeeProfile table
+    // Update EmployeeProfile table only if it already exists
     if (employeeProfile) {
       console.log('📝 Updating existing profile...');
       await prisma.employeeProfile.update({
         where: { employeeId: req.user.id },
         data: { profileImage: photoUrl } as any
-      });
-    } else {
-      console.log('➕ Creating new profile for photo...');
-      await prisma.employeeProfile.create({
-        data: {
-          employeeId: req.user.id,
-          profileImage: photoUrl,
-          dob: new Date('2000-01-01'), // Required field
-          doj: new Date(), // Required field
-          education: 'Not specified',
-          maritalStatus: 'Single',
-          gender: 'Other',
-          permanentAddress: 'Not provided',
-          currentAddress: 'Not provided',
-          pan: 'Not provided',
-          aadhaar: 'Not provided'
-        } as any
       });
     }
 
@@ -881,8 +871,9 @@ export const getEmployeeByEmail = async (req: any, res: Response) => {
     // Log the profile image path for debugging as requested
     console.log("Profile Image Path:", employee.profileImage);
 
+    const { password: _pw, ...safeEmployee } = employee as any;
     const fullEmployeeDetails = {
-      ...employee,
+      ...safeEmployee,
       profileImage: toAbsoluteAssetUrl(employee.profileImage, req),
       
       // New Array Fields

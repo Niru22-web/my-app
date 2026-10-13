@@ -40,6 +40,7 @@ export const createAssetRequest = async (req: Request, res: Response) => {
       assetCategory, 
       title, 
       description, 
+      reason,
       priority, 
       requiredDate, 
       quantity, 
@@ -48,22 +49,40 @@ export const createAssetRequest = async (req: Request, res: Response) => {
       employeeId // New field for admin creation
     } = req.body;
 
+    const trimmedAssetType = typeof assetType === 'string' ? assetType.trim() : '';
+    const trimmedTitle = typeof title === 'string' ? title.trim() : '';
+    const trimmedDescription = typeof description === 'string' ? description.trim() : '';
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+
+    if (!trimmedAssetType || (!trimmedTitle && !trimmedDescription && !trimmedReason)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Asset type and reason/title are required'
+      });
+    }
+
+    const resolvedCategory = (typeof assetCategory === 'string' && assetCategory.trim()) ? assetCategory.trim() : 'Hardware';
+    const resolvedTitle = trimmedTitle || trimmedReason || `${trimmedAssetType} Request`;
+    const resolvedDescription = trimmedDescription || trimmedReason || null;
+
     // Ensure category exists in master table
-    await ensureCategoryExists(assetType, assetCategory);
+    await ensureCategoryExists(trimmedAssetType, resolvedCategory);
 
     const requestId = `ASSET-${Math.floor(100000 + Math.random() * 900000)}`;
+    const userRoleUpper = String(user?.role || '').toUpperCase();
+    const canAssignEmployee = ['ADMIN', 'HR', 'IT', 'OWNER'].includes(userRoleUpper);
 
     const assetRequest = await prisma.assetRequest.create({
       data: {
         requestId,
-        employeeId: (user.role === 'ADMIN' || user.role === 'HR') && employeeId ? employeeId : user.id,
-        assetType,
-        assetCategory,
-        title,
-        description,
+        employeeId: canAssignEmployee && employeeId ? employeeId : user.id,
+        assetType: trimmedAssetType,
+        assetCategory: resolvedCategory,
+        title: resolvedTitle,
+        description: resolvedDescription,
         priority: priority || 'Medium',
         requiredDate: requiredDate ? new Date(requiredDate) : null,
-        quantity: quantity || 1,
+        quantity: quantity ? Number(quantity) : 1,
         deliveryLocation,
         attachmentUrl,
         status: 'Pending'

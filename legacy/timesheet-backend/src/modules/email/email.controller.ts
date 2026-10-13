@@ -389,10 +389,13 @@ export const sendTestEmail = async (req: Request, res: Response) => {
 export const getAllConnections = async (req: Request, res: Response) => {
   try {
     const connections = await emailService.getAllEmailConnections();
+    const safeConnections = Array.isArray(connections)
+      ? connections.map(({ accessToken, refreshToken, ...rest }: any) => rest)
+      : connections;
 
     res.json({
       success: true,
-      data: connections
+      data: safeConnections
     });
   } catch (error) {
     console.error('Get all connections error:', error);
@@ -660,10 +663,12 @@ export const getEmailConfiguration = async (req: Request, res: Response) => {
       });
     }
     
+    const { accessToken, refreshToken, ...safeConnection } = connection as any;
+
     return res.json({
       emailProvider: `${connection.provider}-workspace`,
       enableNotifications: true,
-      oauthConnection: connection
+      oauthConnection: safeConnection
     });
   } catch (error: any) {
     console.error("API ERROR:", error);

@@ -10,20 +10,27 @@ const router = express.Router();
 // ==========================================
 export const checkAccountsAccess = (req: any, res: Response, next: NextFunction) => {
   authenticate(req, res, () => {
-    const userRole = (req.user?.role as string)?.toUpperCase();
+    const userRole = String(req.user?.role || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
     const accountsRoles = [
       "ADMIN",
+      "OWNER",
       "ACCOUNTS",
       "ACCOUNTS_ADMIN",
       "ACCOUNTS_MANAGER",
       "ACCOUNTS_EXECUTIVE",
+      "FINANCE",
       "FINANCE_APPROVER",
+      "FINANCE_MANAGER",
+      "FINANCE_ADMIN",
       "AR_MANAGER",
       "AP_MANAGER",
       "ACCOUNTANT"
     ];
-    
-    if (accountsRoles.includes(userRole) || req.user?.hasAccountsAccess) {
+
+    if (accountsRoles.includes(userRole) || Boolean(req.user?.hasAccountsAccess)) {
       next();
     } else {
       res.status(403).json({ 
@@ -37,22 +44,26 @@ export const checkAccountsAccess = (req: any, res: Response, next: NextFunction)
 // Apply checkAccountsAccess guard to all sub-routes
 router.use(checkAccountsAccess);
 
-// Helper to log audit trail entries
+function sanitizeEmployeeObj(emp: any) {
+  if (!emp || typeof emp !== "object") return emp;
+  const { password, ...safeEmp } = emp;
+  return safeEmp;
+}
+
+// Helper to log audit trail entries safely via Prisma ORM (no SQL injection)
 async function logAudit(tableName: string, recordId: string, action: string, performedBy: string, oldValue: any = null, newValue: any = null) {
   try {
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO "AuditTrail" ("id", "tableName", "recordId", "action", "performedBy", "oldValue", "newValue", "timestamp")
-      VALUES (
-        '${crypto.randomUUID()}', 
-        '${tableName}', 
-        '${recordId}', 
-        '${action}', 
-        '${performedBy}', 
-        '${JSON.stringify(oldValue)}'::jsonb, 
-        '${JSON.stringify(newValue)}'::jsonb, 
-        NOW()
-      )
-    `);
+    await prisma.auditTrail.create({
+      data: {
+        tableName: String(tableName),
+        recordId: String(recordId),
+        action: String(action),
+        performedBy: String(performedBy),
+        oldValue: oldValue !== undefined ? oldValue : null,
+        newValue: newValue !== undefined ? newValue : null,
+        timestamp: new Date()
+      }
+    });
   } catch (err) {
     console.error("Audit logging error:", err);
   }
@@ -352,7 +363,16 @@ router.get("/invoices", async (req: Request, res: Response) => {
       },
       orderBy: { createdAt: "desc" }
     });
-    res.json({ success: true, data: invoices });
+    const sanitized = invoices.map((inv: any) => ({
+      ...inv,
+      items: Array.isArray(inv.items)
+        ? inv.items.map((item: any) => ({
+            ...item,
+            employee: sanitizeEmployeeObj(item.employee)
+          }))
+        : inv.items
+    }));
+    res.json({ success: true, data: sanitized });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -381,7 +401,16 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       }
     });
     if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
-    res.json({ success: true, data: invoice });
+    const sanitized = {
+      ...invoice,
+      items: Array.isArray(invoice.items)
+        ? invoice.items.map((item: any) => ({
+            ...item,
+            employee: sanitizeEmployeeObj(item.employee)
+          }))
+        : invoice.items
+    };
+    res.json({ success: true, data: sanitized });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1013,10 +1042,15 @@ router.get("/approval-queue", async (req: Request, res: Response) => {
       include: { client: true, entity: true }
     });
 
+    const sanitizedReimbursements = pendingReimbursements.map((r: any) => ({
+      ...r,
+      employee: sanitizeEmployeeObj(r.employee)
+    }));
+
     res.json({
       success: true,
       data: {
-        reimbursements: pendingReimbursements,
+        reimbursements: sanitizedReimbursements,
         invoices: pendingInvoices
       }
     });
@@ -1060,22 +1094,29 @@ router.post("/approval-queue/:type/:id/approve", async (req: any, res: Response)
         }
       });
 
-      // Post to employee ledger on final approval
+      // Post to employee ledger on final approval using the first active entity (not a hardcoded UUID)
       if (["APPROVED", "APPROVED_DIRECTOR", "APPROVED_CFO", "PENDING_PAYMENT"].includes(targetStatus)) {
-        await (prisma as any).ledger.create({
-          data: {
-            entityId: reimb.clientId ? "3e1c5782-6cf5-42e6-8649-45d7383e516c" : "3e1c5782-6cf5-42e6-8649-45d7383e516c", // default fallback entity
-            type: "EMPLOYEE",
-            employeeId: reimb.employeeId,
-            date: new Date(),
-            description: `Approved Reimbursement Claim ${reimb.claimId}`,
-            debit: amount,
-            credit: 0.0,
-            balance: amount,
-            referenceId: reimb.id,
-            referenceType: "REIMBURSEMENT"
-          }
-        });
+        const activeEntity =
+          (await prisma.entity.findFirst({
+            where: { status: { in: ["Active", "ACTIVE", "active"] } }
+          })) || (await prisma.entity.findFirst());
+
+        if (activeEntity) {
+          await (prisma as any).ledger.create({
+            data: {
+              entityId: activeEntity.id,
+              type: "EMPLOYEE",
+              employeeId: reimb.employeeId,
+              date: new Date(),
+              description: `Approved Reimbursement Claim ${reimb.claimId}`,
+              debit: amount,
+              credit: 0.0,
+              balance: amount,
+              referenceId: reimb.id,
+              referenceType: "REIMBURSEMENT"
+            }
+          });
+        }
       }
 
       await logAudit("Reimbursement", id, "APPROVE", approverId, reimb, updated);
@@ -1547,34 +1588,62 @@ router.get("/audit-log", async (req: Request, res: Response) => {
   try {
     const page      = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit     = Math.min(100, parseInt(req.query.limit as string) || 50);
-    const action    = (req.query.action as string) || '';     // CREATE | UPDATE | DELETE | APPROVE
-    const portal    = (req.query.portal as string) || '';     // Invoice | Receipt | Entity | etc.
-    const search    = (req.query.search as string) || '';
+    const action    = ((req.query.action as string) || '').trim();     // CREATE | UPDATE | DELETE | APPROVE
+    const portal    = ((req.query.portal as string) || '').trim();     // Invoice | Receipt | Entity | etc.
+    const search    = ((req.query.search as string) || '').trim();
     const dateFrom  = req.query.dateFrom as string;
     const dateTo    = req.query.dateTo as string;
 
-    // Build WHERE clauses for raw query (AuditTrail has no Prisma model, uses raw SQL)
-    const conditions: string[] = [];
-    if (action) conditions.push(`"action" ILIKE '${action}'`);
-    if (portal) conditions.push(`"tableName" ILIKE '${portal}'`);
-    if (search) conditions.push(`("performedBy" ILIKE '%${search}%' OR "recordId" ILIKE '%${search}%')`);
-    if (dateFrom) conditions.push(`"timestamp" >= '${dateFrom}'::timestamptz`);
-    if (dateTo) conditions.push(`"timestamp" <= '${dateTo}'::timestamptz + interval '1 day'`);
+    const whereClause: any = {};
+    if (action) {
+      whereClause.action = { equals: action, mode: 'insensitive' };
+    }
+    if (portal) {
+      whereClause.tableName = { equals: portal, mode: 'insensitive' };
+    }
+    if (search) {
+      whereClause.OR = [
+        { performedBy: { contains: search, mode: 'insensitive' } },
+        { recordId: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+    if (dateFrom || dateTo) {
+      whereClause.timestamp = {};
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        if (!isNaN(fromDate.getTime())) {
+          whereClause.timestamp.gte = fromDate;
+        }
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        if (!isNaN(toDate.getTime())) {
+          toDate.setDate(toDate.getDate() + 1);
+          whereClause.timestamp.lte = toDate;
+        }
+      }
+    }
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const offset = (page - 1) * limit;
 
-    const [rows, countRows] = await Promise.all([
-      prisma.$queryRawUnsafe<any[]>(`
-        SELECT id, "tableName", "recordId", action, "performedBy", "timestamp"
-        FROM "AuditTrail"
-        ${where}
-        ORDER BY "timestamp" DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `),
-      prisma.$queryRawUnsafe<any[]>(`
-        SELECT COUNT(*) as total FROM "AuditTrail" ${where}
-      `)
+    const [rows, totalCount] = await Promise.all([
+      prisma.auditTrail.findMany({
+        where: whereClause,
+        orderBy: { timestamp: 'desc' },
+        skip: offset,
+        take: limit,
+        select: {
+          id: true,
+          tableName: true,
+          recordId: true,
+          action: true,
+          performedBy: true,
+          timestamp: true
+        }
+      }),
+      prisma.auditTrail.count({
+        where: whereClause
+      })
     ]);
 
     // Resolve performedBy (user id → name) via Employee table
@@ -1636,8 +1705,8 @@ router.get("/audit-log", async (req: Request, res: Response) => {
       pagination: {
         page,
         limit,
-        total: Number(countRows[0]?.total || 0),
-        pages: Math.ceil(Number(countRows[0]?.total || 0) / limit)
+        total: Number(totalCount || 0),
+        pages: Math.ceil(Number(totalCount || 0) / limit)
       }
     });
   } catch (error: any) {
@@ -1648,20 +1717,28 @@ router.get("/audit-log", async (req: Request, res: Response) => {
 // GET /api/accounts/live-users — employees active in the last 30 min (based on audit trail)
 router.get("/live-users", async (req: Request, res: Response) => {
   try {
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
 
-    // Get unique performedBy IDs that have had audit activity in last 30min
-    const recentActivity = await prisma.$queryRawUnsafe<any[]>(`
-      SELECT DISTINCT "performedBy", MAX("timestamp") as "lastSeen"
-      FROM "AuditTrail"
-      WHERE "timestamp" >= '${thirtyMinAgo}'::timestamptz
-        AND "performedBy" IS NOT NULL AND "performedBy" != 'System'
-      GROUP BY "performedBy"
-    `);
+    // Get unique performedBy IDs that have had audit activity in last 30min via safe Prisma query
+    const recentLogs = await prisma.auditTrail.findMany({
+      where: {
+        timestamp: { gte: thirtyMinAgo },
+        performedBy: { not: 'System' }
+      },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        performedBy: true,
+        timestamp: true
+      }
+    });
 
-    const userIds = recentActivity.map((r: any) => r.performedBy).filter(Boolean);
     const lastSeenMap: Record<string, string> = {};
-    recentActivity.forEach((r: any) => { lastSeenMap[r.performedBy] = r.lastSeen; });
+    for (const r of recentLogs) {
+      if (r.performedBy && !lastSeenMap[r.performedBy]) {
+        lastSeenMap[r.performedBy] = r.timestamp.toISOString();
+      }
+    }
+    const userIds = Object.keys(lastSeenMap);
 
     let employees: any[] = [];
     if (userIds.length > 0) {
@@ -1693,13 +1770,382 @@ router.get("/transactions", async (req: Request, res: Response) => {
   try {
     const transactions = await prisma.transaction.findMany({
       include: {
+        entity: { select: { id: true, name: true } },
         client: true,
         employee: true,
-        invoice: true
+        invoice: true,
+        payroll: true
       },
       orderBy: { date: "desc" }
     });
-    res.json({ success: true, data: transactions });
+    const sanitized = transactions.map((t: any) => ({
+      ...t,
+      employee: sanitizeEmployeeObj(t.employee)
+    }));
+    res.json({ success: true, data: sanitized });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PUT /api/accounts/transactions/:id/reconcile
+router.put("/transactions/:id/reconcile", async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const txn = await prisma.transaction.findUnique({ where: { id } });
+    if (!txn) return res.status(404).json({ success: false, message: "Transaction not found" });
+
+    const { mappedStatus, invoiceId, payrollId, clientId, employeeId } = req.body || {};
+    if (mappedStatus === "UNMAPPED") {
+      const updated = await prisma.transaction.update({
+        where: { id },
+        data: { mappedStatus: "UNMAPPED", invoiceId: null, payrollId: null, clientId: null, employeeId: null }
+      });
+      return res.json({ success: true, data: updated });
+    }
+
+    if (invoiceId) {
+      const inv = await prisma.invoice.findUnique({ where: { id: invoiceId }, include: { receiptAllocations: true } });
+      if (inv) {
+        const allocated = inv.receiptAllocations.reduce((s, a) => s + a.amountAllocated, 0);
+        const due = Math.max(0, inv.totalAmount - allocated);
+        const applied = Math.min(Math.abs(txn.amount), due || Math.abs(txn.amount));
+        if (due > 0) {
+          const count = await prisma.receipt.count();
+          const receipt = await prisma.receipt.create({
+            data: {
+              receiptNumber: `RCPT-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+              clientId: inv.clientId,
+              entityId: inv.entityId,
+              amount: applied,
+              currency: inv.currency,
+              exchangeRate: inv.exchangeRate,
+              receiptDate: txn.date,
+              paymentMode: "Bank Transfer",
+              referenceNumber: txn.bankReference || null,
+              notes: `Reconciled from statement: ${txn.description}`
+            }
+          });
+          await prisma.receiptAllocation.create({
+            data: { receiptId: receipt.id, invoiceId: inv.id, amountAllocated: applied }
+          });
+          await prisma.invoice.update({
+            where: { id: inv.id },
+            data: { status: applied >= due - 0.005 ? "PAID" : "PARTIALLY_PAID" }
+          });
+        }
+      }
+    }
+
+    if (payrollId) {
+      await prisma.payroll.update({
+        where: { id: payrollId },
+        data: { status: "PAID", paymentDate: txn.date }
+      });
+    }
+
+    const updated = await prisma.transaction.update({
+      where: { id },
+      data: {
+        mappedStatus: "RECONCILED",
+        invoiceId: invoiceId || null,
+        payrollId: payrollId || null,
+        clientId: clientId || null,
+        employeeId: employeeId || null
+      }
+    });
+    await logAudit("Transaction", id, "UPDATE", req.user?.id || "System", txn, updated);
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/accounts/transactions/:id
+router.delete("/transactions/:id", async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.transaction.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: "Transaction not found" });
+    if (existing.mappedStatus === "RECONCILED") {
+      return res.status(400).json({ success: false, message: "Unlink reconciled transaction before deleting" });
+    }
+    await prisma.transaction.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ==========================================
+// 11. PAYROLL, LEDGERS, TAXES & CURRENCIES
+// ==========================================
+router.get("/payroll", async (req: Request, res: Response) => {
+  try {
+    const { month, year, entityId, status } = req.query as Record<string, string>;
+    const where: Record<string, any> = {};
+    if (month) where.month = Number(month);
+    if (year) where.year = Number(year);
+    if (entityId) where.entityId = entityId;
+    if (status && status !== "all") where.status = status;
+
+    const rows = await prisma.payroll.findMany({
+      where,
+      include: {
+        entity: { select: { id: true, name: true } },
+        employee: true
+      },
+      orderBy: [{ year: "desc" }, { month: "desc" }]
+    });
+    res.json({
+      success: true,
+      data: rows.map((r: any) => ({ ...r, employee: sanitizeEmployeeObj(r.employee) }))
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/payroll", async (req: any, res: Response) => {
+  try {
+    const { employeeId, entityId, month, year, basicSalary, allowances, deductions } = req.body || {};
+    const m = Number(month);
+    const y = Number(year);
+    const basic = Number(basicSalary || 0);
+    const allow = Number(allowances || 0);
+    const ded = Number(deductions || 0);
+    if (!employeeId || !entityId || m < 1 || m > 12 || y < 2000 || basic <= 0) {
+      return res.status(400).json({ success: false, message: "employeeId, entityId, month, year and positive basicSalary are required" });
+    }
+    const netPayable = Math.max(0, Math.round((basic + allow - ded) * 100) / 100);
+    const created = await prisma.payroll.create({
+      data: {
+        employeeId,
+        entityId,
+        month: m,
+        year: y,
+        basicSalary: basic,
+        allowances: allow,
+        deductions: ded,
+        netPayable,
+        status: "PENDING"
+      },
+      include: {
+        entity: { select: { id: true, name: true } },
+        employee: true
+      }
+    });
+    await prisma.ledger.create({
+      data: {
+        entityId,
+        type: "EMPLOYEE",
+        employeeId,
+        date: new Date(Date.UTC(y, m - 1, 28)),
+        description: `Payroll accrual (${String(m).padStart(2, "0")}/${y})`,
+        debit: netPayable,
+        credit: 0,
+        balance: netPayable,
+        referenceId: created.id,
+        referenceType: "PAYROLL"
+      }
+    });
+    await logAudit("Payroll", created.id, "CREATE", req.user?.id || "System", null, created);
+    res.status(201).json({ success: true, data: { ...created, employee: sanitizeEmployeeObj((created as any).employee) } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch("/payroll/:id/pay", async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { paymentDate } = req.body || {};
+    const existing = await prisma.payroll.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: "Payroll entry not found" });
+    const paidDate = paymentDate ? new Date(paymentDate) : new Date();
+    const updated = await prisma.payroll.update({
+      where: { id },
+      data: { status: "PAID", paymentDate: paidDate },
+      include: { entity: { select: { id: true, name: true } }, employee: true }
+    });
+    await prisma.ledger.create({
+      data: {
+        entityId: existing.entityId,
+        type: "EMPLOYEE",
+        employeeId: existing.employeeId,
+        date: paidDate,
+        description: `Salary disbursed (${String(existing.month).padStart(2, "0")}/${existing.year})`,
+        debit: 0,
+        credit: existing.netPayable,
+        balance: -existing.netPayable,
+        referenceId: existing.id,
+        referenceType: "PAYROLL_PAYMENT"
+      }
+    });
+    await logAudit("Payroll", id, "UPDATE", req.user?.id || "System", existing, updated);
+    res.json({ success: true, data: { ...updated, employee: sanitizeEmployeeObj((updated as any).employee) } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete("/payroll/:id", async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.payroll.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: "Payroll not found" });
+    if (existing.status === "PAID") return res.status(400).json({ success: false, message: "Cannot delete paid payroll" });
+    await prisma.ledger.deleteMany({ where: { referenceId: id, referenceType: "PAYROLL" } });
+    await prisma.payroll.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get("/ledgers", async (req: Request, res: Response) => {
+  try {
+    const { entityId, type, clientId, employeeId, from, to } = req.query as Record<string, string>;
+    const where: Record<string, any> = {};
+    if (entityId) where.entityId = entityId;
+    if (type && type !== "all") where.type = type.toUpperCase();
+    if (clientId) where.clientId = clientId;
+    if (employeeId) where.employeeId = employeeId;
+    if (from || to) {
+      where.date = {
+        ...(from ? { gte: new Date(from) } : {}),
+        ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {})
+      };
+    }
+    const rows = await prisma.ledger.findMany({
+      where,
+      include: {
+        entity: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        employee: true
+      },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }]
+    });
+    let runningBalance = 0;
+    const data = rows.map((r: any) => {
+      runningBalance = Math.round((runningBalance + (r.debit || 0) - (r.credit || 0)) * 100) / 100;
+      return { ...r, employee: sanitizeEmployeeObj(r.employee), runningBalance };
+    });
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/ledgers", async (req: any, res: Response) => {
+  try {
+    const { entityId, type, clientId, employeeId, date, description, debit, credit } = req.body || {};
+    const d = Math.max(0, Number(debit || 0));
+    const c = Math.max(0, Number(credit || 0));
+    if (!entityId || !description?.trim() || (d === 0 && c === 0)) {
+      return res.status(400).json({ success: false, message: "entityId, description and debit/credit are required" });
+    }
+    const created = await prisma.ledger.create({
+      data: {
+        entityId,
+        type: (type || (clientId ? "CLIENT" : employeeId ? "EMPLOYEE" : "GENERAL")).toUpperCase(),
+        clientId: clientId || null,
+        employeeId: employeeId || null,
+        date: date ? new Date(date) : new Date(),
+        description: description.trim(),
+        debit: d,
+        credit: c,
+        balance: d - c,
+        referenceType: "JOURNAL"
+      }
+    });
+    await logAudit("Ledger", created.id, "CREATE", req.user?.id || "System", null, created);
+    res.status(201).json({ success: true, data: created });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get("/taxes", async (_req: Request, res: Response) => {
+  try {
+    const rows = await prisma.taxConfiguration.findMany({ orderBy: [{ type: "asc" }, { rate: "asc" }] });
+    res.json({ success: true, data: rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/taxes", async (req: any, res: Response) => {
+  try {
+    const { name, type, rate, isActive } = req.body || {};
+    if (!name?.trim() || !type?.trim() || !Number.isFinite(Number(rate))) {
+      return res.status(400).json({ success: false, message: "name, type, and rate are required" });
+    }
+    const created = await prisma.taxConfiguration.create({
+      data: {
+        name: name.trim(),
+        type: type.trim().toUpperCase(),
+        rate: Number(rate),
+        isActive: isActive !== undefined ? Boolean(isActive) : true
+      }
+    });
+    res.status(201).json({ success: true, data: created });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.put("/taxes/:id", async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, type, rate, isActive } = req.body || {};
+    const updated = await prisma.taxConfiguration.update({
+      where: { id },
+      data: {
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(type !== undefined ? { type: type.trim().toUpperCase() } : {}),
+        ...(rate !== undefined ? { rate: Number(rate) } : {}),
+        ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {})
+      }
+    });
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete("/taxes/:id", async (req: any, res: Response) => {
+  try {
+    await prisma.taxConfiguration.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/currencies", async (req: any, res: Response) => {
+  try {
+    const { code, name, symbol } = req.body || {};
+    const cleanCode = String(code || "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(cleanCode) || !name?.trim()) {
+      return res.status(400).json({ success: false, message: "3-letter currency code and name are required" });
+    }
+    const created = await prisma.currency.upsert({
+      where: { code: cleanCode },
+      create: { code: cleanCode, name: name.trim(), symbol: symbol?.trim() || cleanCode },
+      update: { name: name.trim(), symbol: symbol?.trim() || cleanCode },
+      include: { exchangeRates: true }
+    });
+    res.status(201).json({ success: true, data: created });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete("/exchange-rates/:id", async (req: any, res: Response) => {
+  try {
+    await prisma.exchangeRate.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }

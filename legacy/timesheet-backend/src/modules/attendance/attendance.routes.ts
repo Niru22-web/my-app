@@ -6,7 +6,7 @@ const router = Router();
 
 // Existing routes
 router.post('/check-in', authenticate, checkIn);
-router.post('/login', attendanceLogin);
+router.post('/login', authenticate, attendanceLogin);
 router.post('/check-out', authenticate, checkOut);
 router.post('/logout', authenticate, checkOut);
 router.get('/my-attendance', authenticate, getTodaySummary);

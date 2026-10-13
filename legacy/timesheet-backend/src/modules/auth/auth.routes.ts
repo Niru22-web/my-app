@@ -6,9 +6,17 @@ import { authenticate } from "../../middleware/auth.middleware";
 
 const router = Router();
 
+const checkAdminOrHrRole = (req: any, res: any, next: any) => {
+  const userRole = (req.user?.role as string)?.toLowerCase()?.trim();
+  if (['admin', 'hr', 'owner'].includes(userRole)) {
+    return next();
+  }
+  return res.status(403).json({ message: "Access denied. Action restricted to Admin or HR." });
+};
+
 router.get("/me", authenticate, me);
 router.post("/login", login);
-router.post("/register", register);
+router.post("/register", authenticate, checkAdminOrHrRole, register);
 router.post("/forgot-password", forgotPassword);
 router.get("/validate-reset-token", validateResetToken);
 router.post("/reset-password", resetPassword);

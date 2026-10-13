@@ -56,6 +56,23 @@ const upload = multer({
 // Upload document middleware
 export const uploadDocument = upload.array('documents', 10); // Allow up to 10 files
 
+const canAccessEmployeeDocuments = (req: any, targetEmployeeId: string, targetEmployeeCode?: string): boolean => {
+  const user = req.user;
+  if (!user) return false;
+  const userRole = (user.role || '').toLowerCase().trim();
+  const allowedRoles = ['admin', 'hr', 'manager', 'partner', 'owner', 'sub manager', 'sub-manager'];
+  if (allowedRoles.includes(userRole)) {
+    return true;
+  }
+  if (user.id && user.id === targetEmployeeId) {
+    return true;
+  }
+  if (targetEmployeeCode && user.employeeId && user.employeeId === targetEmployeeCode) {
+    return true;
+  }
+  return false;
+};
+
 // Upload document for employee
 export const uploadEmployeeDocument = async (req: any, res: Response) => {
   try {
@@ -103,6 +120,18 @@ export const uploadEmployeeDocument = async (req: any, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Employee not found'
+      });
+    }
+
+    if (!canAccessEmployeeDocuments(req, employee.id, employee.employeeId)) {
+      files.forEach(file => {
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      });
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You are not authorized to upload documents for this employee.'
       });
     }
 
@@ -170,6 +199,13 @@ export const getEmployeeDocuments = async (req: any, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Employee not found'
+      });
+    }
+
+    if (!canAccessEmployeeDocuments(req, employee.id, employee.employeeId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You are not authorized to view documents for this employee.'
       });
     }
     
@@ -293,6 +329,7 @@ export const downloadEmployeeDocument = async (req: any, res: Response) => {
         employee: {
           select: {
             id: true,
+            employeeId: true,
             firstName: true,
             lastName: true
           }
@@ -305,6 +342,13 @@ export const downloadEmployeeDocument = async (req: any, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Document not found'
+      });
+    }
+
+    if (!canAccessEmployeeDocuments(req, document.employeeId, (document as any).employee?.employeeId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You are not authorized to download this document.'
       });
     }
     
@@ -383,13 +427,28 @@ export const deleteEmployeeDocument = async (req: any, res: Response) => {
     const { documentId } = req.params;
     
     const document = await prisma.employeeDocument.findUnique({
-      where: { id: documentId }
+      where: { id: documentId },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeId: true
+          }
+        }
+      }
     });
     
     if (!document) {
       return res.status(404).json({
         success: false,
         error: 'Document not found'
+      });
+    }
+
+    if (!canAccessEmployeeDocuments(req, document.employeeId, (document as any).employee?.employeeId)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. You are not authorized to delete this document.'
       });
     }
     
