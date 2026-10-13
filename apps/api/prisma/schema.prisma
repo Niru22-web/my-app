@@ -1,0 +1,1649 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id                            String                  @id @default(uuid())
+  employeeId                    String                  @unique
+  firstName                     String
+  lastName                      String
+  officeEmail                   String                  @unique
+  designation                   String
+  status                        String                  @default("pending")
+  password                      String?
+  createdAt                     DateTime                @default(now())
+  department                    String                  @default("General")
+  reportingManager              String?
+  reportingPartner              String?             
+  managers                      EmployeeManager[]       @relation("EmployeeManagers")
+  managedEmployees              EmployeeManager[]       @relation("ManagerEmployees")
+  partners                      EmployeePartner[]       @relation("EmployeePartners")
+  partnerEmployees              EmployeePartner[]       @relation("PartnerEmployees")
+  role                          String                  @default("Employee")
+  approvalStatus                String                  @default("PENDING")
+  approvedAt                    DateTime?
+  approvedBy                    String?
+  profileImage                  String?
+  updatedAt                     DateTime                @default(now()) @updatedAt
+  hasAccountsAccess             Boolean                 @default(false)
+  isApproved                    Boolean                 @default(false)
+  emailConnections              EmailConnection[]
+  profile                       EmployeeProfile?
+  events                        Event[]
+  createdJobs                   Job[]                   @relation("JobCreator")
+  jobs                          JobUser[]
+  createdProjects               Project[]               @relation("ProjectCreator")
+  managedProjects               Project[]               @relation("ProjectManager")
+  partnerProjects               Project[]               @relation("ProjectPartner")
+  projects                      ProjectUser[]
+  registrationTokens            RegistrationToken[]
+  approvedTimelogs              Timelog[]               @relation("TimelogApprover")
+  timelogs                      Timelog[]
+  rejectedTimelogs              Timelog[]               @relation("TimelogRejector")
+  activities                    Activity[]
+  assetAllocations              AssetAllocation[]
+  inventoryHistory              AssetInventoryHistory[] @relation("InventoryHistoryPerformer")
+  assetActionHistory            AssetRequestHistory[]   @relation("HistoryPerformer")
+  approvedAssetRequests         AssetRequest[]          @relation("AssetRequestApprover")
+  assetRequests                 AssetRequest[]          @relation("EmployeeAssetRequests")
+  attendance                    attendance[]
+  attendance_log                attendance_log[]
+  attendance_sessions           attendance_sessions[]
+  assets                        employee_asset[]
+  documents                     EmployeeDocument[]
+  LeaveBalance                  LeaveBalance[]
+  leaveTransactions             LeaveTransaction[]
+  approvedLeaves                Leave[]                 @relation("LeaveApprover")
+  Leave                         Leave[]                 @relation("EmployeeLeaves")
+  notifications                 Notification[]
+  reimbursementLogs             ReimbursementLog[]
+  finalApprovedReimbursements   Reimbursement[]         @relation("ReimbursementFinalApprover")
+  Reimbursement                 Reimbursement[]         @relation("EmployeeReimbursements")
+  managerApprovedReimbursements Reimbursement[]         @relation("ReimbursementManagerApprover")
+  managedReimbursements         Reimbursement[]         @relation("ReimbursementManager")
+  partnerApprovedReimbursements Reimbursement[]         @relation("ReimbursementPartnerApprover")
+  partnerReimbursements         Reimbursement[]         @relation("ReimbursementPartner")
+  processedReimbursements       Reimbursement[]         @relation("ReimbursementProcessor")
+  ticketActionHistory           TicketHistory[]         @relation("TicketHistoryPerformer")
+  createdTickets                Ticket[]                @relation("TicketCreator")
+  createdReports                Report[]                @relation("ReportCreator")
+  userPermission                UserPermission?
+  subManagerId                  String?
+  subManager                    Employee?               @relation("EmployeeSubManager", fields: [subManagerId], references: [id])
+  subManagedEmployees           Employee[]              @relation("EmployeeSubManager")
+  
+  managerId                     String?
+  manager                       Employee?               @relation("EmployeeManager", fields: [managerId], references: [id])
+  managedEmployeesBy            Employee[]              @relation("EmployeeManager")
+  
+  partnerId                     String?
+  partner                       Employee?               @relation("EmployeePartner", fields: [partnerId], references: [id])
+  partnerEmployeesBy            Employee[]              @relation("EmployeePartner")
+
+  reportingPartnerIds           String[]                @default([])
+  reportingManagerIds           String[]                @default([])
+  subManagerIds                 String[]                @default([])
+
+  roleId            String?            @map("role_id")
+  roleMaster        RoleMaster?        @relation(fields: [roleId], references: [id])
+  designationId     String?            @map("designation_id")
+  designationMaster DesignationMaster? @relation(fields: [designationId], references: [id])
+  departmentId      String?            @map("department_id")
+  departmentMaster  DepartmentMaster?  @relation(fields: [departmentId], references: [id])
+  shiftId           String?            @map("shift_id")
+  shiftMaster       ShiftMaster?       @relation(fields: [shiftId], references: [id])
+  locationId        String?            @map("location_id")
+  locationMaster    Location?          @relation(fields: [locationId], references: [id])
+
+  payrolls                      Payroll[]
+  transactions                  Transaction[]
+  ledgers                       Ledger[]
+  invoiceItems                  InvoiceItem[]
+  assetReports                  AssetReport[]
+  complianceHistory             TimesheetCompliance[]   @relation("EmployeeCompliance")
+  reminderHistory               ReminderHistory[]       @relation("EmployeeReminderHistory")
+  esslMappings                  EsslEmployeeMapping[]
+
+  @@map("Employee")
+}
+
+model EmployeeProfile {
+  id                       String   @id @default(uuid())
+  employeeId               String   @unique
+  dob                      DateTime
+  doj                      DateTime
+  education                String?
+  maritalStatus            String?
+  gender                   String?
+  permanentAddress         String?
+  currentAddress           String?
+  pan                      String?
+  aadhaar                  String?
+  panFileUrl               String?
+  aadhaarFileUrl           String?
+  currentPinCode           String?
+  guardianAddress          String?
+  guardianName             String?
+  guardianNumber           String?
+  personalEmail            String?
+  personalMobile           String?
+  profileImage             String? @map("employeePhotoUrl")
+  accountHolderName        String?
+  bankAccountNumber        String?
+  bankName                 String?
+  branchName               String?
+  ifscCode                 String?
+  bankStatementFileUrl     String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  employmentType           String?
+  employmentTypeId         String?               @map("employment_type_id")
+  employmentTypeMaster     EmploymentTypeMaster? @relation(fields: [employmentTypeId], references: [id])
+  experience               String?
+  salary                   Float?
+  seniorityLevel           String?
+  skills                   String[] @default([])
+  employee                 Employee @relation(fields: [employeeId], references: [id])
+}
+
+model Client {
+  id            String          @id @default(uuid())
+  clientId      String          @unique
+  name          String
+  alias         String
+  gstStatus     String
+  gstin         String?
+  pan           String
+  address       String?
+  country       String?
+  pin           String?
+  state         String?
+  createdAt     DateTime        @default(now())
+  createdBy     String
+  partnerId     String?
+  status        String          @default("Active")
+  updatedAt     DateTime        @updatedAt
+  projects      Project[]
+  Reimbursement Reimbursement[]
+  invoices      Invoice[]
+  transactions  Transaction[]
+  receipts      Receipt[]
+  ledgers       Ledger[]
+  invoiceItems  InvoiceItem[]
+
+  @@map("Client")
+}
+
+model Project {
+  id             String              @id @default(uuid())
+  projectId      String              @unique
+  name           String
+  status         String
+  startDate      DateTime
+  billable       Boolean
+  clientId       String
+  contactPerson  String?
+  createdByEmail String?
+  createdBy      String?
+  managerId      String?
+  partnerId      String?
+  endDate        DateTime?
+  jobs           Job[]
+  client         Client              @relation(fields: [clientId], references: [id])
+  creator        Employee?           @relation("ProjectCreator", fields: [createdBy], references: [id])
+  manager        Employee?           @relation("ProjectManager", fields: [managerId], references: [id])
+  partner        Employee?           @relation("ProjectPartner", fields: [partnerId], references: [id])
+  attachments    ProjectAttachment[]
+  users          ProjectUser[]
+  Reimbursement  Reimbursement[]
+  invoices       Invoice[]
+  transactions   Transaction[]
+  invoiceItems   InvoiceItem[]
+
+  @@map("Project")
+}
+
+model ProjectAttachment {
+  id         String   @id @default(uuid())
+  projectId  String
+  fileName   String
+  filePath   String
+  fileSize   Int
+  mimeType   String
+  uploadedAt DateTime @default(now())
+  uploadedBy String?
+  project    Project  @relation(fields: [projectId], references: [id])
+}
+
+model Job {
+  id             String          @id @default(uuid())
+  jobId          String          @unique
+  name           String
+  status         String
+  billable       Boolean
+  projectId      String
+  description    String?
+  endDate        DateTime?
+  startDate      DateTime?
+  combinedId     String          @unique
+  createdByEmail String?
+  createdBy      String?
+  creator        Employee?       @relation("JobCreator", fields: [createdBy], references: [id])
+  project        Project         @relation(fields: [projectId], references: [id])
+  users          JobUser[]
+  timelogs       Timelog[]
+  reimbursements Reimbursement[]
+
+  @@map("Job")
+}
+
+model Timelog {
+  id                 String    @id @default(uuid())
+  hours              Float
+  description        String
+  date               DateTime
+  employeeId         String
+  jobId              String
+  reportingManagerId String?
+  reportingPartnerId String?
+  approvedAt         DateTime?
+  approvedBy         String?
+  rejectedAt         DateTime?
+  rejectedBy         String?
+  rejectionReason    String?
+  billableStatus     String    @default("billable")
+  clientId           String
+  combinedJobCode    String
+  createdAt          DateTime  @default(now())
+  projectId          String
+  submissionStatus   String    @default("not_submitted")
+  submittedAt        DateTime?
+  updatedAt          DateTime  @updatedAt
+  weekStart          DateTime
+  workItem           String?
+  approver           Employee? @relation("TimelogApprover", fields: [approvedBy], references: [id])
+  employee           Employee  @relation(fields: [employeeId], references: [id])
+  job                Job       @relation(fields: [jobId], references: [id])
+  rejector           Employee? @relation("TimelogRejector", fields: [rejectedBy], references: [id])
+
+  @@index([employeeId])
+  @@index([jobId])
+
+  @@index([date])
+  @@index([submissionStatus])
+  @@index([clientId])
+  @@index([projectId])
+  @@map("Timelog")
+}
+
+model RegistrationToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  email      String
+  employeeId String
+  expiresAt  DateTime
+  isUsed     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  employee   Employee @relation(fields: [employeeId], references: [id])
+}
+
+model LeaveTransaction {
+  id         String   @id @default(uuid())
+  employeeId String
+  type       String
+  amount     Float
+  date       DateTime @default(now())
+  reason     String?
+  year       Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("leave_transactions")
+}
+
+model EmailConnection {
+  id           String   @id @default(uuid())
+  employeeId   String
+  provider     String
+  email        String
+  accessToken  String
+  refreshToken String
+  tokenExpiry  DateTime
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  employee     Employee @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+
+  @@unique([employeeId, provider])
+  @@map("EmailConnection")
+}
+
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  category  String
+  subject   String
+  body      String
+  variables String[] @default([])
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("email_templates")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  token     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("password_resets")
+}
+
+model UserPermission {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  adminPanelCreate      Boolean  @default(false)
+  adminPanelDelete      Boolean  @default(false)
+  adminPanelEdit        Boolean  @default(false)
+  adminPanelView        Boolean  @default(false)
+  clientsCreate         Boolean  @default(false)
+  clientsDelete         Boolean  @default(false)
+  clientsEdit           Boolean  @default(false)
+  clientsView           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  dashboardCreate       Boolean  @default(false)
+  dashboardDelete       Boolean  @default(false)
+  dashboardEdit         Boolean  @default(false)
+  dashboardView         Boolean  @default(true)
+  emailTemplatesCreate  Boolean  @default(false)
+  emailTemplatesDelete  Boolean  @default(false)
+  emailTemplatesEdit    Boolean  @default(false)
+  emailTemplatesView    Boolean  @default(false)
+  employeesCreate       Boolean  @default(false)
+  employeesDelete       Boolean  @default(false)
+  employeesEdit         Boolean  @default(false)
+  employeesView         Boolean  @default(false)
+  jobsCreate            Boolean  @default(false)
+  jobsDelete            Boolean  @default(false)
+  jobsEdit              Boolean  @default(false)
+  jobsView              Boolean  @default(false)
+  projectsCreate        Boolean  @default(false)
+  projectsDelete        Boolean  @default(false)
+  projectsEdit          Boolean  @default(false)
+  projectsView          Boolean  @default(true)
+  reportsCreate         Boolean  @default(false)
+  reportsDelete         Boolean  @default(false)
+  reportsEdit           Boolean  @default(false)
+  reportsView           Boolean  @default(true)
+  timesheetCreate       Boolean  @default(true)
+  timesheetDelete       Boolean  @default(false)
+  timesheetEdit         Boolean  @default(true)
+  timesheetView         Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
+  analyticsView         Boolean  @default(false)
+  attendanceCreate      Boolean  @default(false)
+  attendanceDelete      Boolean  @default(false)
+  attendanceEdit        Boolean  @default(false)
+  attendanceView        Boolean  @default(false)
+  leaveManagementCreate Boolean  @default(false)
+  leaveManagementDelete Boolean  @default(false)
+  leaveManagementEdit   Boolean  @default(false)
+  leaveManagementView   Boolean  @default(false)
+  reimbursementCreate   Boolean  @default(false)
+  reimbursementDelete   Boolean  @default(false)
+  reimbursementEdit     Boolean  @default(false)
+  reimbursementView     Boolean  @default(false)
+  inboxView              Boolean  @default(false)
+  inboxCreate            Boolean  @default(false)
+  inboxEdit              Boolean  @default(false)
+  inboxDelete            Boolean  @default(false)
+  calendarView           Boolean  @default(false)
+  calendarCreate         Boolean  @default(false)
+  calendarEdit           Boolean  @default(false)
+  calendarDelete         Boolean  @default(false)
+  complianceView         Boolean  @default(false)
+  complianceCreate       Boolean  @default(false)
+  complianceEdit         Boolean  @default(false)
+  complianceDelete       Boolean  @default(false)
+  helpDeskView           Boolean  @default(false)
+  helpDeskCreate         Boolean  @default(false)
+  helpDeskEdit           Boolean  @default(false)
+  helpDeskDelete         Boolean  @default(false)
+  assetManagementView    Boolean  @default(false)
+  assetManagementCreate  Boolean  @default(false)
+  assetManagementEdit    Boolean  @default(false)
+  assetManagementDelete  Boolean  @default(false)
+  accountsView           Boolean  @default(false)
+  accountsCreate         Boolean  @default(false)
+  accountsEdit           Boolean  @default(false)
+  accountsDelete         Boolean  @default(false)
+  user                  Employee @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_permissions")
+}
+
+model RolePermission {
+  id                    String   @id @default(uuid())
+  role                  String   @unique
+  adminPanelCreate      Boolean  @default(false)
+  adminPanelDelete      Boolean  @default(false)
+  adminPanelEdit        Boolean  @default(false)
+  adminPanelView        Boolean  @default(false)
+  clientsCreate         Boolean  @default(false)
+  clientsDelete         Boolean  @default(false)
+  clientsEdit           Boolean  @default(false)
+  clientsView           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  dashboardCreate       Boolean  @default(false)
+  dashboardDelete       Boolean  @default(false)
+  dashboardEdit         Boolean  @default(false)
+  dashboardView         Boolean  @default(true)
+  emailTemplatesCreate  Boolean  @default(false)
+  emailTemplatesDelete  Boolean  @default(false)
+  emailTemplatesEdit    Boolean  @default(false)
+  emailTemplatesView    Boolean  @default(false)
+  employeesCreate       Boolean  @default(false)
+  employeesDelete       Boolean  @default(false)
+  employeesEdit         Boolean  @default(false)
+  employeesView         Boolean  @default(false)
+  jobsCreate            Boolean  @default(false)
+  jobsDelete            Boolean  @default(false)
+  jobsEdit              Boolean  @default(false)
+  jobsView              Boolean  @default(false)
+  projectsCreate        Boolean  @default(false)
+  projectsDelete        Boolean  @default(false)
+  projectsEdit          Boolean  @default(false)
+  projectsView          Boolean  @default(true)
+  reportsCreate         Boolean  @default(false)
+  reportsDelete         Boolean  @default(false)
+  reportsEdit           Boolean  @default(false)
+  reportsView           Boolean  @default(true)
+  timesheetCreate       Boolean  @default(true)
+  timesheetDelete       Boolean  @default(false)
+  timesheetEdit         Boolean  @default(true)
+  timesheetView         Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
+  analyticsView         Boolean  @default(false)
+  attendanceCreate      Boolean  @default(false)
+  attendanceDelete      Boolean  @default(false)
+  attendanceEdit        Boolean  @default(false)
+  attendanceView        Boolean  @default(false)
+  leaveManagementCreate Boolean  @default(false)
+  leaveManagementDelete Boolean  @default(false)
+  leaveManagementEdit   Boolean  @default(false)
+  leaveManagementView   Boolean  @default(false)
+  reimbursementCreate   Boolean  @default(false)
+  reimbursementDelete   Boolean  @default(false)
+  reimbursementEdit     Boolean  @default(false)
+  reimbursementView     Boolean  @default(false)
+  inboxView              Boolean  @default(false)
+  inboxCreate            Boolean  @default(false)
+  inboxEdit              Boolean  @default(false)
+  inboxDelete            Boolean  @default(false)
+  calendarView           Boolean  @default(false)
+  calendarCreate         Boolean  @default(false)
+  calendarEdit           Boolean  @default(false)
+  calendarDelete         Boolean  @default(false)
+  complianceView         Boolean  @default(false)
+  complianceCreate       Boolean  @default(false)
+  complianceEdit         Boolean  @default(false)
+  complianceDelete       Boolean  @default(false)
+  helpDeskView           Boolean  @default(false)
+  helpDeskCreate         Boolean  @default(false)
+  helpDeskEdit           Boolean  @default(false)
+  helpDeskDelete         Boolean  @default(false)
+  assetManagementView    Boolean  @default(false)
+  assetManagementCreate  Boolean  @default(false)
+  assetManagementEdit    Boolean  @default(false)
+  assetManagementDelete  Boolean  @default(false)
+  accountsView           Boolean  @default(false)
+  accountsCreate         Boolean  @default(false)
+  accountsEdit           Boolean  @default(false)
+  accountsDelete         Boolean  @default(false)
+
+  @@map("role_permissions")
+}
+
+model EmailLog {
+  id           String   @id @default(uuid())
+  recipient    String
+  subject      String
+  status       String   @default("pending")
+  errorMessage String?
+  sentAt       DateTime @default(now())
+  provider     String   @default("outlook")
+  category     String   @default("registration")
+  employeeId   String?
+
+  @@map("email_logs")
+}
+
+model EmployeeDocument {
+  id         String   @id @default(uuid())
+  employeeId String
+  title      String
+  category   String   @default("Other")
+  fileName   String
+  filePath   String
+  fileSize   Int
+  mimeType   String
+  uploadedAt DateTime @default(now())
+  uploadedBy String?
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_documents")
+}
+
+model Notification {
+  id           String    @id @default(uuid())
+  message      String
+  type         String
+  isRead       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  userId       String
+  relatedId    String?
+  actionUrl    String?
+  title        String    @default("Notification")
+  module       String    @default("Employee")
+  priority     String    @default("Info")
+  isArchived   Boolean   @default(false)
+  isPinned     Boolean   @default(false)
+  isStarred    Boolean   @default(false)
+  snoozedUntil DateTime?
+  metadata     Json?
+  user         Employee  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Activity {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  type        String
+  createdAt   DateTime  @default(now())
+  userId      String?
+  relatedId   String?
+  user        Employee? @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}
+
+model Leave {
+  id                 String    @id @default(uuid())
+  leaveId            String    @unique
+  type               String
+  fromDate           DateTime
+  toDate             DateTime
+  duration           String
+  totalDays          Float
+  reason             String
+  status             String    @default("pending")
+  appliedDate        DateTime  @default(now())
+  approvedBy         String?
+  approvedDate       DateTime?
+  employeeId         String
+reportingManagerId String?
+reportingPartnerId String?
+  approvedRole       String?
+  approver           Employee? @relation("LeaveApprover", fields: [approvedBy], references: [id])
+  employee           Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id])
+
+  @@map("leaves")
+}
+
+model LeaveBalance {
+  id              String   @id @default(uuid())
+  employeeId      String
+  createdAt       DateTime @default(now())
+  remainingLeaves Float    @default(21)
+  totalLeaves     Float    @default(21)
+  updatedAt       DateTime @updatedAt
+  usedLeaves      Float    @default(0)
+  year            Int
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year], name: "employeeId_year")
+  @@map("leave_balance")
+}
+
+model Reimbursement {
+  id                String                    @id @default(uuid())
+  claimId           String                    @unique
+  category          String
+  amount            Float
+  description       String?
+  date              DateTime                  @default(now())
+  status            String                    @default("PENDING_MANAGER")
+  employeeId        String
+  clientId          String?
+  jobId             String?
+  projectId         String?
+  remarks           String?
+  submittedAt       DateTime                  @default(now())
+  approvalLevel     Int                       @default(1)
+  managerApprovedAt DateTime?
+  managerApprovedBy String?
+  managerId         String?
+  partnerApprovedAt DateTime?
+  partnerApprovedBy String?
+  partnerId         String?
+  rejectionReason   String?
+  submittedBy       String?
+  accountantRemarks String?
+  bankReference     String?
+  deductions        Float?                    @default(0)
+  gstAmount         Float?                    @default(0)
+  netPayable        Float?                    @default(0)
+  paymentDate       DateTime?
+  paymentMode       String?
+  paymentStatus     String?                   @default("Pending")
+  processedAt       DateTime?
+  processedById     String?
+  tdsAmount         Float?                    @default(0)
+  utrNumber         String?
+  approvedAt        DateTime?
+  approvedBy        String?
+  paidAt            DateTime?
+  rejectedAt        DateTime?
+  updatedAt         DateTime                  @default(now()) @updatedAt
+  attachments       ReimbursementAttachment[]
+  logs              ReimbursementLog[]
+  finalApprover     Employee?                 @relation("ReimbursementFinalApprover", fields: [approvedBy], references: [id])
+  client            Client?                   @relation(fields: [clientId], references: [id])
+  employee          Employee                  @relation("EmployeeReimbursements", fields: [employeeId], references: [id])
+  job               Job?                      @relation(fields: [jobId], references: [id])
+  managerApprover   Employee?                 @relation("ReimbursementManagerApprover", fields: [managerApprovedBy], references: [id])
+  manager           Employee?                 @relation("ReimbursementManager", fields: [managerId], references: [id])
+  partnerApprover   Employee?                 @relation("ReimbursementPartnerApprover", fields: [partnerApprovedBy], references: [id])
+  partner           Employee?                 @relation("ReimbursementPartner", fields: [partnerId], references: [id])
+  processedBy       Employee?                 @relation("ReimbursementProcessor", fields: [processedById], references: [id])
+  project           Project?                  @relation(fields: [projectId], references: [id])
+
+  @@map("reimbursements")
+}
+
+model ReimbursementAttachment {
+  id              String        @id @default(uuid())
+  reimbursementId String
+  fileName        String
+  filePath        String
+  fileSize        Int
+  mimeType        String
+  uploadedAt      DateTime      @default(now())
+  reimbursement   Reimbursement @relation(fields: [reimbursementId], references: [id], onDelete: Cascade)
+
+  @@map("reimbursement_attachments")
+}
+
+model ReimbursementLog {
+  id              String        @id @default(uuid())
+  reimbursementId String
+  action          String
+  status          String
+  remarks         String?
+  performedById   String
+  performedAt     DateTime      @default(now())
+  performedBy     Employee      @relation(fields: [performedById], references: [id])
+  reimbursement   Reimbursement @relation(fields: [reimbursementId], references: [id], onDelete: Cascade)
+
+  @@map("reimbursement_logs")
+}
+
+model attendance {
+  id                  String                @id
+  employee_id         String
+  check_in_time       DateTime?
+  check_out_time      DateTime?
+  check_in_location   String?
+  check_out_location  String?
+  date                DateTime              @db.Date
+  status              String                @default("Absent")
+  total_hours         Float                 @default(0)
+  latitude            Float?
+  longitude           Float?
+  location_name       String?
+  is_auto_checkout    Boolean               @default(false)
+  attendance_source   String                @default("MANUAL")
+  Employee            Employee              @relation(fields: [employee_id], references: [employeeId], onDelete: Cascade)
+  attendance_sessions attendance_sessions[]
+
+  @@unique([employee_id, date])
+}
+
+model attendance_log {
+  id            String   @id @default(uuid())
+  employee_id   String
+  punchTime     DateTime @default(now())
+  type          String
+  source        String   @default("Web")
+  deviceId      String?
+  latitude      Float?
+  location_name String?
+  longitude     Float?
+  Employee      Employee @relation(fields: [employee_id], references: [employeeId], onDelete: Cascade)
+}
+
+model attendance_sessions {
+  id                 String     @id
+  employee_id        String
+  check_in_time      DateTime
+  check_out_time     DateTime?
+  duration           Int?       @default(0)
+  date               DateTime   @db.Date
+  check_in_location  String?
+  check_out_location String?
+  latitude           Float?
+  longitude          Float?
+  location_name      String?
+  is_auto_checkout   Boolean    @default(false)
+  attendance         attendance @relation(fields: [employee_id, date], references: [employee_id, date], onDelete: Cascade)
+  Employee           Employee   @relation(fields: [employee_id], references: [employeeId], onDelete: Cascade)
+}
+
+model ProjectUser {
+  id         String   @id @default(uuid())
+  projectId  String
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, employeeId])
+  @@map("ProjectUser")
+}
+
+model JobUser {
+  id         String   @id @default(uuid())
+  jobId      String
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, employeeId])
+  @@map("JobUser")
+}
+
+model Ticket {
+  id            String             @id @default(uuid())
+  ticketId      String?            @unique
+  description   String
+  status        String             @default("Open")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  assignedTo    String?
+  createdById   String
+  priority      String?
+  title         String
+  category      String?            @default("IT Support")
+  categoryId    Int?               @map("category_id")
+  subcategoryId Int?               @map("subcategory_id")
+  attachmentUrl String?
+  attachments   TicketAttachment[]
+  history       TicketHistory[]
+  createdBy     Employee           @relation("TicketCreator", fields: [createdById], references: [id])
+  categoryRel   HelpdeskCategory?  @relation("TicketCategory", fields: [categoryId], references: [id])
+  subcategoryRel HelpdeskCategory? @relation("TicketSubcategory", fields: [subcategoryId], references: [id])
+
+  @@map("tickets")
+}
+
+model HelpdeskCategory {
+  id            Int                @id @default(autoincrement())
+  parent_id     Int?
+  category_name String
+  description   String?
+  is_active     Boolean            @default(true)
+  display_order Int                @default(0)
+  assigned_team String?            @default("IT")
+  sla_hours     Int?               @default(24)
+  created_by    String?
+  created_at    DateTime           @default(now())
+  updated_at    DateTime           @updatedAt
+
+  support_email       String?
+  cc_email            String?
+  escalation_email    String?
+  auto_assign_user_id String?
+
+  parent        HelpdeskCategory?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children      HelpdeskCategory[] @relation("CategoryHierarchy")
+
+  ticketsAsCategory    Ticket[] @relation("TicketCategory")
+  ticketsAsSubcategory Ticket[] @relation("TicketSubcategory")
+
+  @@map("helpdesk_categories")
+}
+
+model TicketHistory {
+  id            String             @id @default(uuid())
+  ticketId      String
+  action        String
+  fromStatus    String?
+  toStatus      String?
+  fromAssignee  String?
+  toAssignee    String?
+  performedById String
+  performedAt   DateTime           @default(now())
+  remarks       String?
+  performer     Employee           @relation("TicketHistoryPerformer", fields: [performedById], references: [id])
+  ticket        Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  attachments   TicketAttachment[]
+
+  @@map("ticket_history")
+}
+
+model TicketAttachment {
+  id              String         @id @default(uuid())
+  ticketId        String?
+  ticketHistoryId String?
+  url             String
+  filename        String
+  size            Int
+  mimeType        String
+  createdAt       DateTime       @default(now())
+  ticket          Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketHistory   TicketHistory? @relation(fields: [ticketHistoryId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_attachments")
+}
+
+model employee_asset {
+  id               String    @id @default(uuid())
+  employee_id      String
+  asset_type       String
+  asset_name       String
+  serial_number    String
+  assigned_date    DateTime?
+  status           String    @default("Assigned")
+  condition        String    @default("Good")
+  charger          Boolean   @default(false)
+  mouse            Boolean   @default(false)
+  bag              Boolean   @default(false)
+  others           String?
+  remarks          String?
+  created_at       DateTime  @default(now())
+  asset_owner_type String    @default("Company")
+  office_tag_no    String?
+  Employee         Employee  @relation(fields: [employee_id], references: [employeeId], onDelete: Cascade)
+
+  @@map("employee_assets")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  date        DateTime @db.Date
+  time        String?
+  type        String   @default("Other")
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   Employee @relation(fields: [createdById], references: [id])
+}
+
+model AssetInventory {
+  id             String                  @id @default(uuid())
+  assetId        String?                 @unique
+  assetName      String
+  category       String
+  type           String
+  serialNumber   String                  @unique
+  status         String                  @default("Available")
+  officeTagNo    String?
+  condition      String                  @default("New")
+  purchaseDate   DateTime?
+  specifications Json?
+  remarks        String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  deletedAt      DateTime?
+  isDeleted      Boolean                 @default(false)
+  purchaseCost   Float?
+  vendor         String?
+  vendorId       String?
+  vendorRelation Vendor?                 @relation("VendorAssets", fields: [vendorId], references: [id], onDelete: SetNull)
+  warrantyExpiry DateTime?
+  location       String?
+  description    String?
+  allocations    AssetAllocation[]
+  history        AssetInventoryHistory[]
+  maintenances   AssetMaintenance[]
+
+  @@map("asset_inventory")
+}
+
+model AssetRequest {
+  id               String                @id @default(uuid())
+  requestId        String                @unique
+  employeeId       String
+  assetType        String
+  assetCategory    String
+  title            String
+  description      String?
+  priority         String                @default("Medium")
+  requiredDate     DateTime?
+  quantity         Int                   @default(1)
+  deliveryLocation String?
+  status           String                @default("Pending")
+  attachmentUrl    String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  remarks          String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  allocations      AssetAllocation[]
+  history          AssetRequestHistory[]
+  approver         Employee?             @relation("AssetRequestApprover", fields: [approvedBy], references: [id])
+  employee         Employee              @relation("EmployeeAssetRequests", fields: [employeeId], references: [id])
+
+  @@map("asset_requests")
+}
+
+model AssetAllocation {
+  id              String         @id @default(uuid())
+  requestId       String
+  inventoryId     String
+  employeeId      String
+  allocatedAt     DateTime       @default(now())
+  deliveredAt     DateTime?
+  status          String         @default("Allocated")
+  remarks         String?
+  returnedAt      DateTime?
+  approvalStatus  String         @default("Approved")
+  signatureStatus String         @default("Pending Signature")
+  employee        Employee       @relation(fields: [employeeId], references: [id])
+  inventory       AssetInventory @relation(fields: [inventoryId], references: [id])
+  request         AssetRequest   @relation(fields: [requestId], references: [id])
+
+  @@map("asset_allocations")
+}
+
+model AssetRequestHistory {
+  id            String       @id @default(uuid())
+  requestId     String
+  action        String
+  performedById String
+  status        String
+  remarks       String?
+  createdAt     DateTime     @default(now())
+  performer     Employee     @relation("HistoryPerformer", fields: [performedById], references: [id])
+  request       AssetRequest @relation(fields: [requestId], references: [id])
+
+  @@map("asset_request_history")
+}
+
+model AssetInventoryHistory {
+  id            String         @id @default(uuid())
+  inventoryId   String
+  action        String
+  status        String
+  performedById String
+  remarks       String?
+  createdAt     DateTime       @default(now())
+  inventory     AssetInventory @relation(fields: [inventoryId], references: [id])
+  performer     Employee       @relation("InventoryHistoryPerformer", fields: [performedById], references: [id])
+
+  @@map("asset_inventory_history")
+}
+
+model AssetCategory {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  category  String      @default("Hardware")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  types     AssetType[]
+
+  @@map("asset_categories")
+}
+
+model AssetType {
+  id             String        @id @default(uuid())
+  name           String
+  assetCategoryId String
+  category       AssetCategory @relation(fields: [assetCategoryId], references: [id])
+
+  @@map("asset_types")
+}
+
+model AssetMaintenance {
+  id             String         @id @default(uuid())
+  inventoryId    String
+  type           String
+  date           DateTime
+  cost           Float?
+  description    String?
+  status         String         @default("Pending")
+  previousStatus String?
+  inventory      AssetInventory @relation(fields: [inventoryId], references: [id])
+
+  @@map("asset_maintenance")
+}
+
+model EmployeeManager {
+  id          String   @id @default(uuid())
+  employeeId  String
+  managerId   String
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation("EmployeeManagers", fields: [employeeId], references: [id])
+  manager  Employee @relation("ManagerEmployees", fields: [managerId], references: [id])
+
+  @@unique([employeeId, managerId])
+  @@map("employee_managers")
+}
+
+model EmployeePartner {
+  id          String   @id @default(uuid())
+  employeeId  String
+  partnerId   String
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation("EmployeePartners", fields: [employeeId], references: [id])
+  partner  Employee @relation("PartnerEmployees", fields: [partnerId], references: [id])
+
+  @@unique([employeeId, partnerId])
+  @@map("employee_partners")
+}
+
+model Entity {
+  id              String        @id @default(uuid())
+  name            String
+  legalName       String?
+  gstin           String?
+  pan             String?
+  address         String?
+  msmeReg         String?
+  bankDetails     Json?         
+  status          String        @default("ACTIVE")
+  createdAt       DateTime      @default(now())
+  
+  invoices        Invoice[]
+  payrolls        Payroll[]
+  transactions    Transaction[]
+  receipts        Receipt[]
+  ledgers         Ledger[]
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  invoiceNumber   String        @unique
+  entityId        String        
+  clientId        String
+  projectId       String?
+  udin            String?
+  issueDate       DateTime      @default(now())
+  dueDate         DateTime?
+  subTotal        Float
+  taxAmount       Float         @default(0)
+  totalAmount     Float
+  status          String        @default("DRAFT") 
+  currency        String        @default("INR")
+  exchangeRate    Float         @default(1.0)
+  
+  entity          Entity        @relation(fields: [entityId], references: [id])
+  client          Client        @relation(fields: [clientId], references: [id])
+  project         Project?      @relation(fields: [projectId], references: [id])
+  items           InvoiceItem[]
+  transactions    Transaction[] 
+  receiptAllocations ReceiptAllocation[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  description String
+  sacCode     String?
+  quantity    Float
+  unitPrice   Float
+  total       Float
+  
+  projectId   String?
+  clientId    String?
+  employeeId  String?
+  hours       Float?
+  rate        Float?
+  currency    String?  @default("INR")
+  gstRate     Float?  @default(0.0)
+  cgst        Float?  @default(0.0)
+  sgst        Float?  @default(0.0)
+  igst        Float?  @default(0.0)
+  gstAmount   Float?  @default(0.0)
+  
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id])
+  client      Client?  @relation(fields: [clientId], references: [id])
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+}
+
+model Payroll {
+  id              String   @id @default(uuid())
+  employeeId      String
+  entityId        String   
+  month           Int
+  year            Int
+  basicSalary     Float
+  allowances      Float    @default(0)
+  deductions      Float    @default(0)
+  netPayable      Float
+  status          String   @default("PENDING") 
+  paymentDate     DateTime?
+  
+  entity          Entity   @relation(fields: [entityId], references: [id])
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id              String    @id @default(uuid())
+  entityId        String    
+  bankReference   String?   @unique
+  date            DateTime
+  description     String
+  type            String    
+  amount          Float
+  balance         Float?
+  
+  mappedStatus    String    @default("UNMAPPED") 
+  clientId        String?
+  employeeId      String?
+  projectId       String?
+  invoiceId       String?
+  payrollId       String?
+  
+  entity          Entity    @relation(fields: [entityId], references: [id])
+  client          Client?   @relation(fields: [clientId], references: [id])
+  employee        Employee? @relation(fields: [employeeId], references: [id])
+  project         Project?  @relation(fields: [projectId], references: [id])
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  payroll         Payroll?  @relation(fields: [payrollId], references: [id])
+  
+  createdAt       DateTime  @default(now())
+}
+
+model Currency {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  symbol    String?
+  exchangeRates ExchangeRate[]
+}
+
+model ExchangeRate {
+  id           String   @id @default(uuid())
+  currencyId   String
+  baseCurrency String   @default("INR")
+  rate         Float
+  date         DateTime @db.Date
+  currency     Currency @relation(fields: [currencyId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+}
+
+model Receipt {
+  id              String   @id @default(uuid())
+  receiptNumber   String   @unique
+  clientId        String
+  entityId        String
+  amount          Float
+  currency        String   @default("INR")
+  exchangeRate    Float    @default(1.0)
+  receiptDate     DateTime
+  paymentMode     String
+  referenceNumber String?
+  notes           String?
+  allocations     ReceiptAllocation[]
+  client          Client   @relation(fields: [clientId], references: [id])
+  entity          Entity   @relation(fields: [entityId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ReceiptAllocation {
+  id              String   @id @default(uuid())
+  receiptId       String
+  invoiceId       String
+  amountAllocated Float
+  allocatedAt     DateTime @default(now())
+  receipt         Receipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Ledger {
+  id            String   @id @default(uuid())
+  entityId      String
+  type          String
+  clientId      String?
+  employeeId    String?
+  date          DateTime
+  description   String
+  debit         Float    @default(0.0)
+  credit        Float    @default(0.0)
+  balance       Float    @default(0.0)
+  referenceId   String?
+  referenceType String?
+  createdAt     DateTime @default(now())
+  
+  entity        Entity   @relation(fields: [entityId], references: [id])
+  client        Client?  @relation(fields: [clientId], references: [id])
+  employee      Employee? @relation(fields: [employeeId], references: [id])
+}
+
+model TaxConfiguration {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  rate      Float
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AuditTrail {
+  id          String   @id @default(uuid())
+  tableName   String
+  recordId    String
+  action      String
+  performedBy String
+  oldValue    Json?
+  newValue    Json?
+  timestamp   DateTime @default(now())
+}
+
+model Vendor {
+  id            String            @id @default(uuid())
+  vendorName    String
+  company       String
+  email         String?
+  phone         String?
+  address       String?
+  gstNumber     String?
+  contactPerson String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  assets        AssetInventory[]  @relation("VendorAssets")
+
+  @@map("vendors")
+}
+
+model Location {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  employees   Employee[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("locations")
+}
+
+model AssetStatus {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("asset_statuses")
+}
+
+model AssetReport {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // Asset, Employee, Inventory, Maintenance, Ticket
+  filters     Json?    // Store query filters
+  filePath    String?  // Store path of exported file
+  createdById String
+  createdBy   Employee @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@map("asset_reports")
+}
+
+model RoleMaster {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  code        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("roles")
+}
+
+model DesignationMaster {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("designations")
+}
+
+model DepartmentMaster {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("departments")
+}
+
+model EmploymentTypeMaster {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  profiles    EmployeeProfile[]
+
+  @@map("employment_types")
+}
+
+model ShiftMaster {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  startTime   String
+  endTime     String
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("shifts")
+}
+
+model TimesheetCompliance {
+  id                    String    @id @default(uuid())
+  employeeId            String
+  weekStart             DateTime  @db.Date
+  complianceStatus      String    @default("pending") // "compliant", "under_40_hours", "unsubmitted", "missing_daily"
+  loggedHours           Float     @default(0)
+  missingDays           String[]  @default([])
+  reminderSentDate      DateTime? @db.Date
+  lastNotifiedTimestamp DateTime?
+  escalationLevel       Int       @default(0) // 0: None, 1: Daily, 2: Weekly, 3: Consecutive Days/Cutoff, 4: Partner/HR Escalation
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  employee              Employee  @relation("EmployeeCompliance", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, weekStart])
+  @@map("timesheet_compliance")
+}
+
+model ReminderHistory {
+  id                     String   @id @default(uuid())
+  employeeId             String
+  reminderType           String   // "daily_missing", "thursday_warning", "friday_critical", "monday_escalation", "manual"
+  sentAt                 DateTime @default(now())
+  weekStart              DateTime @db.Date
+  hoursAtReminder        Float    @default(0)
+  missingDaysAtReminder  String[] @default([])
+  escalationLevel        Int      @default(0)
+  ccEmails               String[] @default([])
+  completedAfterReminder Boolean  @default(false)
+  employee               Employee @relation("EmployeeReminderHistory", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([sentAt])
+  @@map("reminder_history")
+}
+
+model EsslMachine {
+  id           String                @id @default(uuid())
+  name         String
+  ipAddress    String                @map("ip_address")
+  port         Int                   @default(4370)
+  deviceKey    String                @map("device_key")
+  apiKey       String?               @map("api_key")
+  branch       String
+  syncInterval Int                   @default(5) @map("sync_interval")
+  isActive     Boolean               @default(true) @map("is_active")
+  status       String                @default("Offline")
+  lastSyncAt   DateTime?             @map("last_sync_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  mappings     EsslEmployeeMapping[]
+  syncLogs     EsslSyncLog[]
+
+  @@map("essl_machines")
+}
+
+model EsslEmployeeMapping {
+  id                  String       @id @default(uuid())
+  portalEmployeeId    String?      @map("portal_employee_id")
+  biometricEmployeeId String       @unique @map("biometric_employee_id")
+  biometricName       String       @map("biometric_name")
+  machineId           String?      @map("machine_id")
+  syncStatus          String       @default("Pending") @map("sync_status") // "Mapped", "Unmapped", "Pending"
+  lastPunch           DateTime?    @map("last_punch")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  employee            Employee?    @relation(fields: [portalEmployeeId], references: [id], onDelete: Cascade)
+  machine             EsslMachine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+
+  @@map("essl_employee_mappings")
+}
+
+model EsslSyncLog {
+  id            String       @id @default(uuid())
+  machineId     String?      @map("machine_id")
+  syncTime      DateTime     @default(now()) @map("sync_time")
+  status        String       // "Success", "Failed"
+  recordsSynced Int          @default(0) @map("records_synced")
+  errorMessage  String?      @map("error_message")
+  rawResponse   String?      @map("raw_response")
+  machine       EsslMachine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+
+  @@map("essl_sync_logs")
+}
+
+model Report {
+  id          String             @id @default(uuid())
+  name        String
+  category    String             @default("My Reports") // "My Reports", "Shared Reports", "Recent Reports", "Favorites", "Dashboards", "Templates", "Archived"
+  isFavorite  Boolean            @default(false)
+  isArchived  Boolean            @default(false)
+  isTemplate  Boolean            @default(false)
+  theme       String             @default("Light")
+  zoom        Float              @default(1.0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdById String
+  createdBy   Employee           @relation("ReportCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  pages       ReportPage[]
+  permissions ReportPermission[]
+  history     ReportHistory[]
+  refreshes   ScheduledRefresh[]
+  savedViews  SavedView[]
+  bookmarks   Bookmark[]
+  
+  @@map("reports")
+}
+
+model ReportPage {
+  id        String         @id @default(uuid())
+  reportId  String
+  name      String
+  order     Int            @default(0)
+  isHidden  Boolean        @default(false)
+  report    Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  visuals   ReportVisual[]
+  filters   ReportFilter[]
+
+  @@map("report_pages")
+}
+
+model ReportVisual {
+  id             String         @id @default(uuid())
+  pageId         String
+  title          String
+  x              Int            // Left position on canvas grid
+  y              Int            // Top position on canvas grid
+  w              Int            // Width on canvas grid
+  h              Int            // Height on canvas grid
+  visualType     String         // "card", "kpi", "bar", "line", "pie", "donut", "table", "matrix", etc.
+  dataSource     String         // "attendance", "employees", "projects", "clients", "assets", "leaves", "payroll", "helpdesk", "recruitment"
+  dimension      String?
+  metric         String?
+  legendField    String?
+  tooltipField   String?
+  smallMultiples String?
+  colorPalette   String         @default("indigo")
+  properties     Json?          // Dynamic visual properties (e.g. conditional formatting, title size, etc.)
+  page           ReportPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  tiles          DashboardTile[]
+
+  @@map("report_visuals")
+}
+
+model Dashboard {
+  id          String          @id @default(uuid())
+  name        String
+  isFavorite  Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  createdById String
+  tiles       DashboardTile[]
+
+  @@map("dashboards")
+}
+
+model DashboardTile {
+  id          String       @id @default(uuid())
+  dashboardId String
+  visualId    String
+  x           Int
+  y           Int
+  w           Int
+  h           Int
+  title       String?
+  dashboard   Dashboard    @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  visual      ReportVisual @relation(fields: [visualId], references: [id], onDelete: Cascade)
+
+  @@map("dashboard_tiles")
+}
+
+model ReportPermission {
+  id        String   @id @default(uuid())
+  reportId  String
+  userId    String
+  role      String   // "View", "Edit", "Delete", "Share", "Publish", "Export"
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("report_permissions")
+}
+
+model ReportHistory {
+  id          String   @id @default(uuid())
+  reportId    String
+  version     Int
+  description String
+  modifiedBy  String
+  createdAt   DateTime @default(now())
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("report_history")
+}
+
+model ScheduledRefresh {
+  id          String   @id @default(uuid())
+  reportId    String
+  interval    String   // "manual", "5m", "15m", "30m", "1h", "daily", "weekly"
+  lastRefresh DateTime @default(now())
+  nextRefresh DateTime?
+  isActive    Boolean  @default(true)
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("scheduled_refreshes")
+}
+
+model SavedView {
+  id          String   @id @default(uuid())
+  reportId    String
+  userId      String
+  name        String
+  filters     Json?
+  sorting     Json?
+  theme       String?
+  pageId      String?
+  layout      Json?
+  isDefault   Boolean  @default(false)
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("saved_views")
+}
+
+model Bookmark {
+  id             String   @id @default(uuid())
+  reportId       String
+  userId         String
+  name           String
+  filters        Json?
+  sorting        Json?
+  pageId         String?
+  selectedVisual String?
+  theme          String?
+  zoom           Float?
+  createdAt      DateTime @default(now())
+  report         Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("bookmarks")
+}
+
+model ReportFilter {
+  id         String     @id @default(uuid())
+  pageId     String?    // if page-level filter
+  reportId   String?    // if report-level filter
+  visualId   String?    // if visual-level filter
+  field      String     // field name
+  filterType String     // "visual", "page", "report"
+  operator   String     // "equals", "contains", "between", "topN", etc.
+  value      Json       // filter value(s)
+  page       ReportPage? @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@map("report_filters")
+}
+
+model AIQueryHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  query     String
+  sqlQuery  String?
+  createdAt DateTime @default(now())
+
+  @@map("ai_query_history")
+}
+
+model TeamMessage {
+  id          String   @id @default(uuid())
+  senderId    String
+  senderName  String
+  senderRole  String
+  senderImage String?
+  content     String
+  createdAt   DateTime @default(now())
+
+  @@map("team_messages")
+}
+
+
