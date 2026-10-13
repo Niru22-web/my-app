@@ -1,5 +1,7 @@
 import { prisma } from "../../config/db";
-import { type ReportDef, eachDay, holidaysIn, isWeekend, leaveDays, round2, ymd } from "./engine";
+import { computeBalances, leaveYearOf, yearLabel } from "../../utils/leave-policy";
+import { getWorkCalendar } from "../../utils/work-calendar";
+import { type ReportDef, todayUtc, unpaidLeaveTypes, eachDay, holidaysIn, isWeekend, leaveDays, round2, ymd } from "./engine";
 
 async function leavesInRange(ids: string[], from: Date, to: Date) {
   return prisma.leave.findMany({
@@ -90,32 +92,39 @@ export const leaveReports: ReportDef[] = [
     tiers: ["my", "team", "org"],
     params: [],
     async run(ctx) {
-      const year = ctx.to.getUTCFullYear();
-      const bal = await prisma.leaveBalance.findMany({ where: { employeeId: { in: ctx.emps.map((e) => e.id) }, year } });
-      const byId = new Map(bal.map((b) => [b.employeeId, b]));
+      const cal = await getWorkCalendar();
+      const year = leaveYearOf(todayUtc(), cal.leaveYearStartMonth);
+      const { balances, types } = await computeBalances(ctx.emps.map((e) => e.id), year);
+      const shown = types.filter((t) => t.active && t.paid);
       const rows = ctx.emps.map((e) => {
-        const b = byId.get(e.id);
-        return { code: e.employeeId, name: e.name, total: b?.totalLeaves ?? null, used: b?.usedLeaves ?? null, remaining: b?.remainingLeaves ?? null };
+        const list = balances.get(e.id) ?? [];
+        const by = (id: string) => list.find((b) => b.leaveTypeId === id);
+        return {
+          code: e.employeeId,
+          name: e.name,
+          ...Object.fromEntries(shown.flatMap((t) => [[`${t.code}_avail`, by(t.id)?.available ?? null], [`${t.code}_used`, by(t.id)?.used ?? null]])),
+        };
       });
-      const withBal = rows.filter((r) => r.total != null);
+      const total = (code: string, k: "avail" | "used") => rows.reduce((s, r) => s + Number((r as Record<string, unknown>)[`${code}_${k}`] ?? 0), 0);
       return {
-        period: String(year),
-        kpis: [
-          { label: "Total entitlement", value: withBal.reduce((s, r) => s + (r.total ?? 0), 0), format: "number" },
-          { label: "Used", value: withBal.reduce((s, r) => s + (r.used ?? 0), 0), format: "number" },
-          { label: "Remaining", value: withBal.reduce((s, r) => s + (r.remaining ?? 0), 0), format: "number", tone: "good" },
-          ...(rows.length - withBal.length ? [{ label: "No balance set up", value: rows.length - withBal.length, format: "number" as const, tone: "warn" as const }] : []),
-        ],
+        period: yearLabel(year, cal.leaveYearStartMonth),
+        kpis: shown.flatMap((t) => [
+          { label: `${t.name} available`, value: Math.round(total(t.code, "avail") * 100) / 100, format: "number" as const, tone: "good" as const },
+          { label: `${t.name} used`, value: Math.round(total(t.code, "used") * 100) / 100, format: "number" as const },
+        ]),
         charts: [],
         columns: [
           { key: "code", label: "ID" },
           { key: "name", label: "Name" },
-          { key: "total", label: "Entitled", format: "number", align: "right" },
-          { key: "used", label: "Used", format: "number", align: "right" },
-          { key: "remaining", label: "Remaining", format: "number", align: "right" },
+          ...shown.flatMap((t) => [
+            { key: `${t.code}_avail`, label: `${t.code} available`, format: "number" as const, align: "right" as const },
+            { key: `${t.code}_used`, label: `${t.code} used`, format: "number" as const, align: "right" as const },
+          ]),
         ],
         rows,
-        notes: rows.length - withBal.length ? [`Balances are only shown where a ${year} balance has been set up — none are assumed.`] : [],
+        notes: shown.length
+          ? [`Leave year ${yearLabel(year, cal.leaveYearStartMonth)}. Available = opening + accrued to date + adjustments − approved leave.`]
+          : ["No paid leave types are set up yet (Leave Tracker → Leave policy)."],
       };
     },
   },
@@ -184,7 +193,7 @@ export const leaveReports: ReportDef[] = [
         charts: [{ type: "pie", title: "Days by leave type", xKey: "name", series: [{ key: "value", label: "Days" }], data: t.map((type) => ({ name: type, value: daysOf(type) })) }],
         columns: [{ key: "name", label: "Name" }, ...t.map((k) => ({ key: k, label: k, format: "number" as const, align: "right" as const })), { key: "total", label: "Total", format: "number", align: "right" }],
         rows,
-        notes: ["Working days only — weekends and firm holidays inside a leave are not counted."],
+        notes: ["Working days only — weekly offs and firm holidays inside a leave are not counted."],
       };
     },
   },
@@ -198,11 +207,12 @@ export const leaveReports: ReportDef[] = [
     async run(ctx) {
       const map = await leaveDays(ctx.emps.map((e) => e.id), ctx.from, ctx.to);
       const hol = await holidaysIn(ctx.from, ctx.to);
+      const unpaidTypes = await unpaidLeaveTypes();
       const rows = ctx.emps.map((e) => {
         let paid = 0, unpaid = 0;
         for (const [k, v] of map.get(e.id) ?? []) {
           if (hol.has(k) || isWeekend(new Date(`${k}T00:00:00Z`))) continue;
-          if (/unpaid|loss of pay|lop/i.test(v.type)) unpaid += v.fraction;
+          if (unpaidTypes.has(v.type.toLowerCase())) unpaid += v.fraction;
           else paid += v.fraction;
         }
         return { code: e.employeeId, name: e.name, paid, unpaid, total: paid + unpaid };
@@ -222,7 +232,7 @@ export const leaveReports: ReportDef[] = [
           { key: "total", label: "Total", format: "number", align: "right" },
         ],
         rows,
-        notes: ["Loss of pay = approved leave of type 'Unpaid Leave'. Weekends and firm holidays are excluded."],
+        notes: ["Loss of pay = approved leave of a type marked unpaid in the leave policy. Weekly offs and firm holidays are excluded."],
       };
     },
   },

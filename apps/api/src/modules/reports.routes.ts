@@ -6,6 +6,7 @@ import { leaveReports } from "./reports/leave.reports";
 import { attendanceReports } from "./reports/attendance.reports";
 import { timeReports } from "./reports/time.reports";
 import { isScope, scopeIds, scopePeople } from "../utils/scope";
+import { getWorkCalendar } from "../utils/work-calendar";
 
 const REPORTS: ReportDef[] = [...employeeReports, ...leaveReports, ...attendanceReports, ...timeReports];
 const BY_KEY = new Map(REPORTS.map((r) => [r.key, r]));
@@ -75,6 +76,7 @@ export async function reportRoutes(app: FastifyInstance) {
       return reply.code(400).send({ success: false, message: "Choose a period of one year or less." });
     }
 
+    await getWorkCalendar();
     const emps = await scopeEmployees(req.user!, tier as Tier, def.includeInactive);
     const result = await def.run({ user: req.user!, tier: tier as Tier, emps, from, to, clientId: q.clientId || undefined, projectId: q.projectId || undefined });
     return reply.send({

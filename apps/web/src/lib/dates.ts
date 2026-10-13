@@ -2,6 +2,8 @@
 // UTC midnight ("2026-10-09T00:00:00.000Z"), so we always read the YYYY-MM-DD part and never
 // shift it through the viewer's time zone.
 
+import { isWeeklyOff } from "./work-calendar";
+
 export type YMD = string; // "2026-10-09"
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -44,9 +46,9 @@ export function weekDays(start: YMD): YMD[] {
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
+/** Weekly off per the firm work calendar (e.g. Sundays + 2nd/4th Saturdays). */
 export function isWeekend(ymd: YMD): boolean {
-  const dow = fromYMD(ymd).getDay();
-  return dow === 0 || dow === 6;
+  return isWeeklyOff(ymd);
 }
 
 export function fmtDay(ymd: YMD, opts: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" }): string {

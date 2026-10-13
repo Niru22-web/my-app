@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import { normRole } from "@/lib/roles";
 import type { Envelope } from "@/lib/types";
 
-export const LEAVE_TYPES = ["Paid Leave", "Sick Leave", "Casual Leave", "Unpaid Leave"] as const;
 
 export interface Leave {
   id: string;
@@ -23,15 +22,6 @@ export interface Leave {
   employeeId: string;
   employee?: { id: string; firstName: string; lastName: string; officeEmail: string } | null;
   approver?: { firstName: string; lastName: string } | null;
-}
-
-export interface LeaveBalance {
-  accrued: number;
-  used: number;
-  adjustment: number;
-  available: number;
-  financialYearStart: string;
-  financialYearEnd: string;
 }
 
 export type LeaveState = "pending" | "approved" | "rejected" | "cancelled";
@@ -53,7 +43,7 @@ export const LEAVE_STATE_LABEL: Record<LeaveState, string> = {
 
 /** Roles that can adjust balances and see negative balances firm-wide. */
 export function canManageBalances(role: string | null | undefined) {
-  return ["admin", "owner", "hr", "partner"].includes(normRole(role));
+  return ["admin", "owner", "hr"].includes(normRole(role));
 }
 
 export function useLeaves(query: { employeeId?: string; status?: string; dateFrom?: string; dateTo?: string; scope?: "team" | "org" }, enabled = true) {
@@ -61,34 +51,6 @@ export function useLeaves(query: { employeeId?: string; status?: string; dateFro
     queryKey: ["leaves", query],
     queryFn: async () => (await api<Envelope<Leave[]>>("leaves", { query })).data ?? [],
     enabled,
-  });
-}
-
-export interface ScopedBalance {
-  id: string;
-  employeeId: string;
-  firstName: string;
-  lastName: string;
-  designation: string;
-  total: number | null;
-  used: number | null;
-  remaining: number | null;
-}
-
-/** Everyone’s balance in a Team / Organization view (null when no balance has been set up). */
-export function useLeaveBalances(scope: "team" | "org", enabled = true) {
-  return useQuery({
-    queryKey: ["leaves", "balances", scope],
-    queryFn: async () => (await api<Envelope<ScopedBalance[]>>("leaves/balances", { query: { scope } })).data ?? [],
-    enabled,
-  });
-}
-
-export function useLeaveBalance(employeeId: string | undefined) {
-  return useQuery({
-    queryKey: ["leaves", "balance", employeeId],
-    queryFn: async () => (await api<Envelope<LeaveBalance>>("leaves/balance", { query: { employeeId } })).data,
-    enabled: !!employeeId,
   });
 }
 
@@ -117,7 +79,6 @@ export interface LeaveInput {
   duration: "Full Day" | "Half Day";
   fromDate: string;
   toDate: string;
-  totalDays: number;
 }
 
 export function useLeaveMutations() {
@@ -132,10 +93,6 @@ export function useLeaveMutations() {
     cancel: useMutation({ mutationFn: (id: string) => api(`leaves/${id}`, { method: "DELETE" }), onSuccess: refresh }),
     decide: useMutation({
       mutationFn: ({ id, status }: { id: string; status: "approved" | "rejected" }) => api(`leaves/${id}`, { method: "PUT", body: { status } }),
-      onSuccess: refresh,
-    }),
-    adjust: useMutation({
-      mutationFn: (b: { employeeId: string; amount: number; reason: string }) => api("leaves/adjust", { method: "POST", body: b }),
       onSuccess: refresh,
     }),
   };

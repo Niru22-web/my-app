@@ -19,7 +19,7 @@ model Employee {
   createdAt                     DateTime                @default(now())
   department                    String                  @default("General")
   reportingManager              String?
-  reportingPartner              String?             
+  reportingPartner              String?
   managers                      EmployeeManager[]       @relation("EmployeeManagers")
   managedEmployees              EmployeeManager[]       @relation("ManagerEmployees")
   partners                      EmployeePartner[]       @relation("EmployeePartners")
@@ -76,18 +76,18 @@ model Employee {
   subManagerId                  String?
   subManager                    Employee?               @relation("EmployeeSubManager", fields: [subManagerId], references: [id])
   subManagedEmployees           Employee[]              @relation("EmployeeSubManager")
-  
-  managerId                     String?
-  manager                       Employee?               @relation("EmployeeManager", fields: [managerId], references: [id])
-  managedEmployeesBy            Employee[]              @relation("EmployeeManager")
-  
-  partnerId                     String?
-  partner                       Employee?               @relation("EmployeePartner", fields: [partnerId], references: [id])
-  partnerEmployeesBy            Employee[]              @relation("EmployeePartner")
 
-  reportingPartnerIds           String[]                @default([])
-  reportingManagerIds           String[]                @default([])
-  subManagerIds                 String[]                @default([])
+  managerId          String?
+  manager            Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
+  managedEmployeesBy Employee[] @relation("EmployeeManager")
+
+  partnerId          String?
+  partner            Employee?  @relation("EmployeePartner", fields: [partnerId], references: [id])
+  partnerEmployeesBy Employee[] @relation("EmployeePartner")
+
+  reportingPartnerIds String[] @default([])
+  reportingManagerIds String[] @default([])
+  subManagerIds       String[] @default([])
 
   roleId            String?            @map("role_id")
   roleMaster        RoleMaster?        @relation(fields: [roleId], references: [id])
@@ -100,21 +100,24 @@ model Employee {
   locationId        String?            @map("location_id")
   locationMaster    Location?          @relation(fields: [locationId], references: [id])
 
-  payrolls                      Payroll[]
-  transactions                  Transaction[]
-  ledgers                       Ledger[]
-  invoiceItems                  InvoiceItem[]
-  assetReports                  AssetReport[]
-  complianceHistory             TimesheetCompliance[]   @relation("EmployeeCompliance")
-  reminderHistory               ReminderHistory[]       @relation("EmployeeReminderHistory")
-  esslMappings                  EsslEmployeeMapping[]
+  payrolls          Payroll[]
+  transactions      Transaction[]
+  ledgers           Ledger[]
+  invoiceItems      InvoiceItem[]
+  assetReports      AssetReport[]
+  complianceHistory TimesheetCompliance[] @relation("EmployeeCompliance")
+  reminderHistory   ReminderHistory[]     @relation("EmployeeReminderHistory")
+  esslMappings      EsslEmployeeMapping[]
+
+  leaveTypeBalances LeaveTypeBalance[]
+  leaveLedger       LeaveLedger[]      @relation("LeaveLedgerEmployee")
 
   @@map("Employee")
 }
 
 model EmployeeProfile {
-  id                       String   @id @default(uuid())
-  employeeId               String   @unique
+  id                       String                @id @default(uuid())
+  employeeId               String                @unique
   dob                      DateTime
   doj                      DateTime
   education                String?
@@ -132,7 +135,7 @@ model EmployeeProfile {
   guardianNumber           String?
   personalEmail            String?
   personalMobile           String?
-  profileImage             String? @map("employeePhotoUrl")
+  profileImage             String?               @map("employeePhotoUrl")
   accountHolderName        String?
   bankAccountNumber        String?
   bankName                 String?
@@ -148,8 +151,8 @@ model EmployeeProfile {
   experience               String?
   salary                   Float?
   seniorityLevel           String?
-  skills                   String[] @default([])
-  employee                 Employee @relation(fields: [employeeId], references: [id])
+  skills                   String[]              @default([])
+  employee                 Employee              @relation(fields: [employeeId], references: [id])
 }
 
 model Client {
@@ -274,7 +277,6 @@ model Timelog {
 
   @@index([employeeId])
   @@index([jobId])
-
   @@index([date])
   @@index([submissionStatus])
   @@index([clientId])
@@ -402,30 +404,30 @@ model UserPermission {
   reimbursementDelete   Boolean  @default(false)
   reimbursementEdit     Boolean  @default(false)
   reimbursementView     Boolean  @default(false)
-  inboxView              Boolean  @default(false)
-  inboxCreate            Boolean  @default(false)
-  inboxEdit              Boolean  @default(false)
-  inboxDelete            Boolean  @default(false)
-  calendarView           Boolean  @default(false)
-  calendarCreate         Boolean  @default(false)
-  calendarEdit           Boolean  @default(false)
-  calendarDelete         Boolean  @default(false)
-  complianceView         Boolean  @default(false)
-  complianceCreate       Boolean  @default(false)
-  complianceEdit         Boolean  @default(false)
-  complianceDelete       Boolean  @default(false)
-  helpDeskView           Boolean  @default(false)
-  helpDeskCreate         Boolean  @default(false)
-  helpDeskEdit           Boolean  @default(false)
-  helpDeskDelete         Boolean  @default(false)
-  assetManagementView    Boolean  @default(false)
-  assetManagementCreate  Boolean  @default(false)
-  assetManagementEdit    Boolean  @default(false)
-  assetManagementDelete  Boolean  @default(false)
-  accountsView           Boolean  @default(false)
-  accountsCreate         Boolean  @default(false)
-  accountsEdit           Boolean  @default(false)
-  accountsDelete         Boolean  @default(false)
+  inboxView             Boolean  @default(false)
+  inboxCreate           Boolean  @default(false)
+  inboxEdit             Boolean  @default(false)
+  inboxDelete           Boolean  @default(false)
+  calendarView          Boolean  @default(false)
+  calendarCreate        Boolean  @default(false)
+  calendarEdit          Boolean  @default(false)
+  calendarDelete        Boolean  @default(false)
+  complianceView        Boolean  @default(false)
+  complianceCreate      Boolean  @default(false)
+  complianceEdit        Boolean  @default(false)
+  complianceDelete      Boolean  @default(false)
+  helpDeskView          Boolean  @default(false)
+  helpDeskCreate        Boolean  @default(false)
+  helpDeskEdit          Boolean  @default(false)
+  helpDeskDelete        Boolean  @default(false)
+  assetManagementView   Boolean  @default(false)
+  assetManagementCreate Boolean  @default(false)
+  assetManagementEdit   Boolean  @default(false)
+  assetManagementDelete Boolean  @default(false)
+  accountsView          Boolean  @default(false)
+  accountsCreate        Boolean  @default(false)
+  accountsEdit          Boolean  @default(false)
+  accountsDelete        Boolean  @default(false)
   user                  Employee @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_permissions")
@@ -485,30 +487,30 @@ model RolePermission {
   reimbursementDelete   Boolean  @default(false)
   reimbursementEdit     Boolean  @default(false)
   reimbursementView     Boolean  @default(false)
-  inboxView              Boolean  @default(false)
-  inboxCreate            Boolean  @default(false)
-  inboxEdit              Boolean  @default(false)
-  inboxDelete            Boolean  @default(false)
-  calendarView           Boolean  @default(false)
-  calendarCreate         Boolean  @default(false)
-  calendarEdit           Boolean  @default(false)
-  calendarDelete         Boolean  @default(false)
-  complianceView         Boolean  @default(false)
-  complianceCreate       Boolean  @default(false)
-  complianceEdit         Boolean  @default(false)
-  complianceDelete       Boolean  @default(false)
-  helpDeskView           Boolean  @default(false)
-  helpDeskCreate         Boolean  @default(false)
-  helpDeskEdit           Boolean  @default(false)
-  helpDeskDelete         Boolean  @default(false)
-  assetManagementView    Boolean  @default(false)
-  assetManagementCreate  Boolean  @default(false)
-  assetManagementEdit    Boolean  @default(false)
-  assetManagementDelete  Boolean  @default(false)
-  accountsView           Boolean  @default(false)
-  accountsCreate         Boolean  @default(false)
-  accountsEdit           Boolean  @default(false)
-  accountsDelete         Boolean  @default(false)
+  inboxView             Boolean  @default(false)
+  inboxCreate           Boolean  @default(false)
+  inboxEdit             Boolean  @default(false)
+  inboxDelete           Boolean  @default(false)
+  calendarView          Boolean  @default(false)
+  calendarCreate        Boolean  @default(false)
+  calendarEdit          Boolean  @default(false)
+  calendarDelete        Boolean  @default(false)
+  complianceView        Boolean  @default(false)
+  complianceCreate      Boolean  @default(false)
+  complianceEdit        Boolean  @default(false)
+  complianceDelete      Boolean  @default(false)
+  helpDeskView          Boolean  @default(false)
+  helpDeskCreate        Boolean  @default(false)
+  helpDeskEdit          Boolean  @default(false)
+  helpDeskDelete        Boolean  @default(false)
+  assetManagementView   Boolean  @default(false)
+  assetManagementCreate Boolean  @default(false)
+  assetManagementEdit   Boolean  @default(false)
+  assetManagementDelete Boolean  @default(false)
+  accountsView          Boolean  @default(false)
+  accountsCreate        Boolean  @default(false)
+  accountsEdit          Boolean  @default(false)
+  accountsDelete        Boolean  @default(false)
 
   @@map("role_permissions")
 }
@@ -592,8 +594,8 @@ model Leave {
   approvedBy         String?
   approvedDate       DateTime?
   employeeId         String
-reportingManagerId String?
-reportingPartnerId String?
+  reportingManagerId String?
+  reportingPartnerId String?
   approvedRole       String?
   approver           Employee? @relation("LeaveApprover", fields: [approvedBy], references: [id])
   employee           Employee  @relation("EmployeeLeaves", fields: [employeeId], references: [id])
@@ -773,49 +775,49 @@ model JobUser {
 }
 
 model Ticket {
-  id            String             @id @default(uuid())
-  ticketId      String?            @unique
-  description   String
-  status        String             @default("Open")
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  assignedTo    String?
-  createdById   String
-  priority      String?
-  title         String
-  category      String?            @default("IT Support")
-  categoryId    Int?               @map("category_id")
-  subcategoryId Int?               @map("subcategory_id")
-  attachmentUrl String?
-  attachments   TicketAttachment[]
-  history       TicketHistory[]
-  createdBy     Employee           @relation("TicketCreator", fields: [createdById], references: [id])
-  categoryRel   HelpdeskCategory?  @relation("TicketCategory", fields: [categoryId], references: [id])
-  subcategoryRel HelpdeskCategory? @relation("TicketSubcategory", fields: [subcategoryId], references: [id])
+  id             String             @id @default(uuid())
+  ticketId       String?            @unique
+  description    String
+  status         String             @default("Open")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  assignedTo     String?
+  createdById    String
+  priority       String?
+  title          String
+  category       String?            @default("IT Support")
+  categoryId     Int?               @map("category_id")
+  subcategoryId  Int?               @map("subcategory_id")
+  attachmentUrl  String?
+  attachments    TicketAttachment[]
+  history        TicketHistory[]
+  createdBy      Employee           @relation("TicketCreator", fields: [createdById], references: [id])
+  categoryRel    HelpdeskCategory?  @relation("TicketCategory", fields: [categoryId], references: [id])
+  subcategoryRel HelpdeskCategory?  @relation("TicketSubcategory", fields: [subcategoryId], references: [id])
 
   @@map("tickets")
 }
 
 model HelpdeskCategory {
-  id            Int                @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   parent_id     Int?
   category_name String
   description   String?
-  is_active     Boolean            @default(true)
-  display_order Int                @default(0)
-  assigned_team String?            @default("IT")
-  sla_hours     Int?               @default(24)
+  is_active     Boolean  @default(true)
+  display_order Int      @default(0)
+  assigned_team String?  @default("IT")
+  sla_hours     Int?     @default(24)
   created_by    String?
-  created_at    DateTime           @default(now())
-  updated_at    DateTime           @updatedAt
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   support_email       String?
   cc_email            String?
   escalation_email    String?
   auto_assign_user_id String?
 
-  parent        HelpdeskCategory?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
-  children      HelpdeskCategory[] @relation("CategoryHierarchy")
+  parent   HelpdeskCategory?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children HelpdeskCategory[] @relation("CategoryHierarchy")
 
   ticketsAsCategory    Ticket[] @relation("TicketCategory")
   ticketsAsSubcategory Ticket[] @relation("TicketSubcategory")
@@ -1007,10 +1009,10 @@ model AssetCategory {
 }
 
 model AssetType {
-  id             String        @id @default(uuid())
-  name           String
+  id              String        @id @default(uuid())
+  name            String
   assetCategoryId String
-  category       AssetCategory @relation(fields: [assetCategoryId], references: [id])
+  category        AssetCategory @relation(fields: [assetCategoryId], references: [id])
 
   @@map("asset_types")
 }
@@ -1030,10 +1032,10 @@ model AssetMaintenance {
 }
 
 model EmployeeManager {
-  id          String   @id @default(uuid())
-  employeeId  String
-  managerId   String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  employeeId String
+  managerId  String
+  createdAt  DateTime @default(now())
 
   employee Employee @relation("EmployeeManagers", fields: [employeeId], references: [id])
   manager  Employee @relation("ManagerEmployees", fields: [managerId], references: [id])
@@ -1043,10 +1045,10 @@ model EmployeeManager {
 }
 
 model EmployeePartner {
-  id          String   @id @default(uuid())
-  employeeId  String
-  partnerId   String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  employeeId String
+  partnerId  String
+  createdAt  DateTime @default(now())
 
   employee Employee @relation("EmployeePartners", fields: [employeeId], references: [id])
   partner  Employee @relation("PartnerEmployees", fields: [partnerId], references: [id])
@@ -1056,127 +1058,127 @@ model EmployeePartner {
 }
 
 model Entity {
-  id              String        @id @default(uuid())
-  name            String
-  legalName       String?
-  gstin           String?
-  pan             String?
-  address         String?
-  msmeReg         String?
-  bankDetails     Json?         
-  status          String        @default("ACTIVE")
-  createdAt       DateTime      @default(now())
-  
-  invoices        Invoice[]
-  payrolls        Payroll[]
-  transactions    Transaction[]
-  receipts        Receipt[]
-  ledgers         Ledger[]
+  id          String   @id @default(uuid())
+  name        String
+  legalName   String?
+  gstin       String?
+  pan         String?
+  address     String?
+  msmeReg     String?
+  bankDetails Json?
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+
+  invoices     Invoice[]
+  payrolls     Payroll[]
+  transactions Transaction[]
+  receipts     Receipt[]
+  ledgers      Ledger[]
 }
 
 model Invoice {
-  id              String        @id @default(uuid())
-  invoiceNumber   String        @unique
-  entityId        String        
-  clientId        String
-  projectId       String?
-  udin            String?
-  issueDate       DateTime      @default(now())
-  dueDate         DateTime?
-  subTotal        Float
-  taxAmount       Float         @default(0)
-  totalAmount     Float
-  status          String        @default("DRAFT") 
-  currency        String        @default("INR")
-  exchangeRate    Float         @default(1.0)
-  
-  entity          Entity        @relation(fields: [entityId], references: [id])
-  client          Client        @relation(fields: [clientId], references: [id])
-  project         Project?      @relation(fields: [projectId], references: [id])
-  items           InvoiceItem[]
-  transactions    Transaction[] 
+  id            String    @id @default(uuid())
+  invoiceNumber String    @unique
+  entityId      String
+  clientId      String
+  projectId     String?
+  udin          String?
+  issueDate     DateTime  @default(now())
+  dueDate       DateTime?
+  subTotal      Float
+  taxAmount     Float     @default(0)
+  totalAmount   Float
+  status        String    @default("DRAFT")
+  currency      String    @default("INR")
+  exchangeRate  Float     @default(1.0)
+
+  entity             Entity              @relation(fields: [entityId], references: [id])
+  client             Client              @relation(fields: [clientId], references: [id])
+  project            Project?            @relation(fields: [projectId], references: [id])
+  items              InvoiceItem[]
+  transactions       Transaction[]
   receiptAllocations ReceiptAllocation[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model InvoiceItem {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   invoiceId   String
   description String
   sacCode     String?
   quantity    Float
   unitPrice   Float
   total       Float
-  
-  projectId   String?
-  clientId    String?
-  employeeId  String?
-  hours       Float?
-  rate        Float?
-  currency    String?  @default("INR")
-  gstRate     Float?  @default(0.0)
-  cgst        Float?  @default(0.0)
-  sgst        Float?  @default(0.0)
-  igst        Float?  @default(0.0)
-  gstAmount   Float?  @default(0.0)
-  
-  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  project     Project? @relation(fields: [projectId], references: [id])
-  client      Client?  @relation(fields: [clientId], references: [id])
-  employee    Employee? @relation(fields: [employeeId], references: [id])
+
+  projectId  String?
+  clientId   String?
+  employeeId String?
+  hours      Float?
+  rate       Float?
+  currency   String? @default("INR")
+  gstRate    Float?  @default(0.0)
+  cgst       Float?  @default(0.0)
+  sgst       Float?  @default(0.0)
+  igst       Float?  @default(0.0)
+  gstAmount  Float?  @default(0.0)
+
+  invoice  Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id])
+  client   Client?   @relation(fields: [clientId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
 }
 
 model Payroll {
-  id              String   @id @default(uuid())
-  employeeId      String
-  entityId        String   
-  month           Int
-  year            Int
-  basicSalary     Float
-  allowances      Float    @default(0)
-  deductions      Float    @default(0)
-  netPayable      Float
-  status          String   @default("PENDING") 
-  paymentDate     DateTime?
-  
-  entity          Entity   @relation(fields: [entityId], references: [id])
-  employee        Employee @relation(fields: [employeeId], references: [id])
-  transactions    Transaction[]
+  id          String    @id @default(uuid())
+  employeeId  String
+  entityId    String
+  month       Int
+  year        Int
+  basicSalary Float
+  allowances  Float     @default(0)
+  deductions  Float     @default(0)
+  netPayable  Float
+  status      String    @default("PENDING")
+  paymentDate DateTime?
+
+  entity       Entity        @relation(fields: [entityId], references: [id])
+  employee     Employee      @relation(fields: [employeeId], references: [id])
+  transactions Transaction[]
 }
 
 model Transaction {
-  id              String    @id @default(uuid())
-  entityId        String    
-  bankReference   String?   @unique
-  date            DateTime
-  description     String
-  type            String    
-  amount          Float
-  balance         Float?
-  
-  mappedStatus    String    @default("UNMAPPED") 
-  clientId        String?
-  employeeId      String?
-  projectId       String?
-  invoiceId       String?
-  payrollId       String?
-  
-  entity          Entity    @relation(fields: [entityId], references: [id])
-  client          Client?   @relation(fields: [clientId], references: [id])
-  employee        Employee? @relation(fields: [employeeId], references: [id])
-  project         Project?  @relation(fields: [projectId], references: [id])
-  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
-  payroll         Payroll?  @relation(fields: [payrollId], references: [id])
-  
-  createdAt       DateTime  @default(now())
+  id            String   @id @default(uuid())
+  entityId      String
+  bankReference String?  @unique
+  date          DateTime
+  description   String
+  type          String
+  amount        Float
+  balance       Float?
+
+  mappedStatus String  @default("UNMAPPED")
+  clientId     String?
+  employeeId   String?
+  projectId    String?
+  invoiceId    String?
+  payrollId    String?
+
+  entity   Entity    @relation(fields: [entityId], references: [id])
+  client   Client?   @relation(fields: [clientId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  project  Project?  @relation(fields: [projectId], references: [id])
+  invoice  Invoice?  @relation(fields: [invoiceId], references: [id])
+  payroll  Payroll?  @relation(fields: [payrollId], references: [id])
+
+  createdAt DateTime @default(now())
 }
 
 model Currency {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  name      String
-  symbol    String?
+  id            String         @id @default(uuid())
+  code          String         @unique
+  name          String
+  symbol        String?
   exchangeRates ExchangeRate[]
 }
 
@@ -1191,22 +1193,22 @@ model ExchangeRate {
 }
 
 model Receipt {
-  id              String   @id @default(uuid())
-  receiptNumber   String   @unique
+  id              String              @id @default(uuid())
+  receiptNumber   String              @unique
   clientId        String
   entityId        String
   amount          Float
-  currency        String   @default("INR")
-  exchangeRate    Float    @default(1.0)
+  currency        String              @default("INR")
+  exchangeRate    Float               @default(1.0)
   receiptDate     DateTime
   paymentMode     String
   referenceNumber String?
   notes           String?
   allocations     ReceiptAllocation[]
-  client          Client   @relation(fields: [clientId], references: [id])
-  entity          Entity   @relation(fields: [entityId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  client          Client              @relation(fields: [clientId], references: [id])
+  entity          Entity              @relation(fields: [entityId], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 }
 
 model ReceiptAllocation {
@@ -1233,10 +1235,10 @@ model Ledger {
   referenceId   String?
   referenceType String?
   createdAt     DateTime @default(now())
-  
-  entity        Entity   @relation(fields: [entityId], references: [id])
-  client        Client?  @relation(fields: [clientId], references: [id])
-  employee      Employee? @relation(fields: [employeeId], references: [id])
+
+  entity   Entity    @relation(fields: [entityId], references: [id])
+  client   Client?   @relation(fields: [clientId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
 }
 
 model TaxConfiguration {
@@ -1260,7 +1262,7 @@ model AuditTrail {
 }
 
 model Vendor {
-  id            String            @id @default(uuid())
+  id            String           @id @default(uuid())
   vendorName    String
   company       String
   email         String?
@@ -1268,9 +1270,9 @@ model Vendor {
   address       String?
   gstNumber     String?
   contactPerson String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  assets        AssetInventory[]  @relation("VendorAssets")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  assets        AssetInventory[] @relation("VendorAssets")
 
   @@map("vendors")
 }
@@ -1299,9 +1301,9 @@ model AssetStatus {
 model AssetReport {
   id          String   @id @default(uuid())
   name        String
-  type        String   // Asset, Employee, Inventory, Maintenance, Ticket
-  filters     Json?    // Store query filters
-  filePath    String?  // Store path of exported file
+  type        String // Asset, Employee, Inventory, Maintenance, Ticket
+  filters     Json? // Store query filters
+  filePath    String? // Store path of exported file
   createdById String
   createdBy   Employee @relation(fields: [createdById], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
@@ -1393,7 +1395,7 @@ model TimesheetCompliance {
 model ReminderHistory {
   id                     String   @id @default(uuid())
   employeeId             String
-  reminderType           String   // "daily_missing", "thursday_warning", "friday_critical", "monday_escalation", "manual"
+  reminderType           String // "daily_missing", "thursday_warning", "friday_critical", "monday_escalation", "manual"
   sentAt                 DateTime @default(now())
   weekStart              DateTime @db.Date
   hoursAtReminder        Float    @default(0)
@@ -1448,7 +1450,7 @@ model EsslSyncLog {
   id            String       @id @default(uuid())
   machineId     String?      @map("machine_id")
   syncTime      DateTime     @default(now()) @map("sync_time")
-  status        String       // "Success", "Failed"
+  status        String // "Success", "Failed"
   recordsSynced Int          @default(0) @map("records_synced")
   errorMessage  String?      @map("error_message")
   rawResponse   String?      @map("raw_response")
@@ -1476,41 +1478,41 @@ model Report {
   refreshes   ScheduledRefresh[]
   savedViews  SavedView[]
   bookmarks   Bookmark[]
-  
+
   @@map("reports")
 }
 
 model ReportPage {
-  id        String         @id @default(uuid())
-  reportId  String
-  name      String
-  order     Int            @default(0)
-  isHidden  Boolean        @default(false)
-  report    Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  visuals   ReportVisual[]
-  filters   ReportFilter[]
+  id       String         @id @default(uuid())
+  reportId String
+  name     String
+  order    Int            @default(0)
+  isHidden Boolean        @default(false)
+  report   Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  visuals  ReportVisual[]
+  filters  ReportFilter[]
 
   @@map("report_pages")
 }
 
 model ReportVisual {
-  id             String         @id @default(uuid())
+  id             String          @id @default(uuid())
   pageId         String
   title          String
-  x              Int            // Left position on canvas grid
-  y              Int            // Top position on canvas grid
-  w              Int            // Width on canvas grid
-  h              Int            // Height on canvas grid
-  visualType     String         // "card", "kpi", "bar", "line", "pie", "donut", "table", "matrix", etc.
-  dataSource     String         // "attendance", "employees", "projects", "clients", "assets", "leaves", "payroll", "helpdesk", "recruitment"
+  x              Int // Left position on canvas grid
+  y              Int // Top position on canvas grid
+  w              Int // Width on canvas grid
+  h              Int // Height on canvas grid
+  visualType     String // "card", "kpi", "bar", "line", "pie", "donut", "table", "matrix", etc.
+  dataSource     String // "attendance", "employees", "projects", "clients", "assets", "leaves", "payroll", "helpdesk", "recruitment"
   dimension      String?
   metric         String?
   legendField    String?
   tooltipField   String?
   smallMultiples String?
-  colorPalette   String         @default("indigo")
-  properties     Json?          // Dynamic visual properties (e.g. conditional formatting, title size, etc.)
-  page           ReportPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  colorPalette   String          @default("indigo")
+  properties     Json? // Dynamic visual properties (e.g. conditional formatting, title size, etc.)
+  page           ReportPage      @relation(fields: [pageId], references: [id], onDelete: Cascade)
   tiles          DashboardTile[]
 
   @@map("report_visuals")
@@ -1544,11 +1546,11 @@ model DashboardTile {
 }
 
 model ReportPermission {
-  id        String   @id @default(uuid())
-  reportId  String
-  userId    String
-  role      String   // "View", "Edit", "Delete", "Share", "Publish", "Export"
-  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id       String @id @default(uuid())
+  reportId String
+  userId   String
+  role     String // "View", "Edit", "Delete", "Share", "Publish", "Export"
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@map("report_permissions")
 }
@@ -1566,29 +1568,29 @@ model ReportHistory {
 }
 
 model ScheduledRefresh {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   reportId    String
-  interval    String   // "manual", "5m", "15m", "30m", "1h", "daily", "weekly"
-  lastRefresh DateTime @default(now())
+  interval    String // "manual", "5m", "15m", "30m", "1h", "daily", "weekly"
+  lastRefresh DateTime  @default(now())
   nextRefresh DateTime?
-  isActive    Boolean  @default(true)
-  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  isActive    Boolean   @default(true)
+  report      Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@map("scheduled_refreshes")
 }
 
 model SavedView {
-  id          String   @id @default(uuid())
-  reportId    String
-  userId      String
-  name        String
-  filters     Json?
-  sorting     Json?
-  theme       String?
-  pageId      String?
-  layout      Json?
-  isDefault   Boolean  @default(false)
-  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  reportId  String
+  userId    String
+  name      String
+  filters   Json?
+  sorting   Json?
+  theme     String?
+  pageId    String?
+  layout    Json?
+  isDefault Boolean @default(false)
+  report    Report  @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@map("saved_views")
 }
@@ -1611,14 +1613,14 @@ model Bookmark {
 }
 
 model ReportFilter {
-  id         String     @id @default(uuid())
-  pageId     String?    // if page-level filter
-  reportId   String?    // if report-level filter
-  visualId   String?    // if visual-level filter
-  field      String     // field name
-  filterType String     // "visual", "page", "report"
-  operator   String     // "equals", "contains", "between", "topN", etc.
-  value      Json       // filter value(s)
+  id         String      @id @default(uuid())
+  pageId     String? // if page-level filter
+  reportId   String? // if report-level filter
+  visualId   String? // if visual-level filter
+  field      String // field name
+  filterType String // "visual", "page", "report"
+  operator   String // "equals", "contains", "between", "topN", etc.
+  value      Json // filter value(s)
   page       ReportPage? @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@map("report_filters")
@@ -1646,4 +1648,94 @@ model TeamMessage {
   @@map("team_messages")
 }
 
+// ── Leave rules (added 2026-10-13; new tables only) ─────────────────────────────
+// Entitlements are settings HR fills in; balances are computed from approved leave,
+// so they can never drift. The ledger records every manual change for audit.
 
+/// Firm work calendar and leave year (one row, id "default")
+model FirmSettings {
+  id                  String    @id @default("default")
+  /// 1 = January–December, 4 = April–March
+  leaveYearStartMonth Int       @default(1)
+  /// Saturdays that are off: "all", "none", or week numbers such as "2,4"
+  saturdaysOff        String    @default("all")
+  sundayOff           Boolean   @default(true)
+  /// Leave accrues from this date; earlier balances come from opening balances (e.g. imported from Zoho)
+  leaveAccrualFrom    DateTime? @db.Date
+  updatedAt           DateTime  @updatedAt
+  updatedBy           String?
+
+  @@map("firm_settings")
+}
+
+model LeaveType {
+  id                  String             @id @default(uuid())
+  code                String             @unique
+  /// Matches Leave.type (case-insensitive)
+  name                String             @unique
+  description         String?
+  paid                Boolean            @default(true)
+  /// Days per leave year; null = no fixed entitlement (e.g. unpaid, or comp-off credited by HR)
+  annualDays          Float?
+  /// "yearly" = credited at the start of the year, "monthly" = 1/12 at the start of each month
+  accrual             String             @default("yearly")
+  prorateOnJoining    Boolean            @default(true)
+  /// Days that may carry into next year; null/0 = none carried
+  carryForwardMax     Float?
+  encashable          Boolean            @default(false)
+  encashMax           Float?
+  allowNegative       Boolean            @default(false)
+  allowHalfDay        Boolean            @default(true)
+  /// Sandwich rule: weekends/holidays inside a leave count as leave
+  countNonWorkingDays Boolean            @default(false)
+  minServiceDays      Int                @default(0)
+  maxPerRequest       Float?
+  noticeDays          Int                @default(0)
+  /// "all" | "female" | "male"
+  gender              String             @default("all")
+  active              Boolean            @default(true)
+  sortOrder           Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  balances            LeaveTypeBalance[]
+  ledger              LeaveLedger[]
+
+  @@map("leave_types")
+}
+
+model LeaveTypeBalance {
+  id          String    @id @default(uuid())
+  employeeId  String
+  leaveTypeId String
+  /// Calendar year in which the leave year starts
+  year        Int
+  opening     Float     @default(0)
+  adjusted    Float     @default(0)
+  encashed    Float     @default(0)
+  lapsed      Float     @default(0)
+  closedAt    DateTime?
+  updatedAt   DateTime  @updatedAt
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@map("leave_type_balances")
+}
+
+model LeaveLedger {
+  id          String    @id @default(uuid())
+  employeeId  String
+  leaveTypeId String
+  year        Int
+  /// opening | adjustment | encash | carry_forward | lapse
+  kind        String
+  days        Float
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  employee    Employee  @relation("LeaveLedgerEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, year])
+  @@map("leave_ledger")
+}

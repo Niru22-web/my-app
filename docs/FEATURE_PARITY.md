@@ -83,7 +83,7 @@ Old backend ≈ 363 endpoints, new API ≈ 205. All main screens exist in the ne
 - ⬜ Category SLA hours + auto-assign settings in the categories page
 
 ## ✅ At parity
-Leave · User permissions · Masters · Calendar events · Global search · Team chat · System/storage
+Leave (now with full leave rules — see Leave Tracker → Leave policy) · User permissions · Masters · Calendar events · Global search · Team chat · System/storage
 
 ---
 

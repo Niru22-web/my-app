@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
 import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
 import { getIO } from "../plugins/socket";
+import { computeBalances, leaveYearOf } from "../utils/leave-policy";
+import { getWorkCalendar } from "../utils/work-calendar";
 
 const EVENT_COLORS: Record<string, string> = {
   Holiday: "#ef4444",
@@ -45,9 +47,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
         where: { employee_id: u.employeeId, date: { gte: sevenDaysAgo } },
         orderBy: { date: "asc" },
       }),
-      prisma.leaveBalance.findUnique({
-        where: { employeeId_year: { employeeId: u.id, year } },
-      }),
+      // Paid leave with an entitlement, from the leave rules engine (current leave year)
+      getWorkCalendar().then((cal) =>
+        computeBalances([u.id], leaveYearOf(now, cal.leaveYearStartMonth)).then(({ balances }) =>
+          (balances.get(u.id) ?? []).filter((b) => b.paid && (b.entitled != null || b.opening !== 0 || b.adjusted !== 0)),
+        ),
+      ),
       prisma.reimbursement.findMany({
         where: { employeeId: u.id },
         select: { category: true, amount: true },
@@ -121,9 +126,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
           hours: Number(a.total_hours ?? 0),
         })),
         leaves: {
-          balance: leaveBal ? Number(leaveBal.remainingLeaves) : 0,
-          used: leaveBal ? Number(leaveBal.usedLeaves) : 0,
-          total: leaveBal ? Number(leaveBal.totalLeaves) : 0,
+          balance: Math.round(leaveBal.reduce((a, b) => a + b.available, 0) * 100) / 100,
+          used: Math.round(leaveBal.reduce((a, b) => a + b.used, 0) * 100) / 100,
+          total: Math.round(leaveBal.reduce((a, b) => a + b.opening + b.adjusted + (b.entitled ?? 0), 0) * 100) / 100,
+          configured: leaveBal.length > 0,
         },
         expenses: {
           total: Math.round(expTotal * 100) / 100,

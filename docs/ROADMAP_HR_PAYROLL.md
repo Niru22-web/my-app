@@ -45,7 +45,7 @@ What exists today: invite → self-registration → HR approval, an employee pro
 
 | Gap | Why it matters |
 |---|---|
-| Leave policies | Leave types are a fixed list with a flat 21-day balance. Needed: per-type entitlement, monthly accrual, carry-forward caps, encashment, sandwich rule, LOP — feeds payroll |
+| ✅ Leave policies | Done 13 Oct 2026 — Leave Tracker → Leave policy: leave types with entitlement, monthly/yearly accrual, pro-rating, carry-forward, encashment, sandwich rule, LOP; firm work calendar (weekly offs, leave year); opening balances; year-end close |
 | Attendance regularisation | Employees request a correction for a missed punch; manager approves (today only HR/Admin can edit) |
 | Remote / office check-in | Zoho's "Office In and Remote In" — tag each check-in as office or remote |
 | Scheduled reports | Zoho "Schedulers": email a report (e.g. Muster roll, Timesheet data for payroll) on a schedule — needs background jobs + email (parity blockers B1/B2) |
@@ -55,7 +55,7 @@ What exists today: invite → self-registration → HR approval, an employee pro
 ## 5. Suggested order
 
 1. **Go-live blockers first** (from `FEATURE_PARITY.md`): background jobs, real email, ESSL sync.
-2. **Leave policies** — payroll depends on correct leave and LOP.
+2. ~~Leave policies~~ — done 13 Oct 2026.
 3. **Payroll core** — structures, CTC, monthly run, PF/ESI/PT/TDS, payslips, bank file.
 4. **Onboarding** — offer letters, pre-joining, tasks, acknowledgements.
 5. **Exit & F&F**, then letters for every stage.

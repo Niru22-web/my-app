@@ -25,14 +25,13 @@ import {
   canManageBalances,
   leaveState,
   personName,
-  useLeaveBalances,
   useLeaveMutations,
   useLeaves,
   useNegativeBalances,
   type Leave,
-  type ScopedBalance,
 } from "@/components/leave/api";
 import { LeaveBadge } from "@/components/leave/leave-badge";
+import { useLeavePolicy, usePolicyMutations, useScopeBalances, type ScopeBalances } from "@/components/leave/policy-api";
 
 function period(l: Leave) {
   const f = workDate(l.fromDate);
@@ -62,7 +61,7 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
   }, [scopes.data, allowed, router]);
 
   const leaves = useLeaves({ scope }, allowed);
-  const balances = useLeaveBalances(scope, allowed);
+  const balances = useScopeBalances(scope, allowed);
   const negative = useNegativeBalances(balancesAdmin);
   const m = useLeaveMutations();
 
@@ -110,9 +109,9 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         description={`${SCOPE_TEXT[scope]} ${canDecide ? "Approve or reject requests here." : "View only — requests are decided by each person’s manager, partner or HR."}`}
         actions={
           <>
-            {balancesAdmin && (
+            {(balancesAdmin || scope === "team") && (
               <Button variant="secondary" onClick={() => setAdjustOpen(true)}>
-                <Scale className="h-4 w-4" /> Adjust balance
+                <Scale className="h-4 w-4" /> {balancesAdmin ? "Credit / adjust balance" : "Credit comp-off"}
               </Button>
             )}
           </>
@@ -224,7 +223,7 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         </Card>
       )}
 
-      <BalancesTable rows={balances.data} loading={balances.isLoading} error={balances.isError} onRetry={() => balances.refetch()} search={search} />
+      <BalancesTable data={balances.data} loading={balances.isLoading} error={balances.isError} onRetry={() => balances.refetch()} search={search} />
 
       <div>
         <h3 className="mb-3 font-display text-base font-bold text-ink">History</h3>
@@ -266,30 +265,42 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         }
       />
 
-      {adjustOpen && <AdjustDialog scope={scope} onClose={() => setAdjustOpen(false)} />}
+      {adjustOpen && <CreditDialog scope={scope} full={balancesAdmin} onClose={() => setAdjustOpen(false)} />}
     </div>
   );
 }
 
-function AdjustDialog({ scope, onClose }: { scope: "team" | "org"; onClose: () => void }) {
+/**
+ * HR / Admin: opening balance, adjustment (+/−) or encashment for any leave type.
+ * Team leads: credit earned leave (types with no fixed entitlement, e.g. Compensatory Off) to their team.
+ */
+function CreditDialog({ scope, full, onClose }: { scope: "team" | "org"; full: boolean; onClose: () => void }) {
   const toast = useToast();
   const people = useScopePeople(scope);
-  const { adjust } = useLeaveMutations();
+  const policy = useLeavePolicy();
+  const { credit } = usePolicyMutations();
+  const types = (policy.data?.types ?? []).filter((t) => t.active && t.paid && (full || t.annualDays == null));
   const [employeeId, setEmployeeId] = useState("");
+  const [typeId, setTypeId] = useState("");
+  const [kind, setKind] = useState<"adjustment" | "opening" | "encash">("adjustment");
   const [amount, setAmount] = useState("");
-  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const leaveTypeId = typeId || types[0]?.id || "";
+  const type = types.find((t) => t.id === leaveTypeId);
 
   function save() {
     const n = Number(amount);
     if (!employeeId) return setError("Choose an employee.");
-    if (!amount || Number.isNaN(n) || n === 0 || Math.abs(n) > 60 || Math.round(n * 2) !== n * 2) return setError("Enter a non-zero amount in half-day steps, e.g. 1, -0.5.");
-    if (reason.trim().length < 5) return setError("Give a reason for the record.");
-    adjust.mutate(
-      { employeeId, amount: n, reason: reason.trim() },
+    if (!leaveTypeId) return setError("Choose a leave type.");
+    if (!amount || Number.isNaN(n) || n === 0 || Math.abs(n) > 366 || Math.round(n * 4) !== n * 4) return setError("Enter a non-zero number of days, e.g. 1, 0.5 or -1.");
+    if (!full && n < 0) return setError("Team leads can only add days.");
+    if (note.trim().length < 3) return setError("Add a note for the record, e.g. the date worked.");
+    credit.mutate(
+      { employeeId, leaveTypeId, days: n, note: note.trim(), kind: full ? kind : "adjustment" },
       {
-        onSuccess: () => (toast.success("Balance adjusted", `${n > 0 ? "+" : ""}${n} day(s)`), onClose()),
-        onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn’t adjust the balance."),
+        onSuccess: () => (toast.success("Balance updated", `${n > 0 ? "+" : ""}${n} day(s) · ${type?.name ?? ""}`), onClose()),
+        onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn’t update the balance."),
       },
     );
   }
@@ -299,38 +310,54 @@ function AdjustDialog({ scope, onClose }: { scope: "team" | "org"; onClose: () =
       open
       onClose={onClose}
       size="sm"
-      title="Adjust leave balance"
-      description="Add or remove days, e.g. for compensatory leave or a correction."
+      title={full ? "Credit or adjust a balance" : "Credit compensatory off"}
+      description={full ? "Every change is recorded with your name and note." : "For someone in your team who worked on a weekly off or holiday."}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={adjust.isPending}>
+          <Button variant="secondary" onClick={onClose} disabled={credit.isPending}>
             Cancel
           </Button>
-          <Button onClick={save} loading={adjust.isPending}>
-            Save adjustment
+          <Button onClick={save} loading={credit.isPending}>
+            Save
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <FormRow label="Employee" htmlFor="adj-emp" required>
-          <Select id="adj-emp" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+        <FormRow label="Employee" htmlFor="cr-emp" required>
+          <Select id="cr-emp" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
             <option value="">{people.isLoading ? "Loading…" : "Select an employee"}</option>
-            {(people.data ?? [])
-              .slice()
-              .sort((a, b) => a.firstName.localeCompare(b.firstName))
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.firstName} {p.lastName} ({p.employeeId})
-                </option>
-              ))}
+            {(people.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.firstName} {p.lastName} ({p.employeeId})
+              </option>
+            ))}
           </Select>
         </FormRow>
-        <FormRow label="Days" htmlFor="adj-amt" required hint="Positive adds days, negative removes them.">
-          <Input id="adj-amt" inputMode="decimal" placeholder="e.g. 1 or -0.5" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <FormRow label="Leave type" htmlFor="cr-type" required>
+          <Select id="cr-type" value={leaveTypeId} onChange={(e) => setTypeId(e.target.value)}>
+            {!types.length && <option value="">No leave types available</option>}
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
         </FormRow>
-        <FormRow label="Reason" htmlFor="adj-reason" required>
-          <Textarea id="adj-reason" rows={2} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} />
+        {full && (
+          <FormRow label="What is this?" htmlFor="cr-kind" required hint={kind === "opening" ? "Sets the balance brought in (e.g. from Zoho) — replaces any earlier opening balance." : kind === "encash" ? "Days paid out instead of taken." : "Adds or removes days, e.g. comp-off or a correction."}>
+            <Select id="cr-kind" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+              <option value="adjustment">Credit / adjustment</option>
+              <option value="opening">Opening balance</option>
+              {type?.encashable && <option value="encash">Encashment</option>}
+            </Select>
+          </FormRow>
+        )}
+        <FormRow label="Days" htmlFor="cr-amt" required hint={full && kind === "adjustment" ? "Positive adds days, negative removes them." : undefined}>
+          <Input id="cr-amt" inputMode="decimal" placeholder="e.g. 1 or 0.5" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </FormRow>
+        <FormRow label="Note" htmlFor="cr-note" required>
+          <Textarea id="cr-note" rows={2} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} placeholder={full ? "Reason for the record" : "e.g. Worked on Saturday 10 Oct for audit closing"} />
         </FormRow>
         {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
       </div>
@@ -338,52 +365,56 @@ function AdjustDialog({ scope, onClose }: { scope: "team" | "org"; onClose: () =
   );
 }
 
-function BalancesTable({ rows, loading, error, onRetry, search }: { rows?: ScopedBalance[]; loading: boolean; error: boolean; onRetry: () => void; search: string }) {
+type BalanceRow = ScopeBalances["people"][number];
+
+function BalancesTable({ data, loading, error, onRetry, search }: { data?: ScopeBalances; loading: boolean; error: boolean; onRetry: () => void; search: string }) {
   const q = search.trim().toLowerCase();
-  const list = (rows ?? []).filter((b) => !q || `${b.firstName} ${b.lastName} ${b.employeeId}`.toLowerCase().includes(q));
-  const missing = (rows ?? []).filter((b) => b.total == null).length;
-  const columns: Column<ScopedBalance>[] = [
+  const types = (data?.types ?? []).filter((t) => t.paid);
+  const list = (data?.people ?? []).filter((p) => !q || `${p.firstName} ${p.lastName} ${p.employeeId}`.toLowerCase().includes(q));
+  const of = (p: BalanceRow, id: string) => p.balances.find((b) => b.leaveTypeId === id);
+  const columns: Column<BalanceRow>[] = [
     {
       key: "emp",
       header: "Employee",
-      sortValue: (b) => `${b.firstName} ${b.lastName}`,
-      cell: (b) => (
+      sortValue: (p) => `${p.firstName} ${p.lastName}`,
+      cell: (p) => (
         <div className="flex items-center gap-2.5">
-          <Avatar name={`${b.firstName} ${b.lastName}`} size={30} />
+          <Avatar name={`${p.firstName} ${p.lastName}`} size={30} />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink">
-              {b.firstName} {b.lastName}
+              {p.firstName} {p.lastName}
             </p>
             <p className="truncate text-xs text-ink-subtle">
-              {b.employeeId} · {b.designation}
+              {p.employeeId} · {p.designation}
             </p>
           </div>
         </div>
       ),
     },
-    { key: "total", header: "Entitled", align: "right", sortValue: (b) => b.total ?? -1, cell: (b) => (b.total == null ? <span className="text-ink-subtle">Not set up</span> : b.total) },
-    { key: "used", header: "Used", align: "right", sortValue: (b) => b.used ?? -1, cell: (b) => b.used ?? "—" },
-    {
-      key: "remaining",
-      header: "Remaining",
-      align: "right",
-      sortValue: (b) => b.remaining ?? -999,
-      cell: (b) => (b.remaining == null ? "—" : <span className={b.remaining < 0 ? "font-semibold text-danger" : "font-semibold text-ink"}>{b.remaining}</span>),
-    },
+    ...types.flatMap((t): Column<BalanceRow>[] => [
+      {
+        key: `${t.code}-avail`,
+        header: `${t.code} available`,
+        align: "right",
+        sortValue: (p) => of(p, t.id)?.available ?? -999,
+        cell: (p) => {
+          const b = of(p, t.id);
+          if (!b) return "—";
+          return <span className={b.available < 0 ? "font-semibold text-danger" : "font-semibold text-ink"}>{b.available}</span>;
+        },
+      },
+      { key: `${t.code}-used`, header: `${t.code} used`, align: "right", hideBelow: "md", sortValue: (p) => of(p, t.id)?.used ?? -1, cell: (p) => of(p, t.id)?.used ?? "—" },
+    ]),
   ];
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 font-display text-base font-bold text-ink">
-          <Wallet className="h-4 w-4 text-brand" aria-hidden /> Balances {new Date().getFullYear()}
+          <Wallet className="h-4 w-4 text-brand" aria-hidden /> Balances {data?.label ?? ""}
         </h3>
-        {missing > 0 && (
-          <p className="text-xs text-ink-muted">
-            {missing} {missing === 1 ? "person has" : "people have"} no balance set up yet — none is assumed.
-          </p>
-        )}
+        <p className="text-xs text-ink-muted">Available = opening + accrued to date + credits − approved leave.</p>
       </div>
-      <DataTable rows={list} columns={columns} rowKey={(b) => b.id} loading={loading} error={error} onRetry={onRetry} pageSize={10} initialSort={{ key: "emp", dir: "asc" }} empty={{ title: "Nobody in this view" }} />
+      <DataTable rows={list} columns={columns} rowKey={(p) => p.id} loading={loading} error={error} onRetry={onRetry} pageSize={10} initialSort={{ key: "emp", dir: "asc" }} empty={{ title: types.length ? "Nobody in this view" : "No paid leave types set up yet" }} />
     </div>
   );
 }

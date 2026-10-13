@@ -10,15 +10,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export function LeaveCard({ data, loading }: { data?: CombinedDashboard; loading: boolean }) {
   const l = data?.leaves;
-  // With no LeaveBalance row the API returns {balance:0, used:0, total:21} — a default, not real data.
-  const hasRecord = !!l && (l.used > 0 || l.balance > 0);
+  // Only shown once paid leave types with an entitlement exist (Leave Tracker → Leave policy).
+  const hasRecord = !!l?.configured;
   const usedPct = hasRecord && l!.total > 0 ? Math.min(100, Math.round((l!.used / l!.total) * 100)) : 0;
   return (
     <Card className="flex flex-col">
       <CardHeader
         icon={CalendarRange}
         title="Leave balance"
-        description={`${new Date().getFullYear()} allocation`}
+        description="Paid leave this leave year"
         actions={
           <Link href="/leave" className="text-[13px] font-semibold text-brand hover:underline">
             Apply
@@ -29,7 +29,7 @@ export function LeaveCard({ data, loading }: { data?: CombinedDashboard; loading
         {loading ? (
           <Skeleton className="h-24" />
         ) : !hasRecord ? (
-          <EmptyState icon={CalendarRange} title="No leave allocation on record" description="Your balance will appear once HR sets up this year’s allocation." />
+          <EmptyState icon={CalendarRange} title="No leave allocation yet" description="Your balance will appear once HR sets up the leave policy." />
         ) : (
           <>
             <div className="flex items-baseline gap-2">
@@ -44,7 +44,7 @@ export function LeaveCard({ data, loading }: { data?: CombinedDashboard; loading
                 <span className="font-semibold text-ink tabular">{formatNumber(l!.used)}</span> used
               </span>
               <span>
-                <span className="font-semibold text-ink tabular">{formatNumber(l!.total)}</span> total
+                <span className="font-semibold text-ink tabular">{formatNumber(l!.total)}</span> for the year
               </span>
             </div>
           </>

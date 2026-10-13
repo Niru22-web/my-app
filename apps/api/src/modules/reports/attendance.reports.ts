@@ -1,13 +1,13 @@
 import {
-  type Ctx, type ReportDef, type ScopedEmployee, attendanceDays, attendanceTrackingStart, eachDay, hhmm, holidaysIn, isWeekend, istMinutes, leaveDays, round1, round2, shiftsFor, todayUtc, ymd,
+  type Ctx, type ReportDef, type ScopedEmployee, attendanceDays, attendanceTrackingStart, unpaidLeaveTypes, eachDay, hhmm, holidaysIn, isWeekend, istMinutes, leaveDays, round1, round2, shiftsFor, todayUtc, ymd,
 } from "./engine";
 
 // Day codes used across attendance reports (same rules as the Attendance page):
 //   P present (≥ 8h) · HD half day (4–8h) · SD short day (< 4h) · A absent (working day, no punch)
-//   L leave · HL half-day leave · H firm holiday · WO weekend · "" future day
+//   L leave · HL half-day leave · H firm holiday · WO weekly off · "" future day
 export type DayCode = "P" | "HD" | "SD" | "A" | "L" | "HL" | "H" | "WO" | "";
 const CODE_LABEL: Record<Exclude<DayCode, "">, string> = {
-  P: "Present", HD: "Half day", SD: "Short day", A: "Absent", L: "Leave", HL: "Half-day leave", H: "Holiday", WO: "Weekend",
+  P: "Present", HD: "Half day", SD: "Short day", A: "Absent", L: "Leave", HL: "Half-day leave", H: "Holiday", WO: "Weekly off",
 };
 
 async function grid(ctx: Ctx) {
@@ -173,7 +173,7 @@ export const attendanceReports: ReportDef[] = [
           { key: "rate", label: "Rate", format: "percent", align: "right" },
         ],
         rows,
-        notes: [...(g.trackingNote ? [g.trackingNote] : []), "Working days exclude weekends and firm holidays. Half and short days count as half a present day."],
+        notes: [...(g.trackingNote ? [g.trackingNote] : []), "Working days exclude weekly offs and firm holidays. Half and short days count as half a present day."],
       };
     },
   },
@@ -244,7 +244,7 @@ export const attendanceReports: ReportDef[] = [
           { key: "leave", label: "L", format: "number", align: "right" },
         ],
         rows,
-        notes: [...(g.trackingNote ? [g.trackingNote] : []), "P present · HD half day · SD short day · A absent · L leave · HL half-day leave · H holiday · WO weekend · · not yet"],
+        notes: [...(g.trackingNote ? [g.trackingNote] : []), "P present · HD half day · SD short day · A absent · L leave · HL half-day leave · H holiday · WO weekly off · · not yet"],
       };
     },
   },
@@ -257,12 +257,13 @@ export const attendanceReports: ReportDef[] = [
     params: ["month"],
     async run(ctx) {
       const g = await grid(ctx);
+      const unpaidTypes = await unpaidLeaveTypes();
       const rows = ctx.emps.map((e) => {
         let lop = 0, paidLeave = 0;
         for (const d of g.days) {
           const l = g.lv.get(e.id)?.get(ymd(d));
           if (!l || g.hol.has(ymd(d)) || isWeekend(d)) continue;
-          if (/unpaid|loss of pay|lop/i.test(l.type)) lop += l.fraction;
+          if (unpaidTypes.has(l.type.toLowerCase())) lop += l.fraction;
           else paidLeave += l.fraction;
         }
         const s = summarise(g.days.map((d) => g.codeOf(e, d)));

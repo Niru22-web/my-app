@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { Splash } from "@/components/shell/splash";
+import { WorkCalendarSync } from "@/components/leave/policy-api";
 
 const COLLAPSE_KEY = "asa-sidebar-collapsed";
 
@@ -28,6 +29,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-bg">
+      <WorkCalendarSync />
       <Sidebar collapsed={collapsed} mobileOpen={mobileOpen} onCloseMobile={() => setDrawerPath(null)} />
       <div className={cn("flex min-h-screen flex-col transition-[padding] duration-200", collapsed ? "lg:pl-[84px]" : "lg:pl-[264px]")}>
         <Topbar onToggleSidebar={() => writeLocal(COLLAPSE_KEY, collapsed ? "0" : "1")} onOpenMobile={() => setDrawerPath(pathname)} />

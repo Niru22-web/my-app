@@ -1,4 +1,5 @@
 import { prisma } from "../../config/db";
+import { isOffDay } from "../../utils/work-calendar";
 import { ACCOUNTS_ROLES, leadsATeam, normRole, reportingTreeIds, type JwtUser } from "../../plugins/auth";
 
 // ── Tiers ────────────────────────────────────────────────────────────────────
@@ -98,7 +99,8 @@ export function eachDay(from: Date, to: Date): Date[] {
   for (let t = from.getTime(); t <= to.getTime() && out.length < 400; t += DAY) out.push(new Date(t));
   return out;
 }
-export const isWeekend = (d: Date) => d.getUTCDay() === 0 || d.getUTCDay() === 6;
+/** Weekly off per the firm work calendar (loaded by the reports route before running a report). */
+export const isWeekend = (d: Date) => isOffDay(d);
 /** Minutes after IST midnight for a stored timestamp. */
 export const istMinutes = (t: Date) => {
   const ist = new Date(t.getTime() + 330 * 60_000);
@@ -115,6 +117,12 @@ export const monthLabel = (d: Date) => d.toLocaleString("en-IN", { month: "short
 export async function holidaysIn(from: Date, to: Date): Promise<Map<string, string>> {
   const rows = await prisma.event.findMany({ where: { type: "Holiday", date: { gte: from, lte: to } }, select: { date: true, title: true } });
   return new Map(rows.map((r) => [ymd(r.date), r.title]));
+}
+
+/** Leave type names (lower-case) marked unpaid in the leave policy; "Unpaid Leave" until types are set up. */
+export async function unpaidLeaveTypes(): Promise<Set<string>> {
+  const types = await prisma.leaveType.findMany({ select: { name: true, paid: true } });
+  return types.length ? new Set(types.filter((t) => !t.paid).map((t) => t.name.toLowerCase())) : new Set(["unpaid leave"]);
 }
 
 /** Approved leave per employee per day: Map<employeeUuid, Map<ymd, {type, fraction}>> */

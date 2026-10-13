@@ -25,18 +25,16 @@ const nextConfig: NextConfig = {
       // The old per-day report page is replaced by the monthly view with a day timeline.
       { source: "/attendance/report/:employeeId/:date", destination: "/attendance/monthly/:employeeId", permanent: false },
       // Legacy My Portal URLs, plus the approval links the API puts in notifications.
-      { source: "/portal", destination: "/portal/leaves", permanent: false },
+      { source: "/portal", destination: "/portal/profile", permanent: false },
       { source: "/profile", destination: "/portal/profile", permanent: false },
-      { source: "/leave-management", destination: "/portal/leaves", permanent: false },
-      { source: "/leave", destination: "/portal/leaves", permanent: false },
+      { source: "/leave-management", destination: "/leave", permanent: false },
       { source: "/reimbursement", destination: "/portal/reimbursements", permanent: false },
       { source: "/reimbursements", destination: "/portal/reimbursements", permanent: false },
-      { source: "/approvals/leaves", destination: "/portal/leaves/team", permanent: false },
+      { source: "/approvals/leaves", destination: "/leave/team", permanent: false },
       { source: "/approvals/reimbursement", destination: "/portal/reimbursements/team", permanent: false },
       { source: "/employee/asset-requests", destination: "/admin/asset-management/dashboard", permanent: false },
-      { source: "/reports", destination: "/portal/reports", permanent: false },
       // Old pages with no separate equivalent. Analytics only ever showed sample data.
-      { source: "/analytics", destination: "/portal/reports", permanent: false },
+      { source: "/analytics", destination: "/reports/org", permanent: false },
       { source: "/accounts/ar-management", destination: "/accounts/dashboard", permanent: false },
       { source: "/corporate-calendar", destination: "/calendar", permanent: false },
       { source: "/helpdesk", destination: "/help-desk", permanent: false },

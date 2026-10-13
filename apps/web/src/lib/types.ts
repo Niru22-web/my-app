@@ -34,7 +34,8 @@ export interface Envelope<T> {
 export interface CombinedDashboard {
   stats: { totalProjects: number; totalTasks: number; hoursLogged: number };
   attendance: { date: string; day: string; hours: number }[];
-  leaves: { balance: number; used: number; total: number };
+  /** Paid leave this leave year (rules engine); configured = at least one paid type with an entitlement */
+  leaves: { balance: number; used: number; total: number; configured?: boolean };
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
   birthdays: { name: string; role: string | null; date: string }[];
   events: { id: string; title: string; date: string; time: string | null; type: string; color: string }[];

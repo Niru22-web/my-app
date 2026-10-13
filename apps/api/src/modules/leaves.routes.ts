@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
 import { authenticate, isTeamMemberOrSelf, normRole, requireRoles, leadsATeam } from "../plugins/auth";
 import { isScope, scopeIds } from "../utils/scope";
+import { checkRequest, computeBalances, leaveYearOf, yearBounds } from "../utils/leave-policy";
+import { getWorkCalendar } from "../utils/work-calendar";
 import { createNotification } from "../utils/notify";
 
 async function nextLeaveCode(): Promise<string> {
@@ -91,99 +93,46 @@ export async function leaveRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: leaves });
   });
 
-  // GET /api/leaves/balance
+  // GET /api/leaves/balance — totals of paid leave types from the rules engine (legacy response shape)
   app.get("/api/leaves/balance", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
     const { employeeId } = (req.query ?? {}) as { employeeId?: string };
     const targetId = employeeId && (await isTeamMemberOrSelf(u, employeeId)) ? employeeId : u.id;
-    const year = new Date().getFullYear();
-
-    const [bal, txns] = await Promise.all([
-      prisma.leaveBalance.findUnique({
-        where: { employeeId_year: { employeeId: targetId, year } },
-      }),
-      prisma.leaveTransaction.findMany({
-        where: { employeeId: targetId, year },
-      }),
-    ]);
-
-    const adjustment = txns
-      .filter((t) => t.type.toLowerCase().includes("adjust"))
-      .reduce((s, t) => s + Number(t.amount ?? 0), 0);
-
-    const accrued = bal ? Number(bal.totalLeaves) : 0;
-    const used = bal ? Number(bal.usedLeaves) : 0;
-    const available = bal ? Number(bal.remainingLeaves) : 0;
-
+    const cal = await getWorkCalendar();
+    const year = leaveYearOf(new Date(), cal.leaveYearStartMonth);
+    const { start, end } = yearBounds(year, cal.leaveYearStartMonth);
+    const { balances } = await computeBalances([targetId], year);
+    const paid = (balances.get(targetId) ?? []).filter((b) => b.paid);
+    const sum = (k: "accrued" | "used" | "adjusted" | "available" | "opening") => Math.round(paid.reduce((a, b) => a + b[k], 0) * 100) / 100;
     return reply.send({
       success: true,
       data: {
-        accrued,
-        used,
-        adjustment,
-        available,
-        financialYearStart: `${year}-04-01`,
-        financialYearEnd: `${year + 1}-03-31`,
+        accrued: sum("accrued") + sum("opening"),
+        used: sum("used"),
+        adjustment: sum("adjusted"),
+        available: sum("available"),
+        financialYearStart: start.toISOString().slice(0, 10),
+        financialYearEnd: end.toISOString().slice(0, 10),
       },
     });
   });
 
-  // GET /api/leaves/balances?scope=team|org&year= — everyone's balance in a view (no balance row ⇒ null, never assumed)
-  app.get("/api/leaves/balances", { preHandler: [authenticate] }, async (req, reply) => {
-    const q = (req.query ?? {}) as { scope?: string; year?: string };
-    const scope = isScope(q.scope) ? q.scope : "my";
-    const ids = await scopeIds(req.user!, scope, reply);
-    if (ids === undefined) return;
-    const year = Number(q.year) || new Date().getFullYear();
+  // GET /api/leaves/negative-balances — paid types below zero this leave year
+  app.get("/api/leaves/negative-balances", { preHandler: [requireRoles(["admin", "owner", "hr", "partner"])] }, async (_req, reply) => {
+    const cal = await getWorkCalendar();
+    const year = leaveYearOf(new Date(), cal.leaveYearStartMonth);
     const people = await prisma.employee.findMany({
-      where: {
-        ...(ids ? { id: { in: ids } } : {}),
-        status: { equals: "active", mode: "insensitive" },
-        NOT: { officeEmail: { endsWith: "@asa-local.test" } },
-      },
-      select: { id: true, employeeId: true, firstName: true, lastName: true, designation: true },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      where: { status: { equals: "active", mode: "insensitive" } },
+      select: { id: true, employeeId: true, firstName: true, lastName: true, department: true },
     });
-    const bal = await prisma.leaveBalance.findMany({ where: { year, employeeId: { in: people.map((p) => p.id) } } });
-    const byId = new Map(bal.map((b) => [b.employeeId, b]));
-    return reply.send({
-      success: true,
-      data: people.map((p) => {
-        const b = byId.get(p.id);
-        return { ...p, total: b?.totalLeaves ?? null, used: b?.usedLeaves ?? null, remaining: b?.remainingLeaves ?? null };
-      }),
-    });
+    const { balances } = await computeBalances(people.map((p) => p.id), year);
+    const data = people.flatMap((p) =>
+      (balances.get(p.id) ?? [])
+        .filter((b) => b.paid && b.available < 0)
+        .map((b) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName, employeeId: p.employeeId, department: `${p.department} · ${b.name}`, balance: b.available, used: b.used, accrued: b.accrued })),
+    );
+    return reply.send({ success: true, data });
   });
-
-  // GET /api/leaves/negative-balances
-  app.get(
-    "/api/leaves/negative-balances",
-    { preHandler: [requireRoles(["admin", "owner", "hr", "partner"])] },
-    async (_req, reply) => {
-      const year = new Date().getFullYear();
-      const rows = await prisma.leaveBalance.findMany({
-        where: { year, remainingLeaves: { lt: 0 } },
-        include: {
-          employee: {
-            select: { id: true, employeeId: true, firstName: true, lastName: true, department: true },
-          },
-        },
-      });
-      return reply.send({
-        success: true,
-        data: rows.map((r) => ({
-          id: r.employee.id,
-          firstName: r.employee.firstName,
-          lastName: r.employee.lastName,
-          employeeId: r.employee.employeeId,
-          department: r.employee.department,
-          balance: r.remainingLeaves,
-          used: r.usedLeaves,
-          accrued: r.totalLeaves,
-        })),
-      });
-    },
-  );
 
   // POST /api/leaves — validates totalDays > 0 (L2) and case-insensitive Admin auto-approve (L3)
   app.post("/api/leaves", { preHandler: [authenticate] }, async (req, reply) => {
@@ -198,19 +147,16 @@ export async function leaveRoutes(app: FastifyInstance) {
       totalDays?: number;
     };
 
-    const totalDays = Number(body.totalDays ?? 0);
-    if (!body.type || !body.reason?.trim() || !body.fromDate || !body.toDate || totalDays <= 0) {
-      return reply.code(400).send({
-        success: false,
-        message: "Leave type, reason, valid dates, and totalDays > 0 are required.",
-      });
+    if (!body.type || !body.reason?.trim() || !body.fromDate || !body.toDate) {
+      return reply.code(400).send({ success: false, message: "Leave type, reason and dates are required." });
     }
 
     const fromDate = new Date(`${body.fromDate.slice(0, 10)}T00:00:00.000Z`);
     const toDate = new Date(`${body.toDate.slice(0, 10)}T00:00:00.000Z`);
-    if (toDate < fromDate) {
-      return reply.code(400).send({ success: false, message: "End date cannot be before start date." });
-    }
+    // Day count comes from the rules engine (weekly offs + firm holidays), never from the browser.
+    const check = await checkRequest({ employeeId: u.id, type: body.type, fromDate, toDate, duration: body.duration || "Full Day" });
+    if (check.errors.length) return reply.code(400).send({ success: false, message: check.errors.join(" "), errors: check.errors });
+    const totalDays = check.days;
 
     const autoApprove = ["admin", "owner"].includes(r);
     const leaveId = await nextLeaveCode();
@@ -224,7 +170,7 @@ export async function leaveRoutes(app: FastifyInstance) {
       data: {
         leaveId,
         employeeId: u.id,
-        type: body.type,
+        type: check.type?.name ?? body.type,
         reason: body.reason.trim(),
         duration: body.duration || "Full Day",
         fromDate,
@@ -243,25 +189,8 @@ export async function leaveRoutes(app: FastifyInstance) {
       },
     });
 
-    if (autoApprove && body.type.toLowerCase() !== "unpaid leave") {
-      const year = fromDate.getUTCFullYear();
-      await prisma.leaveBalance.upsert({
-        where: { employeeId_year: { employeeId: u.id, year } },
-        create: {
-          employeeId: u.id,
-          year,
-          totalLeaves: 21,
-          usedLeaves: totalDays,
-          remainingLeaves: 21 - totalDays,
-        },
-        update: {
-          usedLeaves: { increment: totalDays },
-          remainingLeaves: { decrement: totalDays },
-        },
-      });
-    }
-
-    return reply.code(201).send({ success: true, data: created });
+    // Balances are computed from approved leave, so nothing else needs updating.
+    return reply.code(201).send({ success: true, data: created, warnings: check.warnings });
   });
 
   // PATCH /api/leaves/:id — edit pending leave
@@ -276,19 +205,22 @@ export async function leaveRoutes(app: FastifyInstance) {
     }
 
     const body = (req.body ?? {}) as Record<string, any>;
-    const totalDays = Number(body.totalDays ?? existing.totalDays);
-    if (totalDays <= 0) {
-      return reply.code(400).send({ success: false, message: "totalDays must be greater than 0." });
-    }
+    const fromDate = body.fromDate ? new Date(`${String(body.fromDate).slice(0, 10)}T00:00:00.000Z`) : existing.fromDate;
+    const toDate = body.toDate ? new Date(`${String(body.toDate).slice(0, 10)}T00:00:00.000Z`) : existing.toDate;
+    const check = await checkRequest({
+      employeeId: existing.employeeId, type: body.type ?? existing.type, fromDate, toDate, duration: body.duration ?? existing.duration, excludeLeaveId: id,
+    });
+    if (check.errors.length) return reply.code(400).send({ success: false, message: check.errors.join(" "), errors: check.errors });
+    const totalDays = check.days;
 
     const updated = await prisma.leave.update({
       where: { id },
       data: {
-        type: body.type ?? existing.type,
+        type: check.type?.name ?? body.type ?? existing.type,
         reason: body.reason ? String(body.reason).trim() : existing.reason,
         duration: body.duration ?? existing.duration,
-        fromDate: body.fromDate ? new Date(`${body.fromDate.slice(0, 10)}T00:00:00.000Z`) : existing.fromDate,
-        toDate: body.toDate ? new Date(`${body.toDate.slice(0, 10)}T00:00:00.000Z`) : existing.toDate,
+        fromDate,
+        toDate,
         totalDays,
       },
     });
@@ -306,22 +238,10 @@ export async function leaveRoutes(app: FastifyInstance) {
       return reply.code(400).send({ success: false, message: "Leave is already cancelled." });
     }
 
-    const wasApproved = existing.status.toLowerCase().includes("approved");
     const updated = await prisma.leave.update({
       where: { id },
       data: { status: "cancelled" },
     });
-
-    if (wasApproved && existing.type.toLowerCase() !== "unpaid leave") {
-      const year = existing.fromDate.getUTCFullYear();
-      await prisma.leaveBalance.updateMany({
-        where: { employeeId: existing.employeeId, year },
-        data: {
-          usedLeaves: { decrement: existing.totalDays },
-          remainingLeaves: { increment: existing.totalDays },
-        },
-      });
-    }
 
     return reply.send({ success: true, data: updated });
   });
@@ -350,6 +270,14 @@ export async function leaveRoutes(app: FastifyInstance) {
       return reply.code(403).send({ success: false, message: "This employee is not in your reporting team." });
     }
 
+    if (status === "approved" && existing.status.toLowerCase() !== "approved") {
+      const check = await checkRequest({
+        employeeId: existing.employeeId, type: existing.type, fromDate: existing.fromDate, toDate: existing.toDate,
+        duration: existing.duration, excludeLeaveId: existing.id, forApproval: true,
+      });
+      if (check.errors.length) return reply.code(400).send({ success: false, message: `Can’t approve: ${check.errors.join(" ")}` });
+    }
+
     const updated = await prisma.leave.update({
       where: { id },
       data: {
@@ -364,24 +292,6 @@ export async function leaveRoutes(app: FastifyInstance) {
       },
     });
 
-    if (status === "approved" && existing.status.toLowerCase() !== "approved" && existing.type.toLowerCase() !== "unpaid leave") {
-      const year = existing.fromDate.getUTCFullYear();
-      await prisma.leaveBalance.upsert({
-        where: { employeeId_year: { employeeId: existing.employeeId, year } },
-        create: {
-          employeeId: existing.employeeId,
-          year,
-          totalLeaves: 21,
-          usedLeaves: existing.totalDays,
-          remainingLeaves: 21 - existing.totalDays,
-        },
-        update: {
-          usedLeaves: { increment: existing.totalDays },
-          remainingLeaves: { decrement: existing.totalDays },
-        },
-      });
-    }
-
     await createNotification({
       userId: existing.employeeId,
       title: `Leave Request ${status === "approved" ? "Approved" : "Declined"}`,
@@ -394,52 +304,8 @@ export async function leaveRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated });
   });
 
-  // POST /api/leaves/adjust
-  app.post(
-    "/api/leaves/adjust",
-    { preHandler: [requireRoles(["admin", "owner", "hr", "partner"])] },
-    async (req, reply) => {
-      const { employeeId, amount, reason } = (req.body ?? {}) as {
-        employeeId?: string;
-        amount?: number;
-        reason?: string;
-      };
-      const delta = Number(amount ?? 0);
-      if (!employeeId || !Number.isFinite(delta) || delta === 0 || !reason?.trim()) {
-        return reply.code(400).send({
-          success: false,
-          message: "employeeId, non-zero amount, and reason are required.",
-        });
-      }
-
-      const year = new Date().getFullYear();
-      await prisma.$transaction([
-        prisma.leaveTransaction.create({
-          data: {
-            employeeId,
-            type: "Manual Adjustment",
-            amount: delta,
-            reason: reason.trim(),
-            year,
-          },
-        }),
-        prisma.leaveBalance.upsert({
-          where: { employeeId_year: { employeeId, year } },
-          create: {
-            employeeId,
-            year,
-            totalLeaves: 21 + delta,
-            remainingLeaves: 21 + delta,
-            usedLeaves: 0,
-          },
-          update: {
-            totalLeaves: { increment: delta },
-            remainingLeaves: { increment: delta },
-          },
-        }),
-      ]);
-
-      return reply.send({ success: true, message: "Leave balance adjusted." });
-    },
-  );
+  // POST /api/leaves/adjust — replaced by POST /api/leave-policy/credit (balances are per leave type now)
+  app.post("/api/leaves/adjust", { preHandler: [requireRoles(["admin", "owner", "hr"])] }, async (_req, reply) => {
+    return reply.code(410).send({ success: false, message: "Adjust balances per leave type in Leave Tracker → Leave policy." });
+  });
 }
