@@ -82,30 +82,66 @@ export function requireRoles(allowedRoles: string[]) {
   };
 }
 
+/** Every way an employee can report to `leadId` (manager, partner, sub-manager — legacy columns and join tables). */
+export function reportsToWhere(leadId: string) {
+  return [
+    { managerId: leadId },
+    { partnerId: leadId },
+    { subManagerId: leadId },
+    { reportingManagerIds: { has: leadId } },
+    { reportingPartnerIds: { has: leadId } },
+    { subManagerIds: { has: leadId } },
+    { managers: { some: { managerId: leadId } } },
+    { partners: { some: { partnerId: leadId } } },
+  ];
+}
+
 /**
- * Checks whether `userId` is in the caller's reporting team (for Managers / Partners / Sub-managers).
+ * Everyone below `leadId` in the reporting tree — direct reports, their reports, and so on.
+ * Role doesn't matter: whoever has people reporting to them leads that team.
  */
-export async function isTeamMemberOrSelf(caller: JwtUser, targetEmployeeId: string): Promise<boolean> {
+export async function reportingTreeIds(leadId: string, activeOnly = false): Promise<string[]> {
+  const seen = new Set<string>([leadId]);
+  const out: string[] = [];
+  let frontier = [leadId];
+  for (let depth = 0; depth < 8 && frontier.length; depth++) {
+    const next = await prisma.employee.findMany({
+      where: {
+        id: { notIn: [...seen] },
+        OR: frontier.flatMap(reportsToWhere),
+        ...(activeOnly ? { status: { equals: "active", mode: "insensitive" as const } } : {}),
+      },
+      select: { id: true },
+    });
+    frontier = [];
+    for (const e of next) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      frontier.push(e.id);
+      out.push(e.id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether the caller may see/act on `targetEmployeeId`: themselves; anyone for Admin/Owner/HR/IT;
+ * otherwise anyone below them in the reporting tree (direct or indirect), whatever their role.
+ */
+export async function isTeamMemberOrSelf(
+  caller: JwtUser,
+  targetEmployeeId: string,
+  opts: { leadRolesOnly?: boolean } = {},
+): Promise<boolean> {
   if (caller.id === targetEmployeeId) return true;
   const r = normRole(caller.role);
   if (["admin", "owner", "hr", "it"].includes(r)) return true;
-  if (!["manager", "partner", "sub-manager"].includes(r)) return false;
+  // Sensitive records (KYC documents) stay limited to Manager / Partner / Sub-manager roles.
+  if (opts.leadRolesOnly && !["manager", "partner", "sub-manager", "sub manager"].includes(r)) return false;
+  return (await reportingTreeIds(caller.id)).includes(targetEmployeeId);
+}
 
-  const match = await prisma.employee.findFirst({
-    where: {
-      id: targetEmployeeId,
-      OR: [
-        { managerId: caller.id },
-        { partnerId: caller.id },
-        { subManagerId: caller.id },
-        { reportingManagerIds: { has: caller.id } },
-        { reportingPartnerIds: { has: caller.id } },
-        { subManagerIds: { has: caller.id } },
-        { managers: { some: { managerId: caller.id } } },
-        { partners: { some: { partnerId: caller.id } } },
-      ],
-    },
-    select: { id: true },
-  });
-  return !!match;
+/** True when at least one person reports to `leadId`. */
+export async function leadsATeam(leadId: string): Promise<boolean> {
+  return !!(await prisma.employee.findFirst({ where: { id: { not: leadId }, OR: reportsToWhere(leadId) }, select: { id: true } }));
 }

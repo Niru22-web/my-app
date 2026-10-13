@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
-import { authenticate, isTeamMemberOrSelf, normRole } from "../plugins/auth";
+import { authenticate, isTeamMemberOrSelf, normRole, leadsATeam, reportingTreeIds } from "../plugins/auth";
+import { isScope, scopeIds } from "../utils/scope";
 import { parseBodyOrMultipart } from "../utils/uploads";
 
 function computeWeekStart(d: Date): Date {
@@ -75,7 +76,13 @@ export async function timelogRoutes(app: FastifyInstance) {
   app.get("/api/timelogs/team", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
     const r = normRole(u.role);
-    if (!["admin", "owner", "manager", "partner", "sub-manager", "sub manager", "hr"].includes(r)) {
+    const scopeQ = (req.query as Record<string, string | undefined>)?.scope;
+    let scoped: string[] | null | undefined;
+    if (isScope(scopeQ)) {
+      scoped = await scopeIds(u, scopeQ, reply);
+      if (scoped === undefined) return;
+    }
+    if (scoped === undefined && !["admin", "owner", "manager", "partner", "sub-manager", "sub manager", "hr"].includes(r)) {
       return reply.code(403).send({ success: false, message: "Forbidden" });
     }
 
@@ -89,7 +96,15 @@ export async function timelogRoutes(app: FastifyInstance) {
 
     const where: Record<string, any> = {};
 
-    if (!["admin", "owner", "hr"].includes(r)) {
+    if (scoped !== undefined) {
+      const pick = employeeId && employeeId !== "all" ? employeeId : null;
+      if (scoped === null) {
+        if (pick) where.employeeId = pick;
+      } else {
+        if (pick && !scoped.includes(pick)) return reply.send({ success: true, data: [] });
+        where.employeeId = pick ?? { in: scoped };
+      }
+    } else if (!["admin", "owner", "hr"].includes(r)) {
       const teamMembers = await prisma.employee.findMany({
         where: {
           OR: [
@@ -424,7 +439,7 @@ export async function timelogRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const u = req.user!;
     const r = normRole(u.role);
-    if (!["admin", "owner", "manager", "partner", "sub-manager", "sub manager"].includes(r)) {
+    if (!["admin", "owner"].includes(r) && !(await leadsATeam(u.id))) {
       return reply.code(403).send({ success: false, message: "You are not authorized to approve time entries." });
     }
 
@@ -462,7 +477,7 @@ export async function timelogRoutes(app: FastifyInstance) {
     const { reason } = (req.body ?? {}) as { reason?: string };
     const u = req.user!;
     const r = normRole(u.role);
-    if (!["admin", "owner", "manager", "partner", "sub-manager", "sub manager"].includes(r)) {
+    if (!["admin", "owner"].includes(r) && !(await leadsATeam(u.id))) {
       return reply.code(403).send({ success: false, message: "You are not authorized to reject time entries." });
     }
 
@@ -493,7 +508,7 @@ export async function timelogRoutes(app: FastifyInstance) {
     const { ids } = (req.body ?? {}) as { ids?: string[] };
     const u = req.user!;
     const r = normRole(u.role);
-    if (!["admin", "owner", "manager", "partner", "sub-manager", "sub manager"].includes(r)) {
+    if (!["admin", "owner"].includes(r) && !(await leadsATeam(u.id))) {
       return reply.code(403).send({ success: false, message: "Forbidden" });
     }
     if (!Array.isArray(ids) || !ids.length) {
@@ -504,7 +519,7 @@ export async function timelogRoutes(app: FastifyInstance) {
       where: {
         id: { in: ids },
         submissionStatus: "submitted",
-        ...(!["admin", "owner"].includes(r) ? { employeeId: { not: u.id } } : {}),
+        ...(!["admin", "owner"].includes(r) ? { employeeId: { in: await reportingTreeIds(u.id) } } : {}),
       },
       data: {
         submissionStatus: "approved",
@@ -520,7 +535,7 @@ export async function timelogRoutes(app: FastifyInstance) {
     const { ids, reason } = (req.body ?? {}) as { ids?: string[]; reason?: string };
     const u = req.user!;
     const r = normRole(u.role);
-    if (!["admin", "owner", "manager", "partner", "sub-manager", "sub manager"].includes(r)) {
+    if (!["admin", "owner"].includes(r) && !(await leadsATeam(u.id))) {
       return reply.code(403).send({ success: false, message: "Forbidden" });
     }
     if (!Array.isArray(ids) || !ids.length) {
@@ -531,7 +546,7 @@ export async function timelogRoutes(app: FastifyInstance) {
       where: {
         id: { in: ids },
         submissionStatus: "submitted",
-        ...(!["admin", "owner"].includes(r) ? { employeeId: { not: u.id } } : {}),
+        ...(!["admin", "owner"].includes(r) ? { employeeId: { in: await reportingTreeIds(u.id) } } : {}),
       },
       data: {
         submissionStatus: "rejected",

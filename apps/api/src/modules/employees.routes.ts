@@ -592,7 +592,7 @@ export async function employeeRoutes(app: FastifyInstance) {
   // GET /api/employees/:employeeId/documents — ownership/role checked (fixes P4)
   app.get("/api/employees/:employeeId/documents", { preHandler: [authenticate] }, async (req, reply) => {
     const { employeeId } = req.params as { employeeId: string };
-    if (!(await isTeamMemberOrSelf(req.user!, employeeId))) {
+    if (!(await isTeamMemberOrSelf(req.user!, employeeId, { leadRolesOnly: true }))) {
       return reply.code(403).send({ success: false, message: "Access denied" });
     }
     const docs = await prisma.employeeDocument.findMany({
@@ -605,7 +605,7 @@ export async function employeeRoutes(app: FastifyInstance) {
   // POST /api/employees/:employeeId/documents — ownership/role checked (fixes P4)
   app.post("/api/employees/:employeeId/documents", { preHandler: [authenticate] }, async (req, reply) => {
     const { employeeId } = req.params as { employeeId: string };
-    if (!(await isTeamMemberOrSelf(req.user!, employeeId))) {
+    if (!(await isTeamMemberOrSelf(req.user!, employeeId, { leadRolesOnly: true }))) {
       return reply.code(403).send({ success: false, message: "Access denied" });
     }
     let parsed;
@@ -638,7 +638,7 @@ export async function employeeRoutes(app: FastifyInstance) {
     const { docId } = req.params as { docId: string };
     const doc = await prisma.employeeDocument.findUnique({ where: { id: docId } });
     if (!doc) return reply.code(404).send({ success: false, message: "Document not found" });
-    if (!(await isTeamMemberOrSelf(req.user!, doc.employeeId))) {
+    if (!(await isTeamMemberOrSelf(req.user!, doc.employeeId, { leadRolesOnly: true }))) {
       return reply.code(403).send({ success: false, message: "Access denied" });
     }
     await prisma.employeeDocument.delete({ where: { id: docId } });

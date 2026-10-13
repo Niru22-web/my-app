@@ -5,6 +5,7 @@ import { employeeReports } from "./reports/employee.reports";
 import { leaveReports } from "./reports/leave.reports";
 import { attendanceReports } from "./reports/attendance.reports";
 import { timeReports } from "./reports/time.reports";
+import { isScope, scopeIds, scopePeople } from "../utils/scope";
 
 const REPORTS: ReportDef[] = [...employeeReports, ...leaveReports, ...attendanceReports, ...timeReports];
 const BY_KEY = new Map(REPORTS.map((r) => [r.key, r]));
@@ -16,6 +17,20 @@ const CATEGORIES = [
 ];
 
 export async function reportRoutes(app: FastifyInstance) {
+  // GET /api/scopes — which of My / Team / Organization views the caller may open (all modules)
+  app.get("/api/scopes", { preHandler: [authenticate] }, async (req, reply) => {
+    return reply.send({ success: true, data: await tierAccess(req.user!) });
+  });
+
+  // GET /api/scopes/:scope/people — people in that view, for filter dropdowns
+  app.get("/api/scopes/:scope/people", { preHandler: [authenticate] }, async (req, reply) => {
+    const { scope } = req.params as { scope: string };
+    if (!isScope(scope)) return reply.code(404).send({ success: false, message: "Unknown view." });
+    const ids = await scopeIds(req.user!, scope, reply);
+    if (ids === undefined) return;
+    return reply.send({ success: true, data: await scopePeople(ids) });
+  });
+
   // GET /api/reports/catalog — which tiers and reports the signed-in person may open
   app.get("/api/reports/catalog", { preHandler: [authenticate] }, async (req, reply) => {
     const access = await tierAccess(req.user!);

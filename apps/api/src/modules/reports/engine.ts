@@ -1,5 +1,5 @@
 import { prisma } from "../../config/db";
-import { ACCOUNTS_ROLES, normRole, type JwtUser } from "../../plugins/auth";
+import { ACCOUNTS_ROLES, leadsATeam, normRole, reportingTreeIds, type JwtUser } from "../../plugins/auth";
 
 // ── Tiers ────────────────────────────────────────────────────────────────────
 // my   — the signed-in person only (everyone)
@@ -29,34 +29,17 @@ export interface ScopedEmployee {
 
 export async function tierAccess(user: JwtUser): Promise<Record<Tier, boolean>> {
   const r = normRole(user.role);
-  if (r === "admin" || r === "owner") return { my: true, team: true, org: true };
-
-  const [userPerm, rolePerm, reportee] = await Promise.all([
-    prisma.userPermission.findUnique({ where: { userId: user.id }, select: { reportsView: true, analyticsView: true } }),
-    prisma.rolePermission.findFirst({ where: { role: { equals: user.role, mode: "insensitive" } }, select: { reportsView: true, analyticsView: true } }),
-    prisma.employee.findFirst({ where: teamWhere(user.id), select: { id: true } }),
+  // my   — always (only ever the person's own data)
+  // team — whoever has people reporting to them, whatever their role (needed for approvals)
+  // org  — Admin/Owner/HR/IT/Accounts by role; anyone else when granted "Analytics" (role- or user-level).
+  //        The grant only ever adds access, so editing someone's other permissions can't remove it.
+  const [userPerm, rolePerm, leads] = await Promise.all([
+    prisma.userPermission.findUnique({ where: { userId: user.id }, select: { analyticsView: true } }),
+    prisma.rolePermission.findFirst({ where: { role: { equals: user.role, mode: "insensitive" } }, select: { analyticsView: true } }),
+    leadsATeam(user.id),
   ]);
-  // User-level permissions replace role-level ones entirely (portal rule).
-  // My Reports only ever shows the person's own data, so it is always available.
-  const reportsView = userPerm ? userPerm.reportsView : rolePerm ? rolePerm.reportsView : true;
-  const orgView = userPerm ? userPerm.analyticsView : ORG_ROLES.has(r) || !!rolePerm?.analyticsView;
-  return { my: true, team: reportsView && !!reportee, org: orgView };
-}
-
-function teamWhere(leadId: string) {
-  return {
-    id: { not: leadId },
-    OR: [
-      { managerId: leadId },
-      { partnerId: leadId },
-      { subManagerId: leadId },
-      { reportingManagerIds: { has: leadId } },
-      { reportingPartnerIds: { has: leadId } },
-      { subManagerIds: { has: leadId } },
-      { managers: { some: { managerId: leadId } } },
-      { partners: { some: { partnerId: leadId } } },
-    ],
-  };
+  const org = r === "admin" || r === "owner" || ORG_ROLES.has(r) || !!userPerm?.analyticsView || !!rolePerm?.analyticsView;
+  return { my: true, team: leads, org };
 }
 
 const EMP_SELECT = {
@@ -92,24 +75,10 @@ export async function scopeEmployees(user: JwtUser, tier: Tier, includeInactive 
     });
     return all.map(toScoped);
   }
-  // team: walk the reporting tree downwards
-  const seen = new Set<string>([user.id]);
-  const out: ScopedEmployee[] = [];
-  let frontier = [user.id];
-  for (let depth = 0; depth < 8 && frontier.length; depth++) {
-    const next = await prisma.employee.findMany({
-      where: { ...statusFilter, OR: frontier.flatMap((id) => teamWhere(id).OR), id: { notIn: [...seen] } },
-      select: EMP_SELECT,
-    });
-    frontier = [];
-    for (const e of next) {
-      if (seen.has(e.id)) continue;
-      seen.add(e.id);
-      frontier.push(e.id);
-      out.push(toScoped(e));
-    }
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  // team: everyone below them in the reporting tree
+  const ids = await reportingTreeIds(user.id);
+  const team = await prisma.employee.findMany({ where: { ...statusFilter, id: { in: ids } }, select: EMP_SELECT, orderBy: [{ firstName: "asc" }, { lastName: "asc" }] });
+  return team.map(toScoped);
 }
 
 // ── Dates (all report dates are calendar days, stored as UTC midnight) ───────

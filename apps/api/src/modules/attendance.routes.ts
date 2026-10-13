@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
-import { authenticate, normRole, requireRoles } from "../plugins/auth";
+import { authenticate, normRole, requireRoles, isTeamMemberOrSelf } from "../plugins/auth";
+import { isScope, scopeCodes } from "../utils/scope";
 
 function utcDayDate(d = new Date()): Date {
   return new Date(`${d.toISOString().slice(0, 10)}T00:00:00.000Z`);
@@ -278,6 +279,17 @@ export async function attendanceRoutes(app: FastifyInstance) {
   app.get("/api/attendance/all", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
     const r = normRole(u.role);
+    const scopeQ = (req.query as Record<string, string | undefined>)?.scope;
+    let scoped: string[] | null | undefined;
+    if (isScope(scopeQ)) {
+      // IT sees firm-wide attendance only when an Admin grants the Attendance permission (firm decision).
+      if (scopeQ === "org" && r === "it") {
+        const perm = await prisma.userPermission.findUnique({ where: { userId: u.id }, select: { attendanceView: true } });
+        if (!perm?.attendanceView) return reply.code(403).send({ success: false, message: "Attendance access hasn’t been granted to you." });
+      }
+      scoped = await scopeCodes(u, scopeQ, reply);
+      if (scoped === undefined) return;
+    }
     const { startDate, endDate, employeeId } = (req.query ?? {}) as {
       startDate?: string;
       endDate?: string;
@@ -292,7 +304,13 @@ export async function attendanceRoutes(app: FastifyInstance) {
       };
     }
 
-    if (["admin", "owner", "hr", "it"].includes(r)) {
+    if (scoped !== undefined) {
+      if (scoped === null) {
+        if (employeeId) where.employee_id = employeeId;
+      } else {
+        where.employee_id = employeeId ? (scoped.includes(employeeId) ? employeeId : "__none__") : { in: scoped };
+      }
+    } else if (["admin", "owner", "hr", "it"].includes(r)) {
       if (employeeId) where.employee_id = employeeId;
     } else if (["manager", "partner", "sub-manager", "sub manager"].includes(r)) {
       const team = await prisma.employee.findMany({
@@ -334,10 +352,15 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const u = req.user!;
     const r = normRole(u.role);
     const { employeeId, month } = (req.query ?? {}) as { employeeId?: string; month?: string };
-    const targetCode =
-      ["admin", "owner", "hr", "it", "manager", "partner"].includes(r) && employeeId
-        ? employeeId
-        : u.employeeId;
+    let targetCode = u.employeeId;
+    if (employeeId && employeeId !== u.employeeId) {
+      // Only the person, anyone above them in the reporting tree, or firm-wide roles (fixes cross-team viewing)
+      const target = await prisma.employee.findUnique({ where: { employeeId }, select: { id: true } });
+      if (!target || !(await isTeamMemberOrSelf(u, target.id))) {
+        return reply.code(403).send({ success: false, message: "This employee is not in your reporting team." });
+      }
+      targetCode = employeeId;
+    }
 
     const ym = month && /^\d{4}-\d{2}$/.test(month) ? month : new Date().toISOString().slice(0, 7);
     const start = new Date(`${ym}-01T00:00:00.000Z`);

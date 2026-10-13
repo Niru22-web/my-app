@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
-import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
+import { authenticate, isTeamMemberOrSelf, normRole, requireRoles, leadsATeam } from "../plugins/auth";
+import { isScope, scopeIds } from "../utils/scope";
 import { createNotification } from "../utils/notify";
 
 async function nextLeaveCode(): Promise<string> {
@@ -21,6 +22,12 @@ export async function leaveRoutes(app: FastifyInstance) {
   app.get("/api/leaves", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
     const r = normRole(u.role);
+    const scopeQ = (req.query as Record<string, string | undefined>)?.scope;
+    let scoped: string[] | null | undefined;
+    if (isScope(scopeQ)) {
+      scoped = await scopeIds(u, scopeQ, reply);
+      if (scoped === undefined) return;
+    }
     const { employeeId, status, dateFrom, dateTo } = (req.query ?? {}) as {
       employeeId?: string;
       status?: string;
@@ -30,7 +37,14 @@ export async function leaveRoutes(app: FastifyInstance) {
 
     const where: Record<string, any> = {};
 
-    if (["admin", "owner", "hr"].includes(r)) {
+    if (scoped !== undefined) {
+      const pick = employeeId && employeeId !== "all" ? employeeId : null;
+      if (scoped === null) {
+        if (pick) where.employeeId = pick;
+      } else {
+        where.employeeId = pick ? (scoped.includes(pick) ? pick : "__none__") : { in: scoped };
+      }
+    } else if (["admin", "owner", "hr"].includes(r)) {
       if (employeeId && employeeId !== "all") where.employeeId = employeeId;
     } else if (["manager", "partner", "sub-manager", "sub manager"].includes(r)) {
       const team = await prisma.employee.findMany({
@@ -111,6 +125,33 @@ export async function leaveRoutes(app: FastifyInstance) {
         financialYearStart: `${year}-04-01`,
         financialYearEnd: `${year + 1}-03-31`,
       },
+    });
+  });
+
+  // GET /api/leaves/balances?scope=team|org&year= — everyone's balance in a view (no balance row ⇒ null, never assumed)
+  app.get("/api/leaves/balances", { preHandler: [authenticate] }, async (req, reply) => {
+    const q = (req.query ?? {}) as { scope?: string; year?: string };
+    const scope = isScope(q.scope) ? q.scope : "my";
+    const ids = await scopeIds(req.user!, scope, reply);
+    if (ids === undefined) return;
+    const year = Number(q.year) || new Date().getFullYear();
+    const people = await prisma.employee.findMany({
+      where: {
+        ...(ids ? { id: { in: ids } } : {}),
+        status: { equals: "active", mode: "insensitive" },
+        NOT: { officeEmail: { endsWith: "@asa-local.test" } },
+      },
+      select: { id: true, employeeId: true, firstName: true, lastName: true, designation: true },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    });
+    const bal = await prisma.leaveBalance.findMany({ where: { year, employeeId: { in: people.map((p) => p.id) } } });
+    const byId = new Map(bal.map((b) => [b.employeeId, b]));
+    return reply.send({
+      success: true,
+      data: people.map((p) => {
+        const b = byId.get(p.id);
+        return { ...p, total: b?.totalLeaves ?? null, used: b?.usedLeaves ?? null, remaining: b?.remainingLeaves ?? null };
+      }),
     });
   });
 
@@ -292,7 +333,7 @@ export async function leaveRoutes(app: FastifyInstance) {
     const u = req.user!;
     const r = normRole(u.role);
 
-    if (!["admin", "owner", "hr", "manager", "partner", "sub-manager", "sub manager"].includes(r)) {
+    if (!["admin", "owner", "hr"].includes(r) && !(await leadsATeam(u.id))) {
       return reply.code(403).send({ success: false, message: "You are not authorized to approve leave." });
     }
     if (!status || !["approved", "rejected"].includes(status)) {
@@ -347,7 +388,7 @@ export async function leaveRoutes(app: FastifyInstance) {
       message: `Your ${existing.type} request (${existing.totalDays} day(s)) was ${status}.`,
       type: `leave_${status}`,
       module: "HR",
-      actionUrl: "/portal/leaves",
+      actionUrl: "/leave",
     });
 
     return reply.send({ success: true, data: updated });
