@@ -11,6 +11,7 @@ import {
   Clock,
   IdCard,
   Settings,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleInfo } from "./roles";
@@ -52,6 +53,7 @@ export function buildNav(r: RoleInfo, can: Can): NavSection[] {
         { label: "Timesheet", href: "/timesheet", icon: ClipboardCheck },
         { label: "Attendance", href: "/attendance/dashboard", icon: Clock, match: ["/attendance"] },
         { label: "My Portal", href: "/portal/profile", icon: IdCard, match: ["/portal"] },
+        { label: "Reports", href: "/reports/my", icon: BarChart3, match: ["/reports"] },
       ],
     },
     {
@@ -113,7 +115,7 @@ const TITLES: [string, string][] = [
   ["/portal/leaves", "Leave"],
   ["/portal/reimbursements", "Reimbursements"],
   ["/portal/profile", "My Profile"],
-  ["/portal/reports", "Reports"],
+  ["/reports", "Reports"],
   ["/portal", "My Portal"],
   ["/admin/asset-management", "Assets"],
   ["/admin-portal", "Administration"],

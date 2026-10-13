@@ -38,6 +38,16 @@
   --chart-previous: #8e8e93;
   --chart-grid: #eceef2;
 
+  /* Categorical series, fixed order (dataviz validator: CVD dE 9.1, normal 19.6 on #fff; reports always ship a table view) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+
   --ring: rgb(0 56 135 / 0.35);
   --shadow-card: 0 1px 2px rgb(15 23 41 / 0.04), 0 1px 3px rgb(15 23 41 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(15 23 41 / 0.25);
@@ -73,6 +83,16 @@
   --chart-current: #5b8fe0;
   --chart-previous: #6a6a70;
   --chart-grid: #1c263c;
+
+  /* Categorical series, dark steps (validator on #111a2e: CVD dE 8.4, all >= 3:1) */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 
   --ring: rgb(76 130 214 / 0.45);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);

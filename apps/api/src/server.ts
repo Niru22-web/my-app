@@ -18,6 +18,7 @@ import { helpdeskRoutes } from "./modules/helpdesk.routes";
 import { accountsRoutes } from "./modules/accounts.routes";
 import { adminRoutes } from "./modules/admin.routes";
 import { systemRoutes } from "./modules/system.routes";
+import { reportRoutes } from "./modules/reports.routes";
 
 export async function buildServer() {
   const app = Fastify({
@@ -59,6 +60,7 @@ export async function buildServer() {
   await app.register(helpdeskRoutes);
   await app.register(accountsRoutes);
   await app.register(adminRoutes);
+  await app.register(reportRoutes);
 
   return app;
 }
