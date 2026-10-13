@@ -1,20 +1,20 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/lib/auth";
 import { TabNav } from "@/components/ui/tab-nav";
-import { canReview } from "@/components/timesheet/api";
+import { useScopes } from "@/lib/scopes";
 
 export default function TimesheetLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const scopes = useScopes();
   return (
     <div className="space-y-6">
       <TabNav
-        label="Timesheet sections"
+        label="Timesheet views"
         tabs={[
           { href: "/timesheet", label: "My timesheet", active: pathname === "/timesheet" },
-          ...(canReview(user?.role) ? [{ href: "/timesheet/team", label: "Team approvals" }] : []),
+          ...(scopes.data?.team ? [{ href: "/timesheet/team", label: "Team timesheets" }] : []),
+          ...(scopes.data?.org ? [{ href: "/timesheet/org", label: "Organization timesheets" }] : []),
         ]}
       />
       {children}

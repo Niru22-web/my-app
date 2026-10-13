@@ -126,6 +126,8 @@ export function useMyTimelogs(f: MyFilters) {
 }
 
 export interface TeamFilters {
+  /** team = reporting tree, org = whole firm (server-scoped) */
+  scope?: "team" | "org";
   dateFrom?: string;
   dateTo?: string;
   employeeId?: string;

@@ -173,6 +173,7 @@ export function useAttendanceAccess() {
   const teamLogs = firmRole || ["manager", "partner"].includes(r) || (it && granted("attendance", "canView"));
   return {
     teamLogs,
+    isIT: it,
     firmWide: firmRole || (it && teamLogs),
     correct: firmRole || (it && granted("attendance", "canEdit")),
     /** True while an IT user's permissions are still loading (don't redirect yet). */
@@ -182,12 +183,12 @@ export function useAttendanceAccess() {
 
 // ---- Queries ----------------------------------------------------------------------
 
-export function useAttendanceLogs(from: YMD, to: YMD, enabled = true) {
+export function useAttendanceLogs(from: YMD, to: YMD, enabled = true, scope?: "team" | "org") {
   return useQuery({
-    queryKey: ["attendance", "all", from, to],
+    queryKey: ["attendance", "all", from, to, scope ?? "role"],
     // Day keys can be stored one day early, so widen the window by a day and filter on the real day.
     queryFn: async () => {
-      const rows = (await api<Envelope<RawLogRow[]>>("attendance/all", { query: { startDate: addDays(from, -1), endDate: to } })).data ?? [];
+      const rows = (await api<Envelope<RawLogRow[]>>("attendance/all", { query: { startDate: addDays(from, -1), endDate: to, scope } })).data ?? [];
       return mergeDays(rows.map(normalise)).filter((r) => r.day >= from && r.day <= to);
     },
     enabled,

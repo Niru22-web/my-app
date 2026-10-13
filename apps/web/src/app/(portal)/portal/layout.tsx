@@ -5,7 +5,6 @@ import { TabNav } from "@/components/ui/tab-nav";
 export default function PortalSectionLayout({ children }: { children: React.ReactNode }) {
   const tabs = [
     { href: "/portal/profile", label: "Profile" },
-    { href: "/portal/leaves", label: "Leave" },
     { href: "/portal/reimbursements", label: "Reimbursements" },
   ];
 

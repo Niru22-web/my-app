@@ -12,6 +12,7 @@ import {
   IdCard,
   Settings,
   BarChart3,
+  Palmtree,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleInfo } from "./roles";
@@ -52,6 +53,7 @@ export function buildNav(r: RoleInfo, can: Can): NavSection[] {
       items: [
         { label: "Timesheet", href: "/timesheet", icon: ClipboardCheck },
         { label: "Attendance", href: "/attendance/dashboard", icon: Clock, match: ["/attendance"] },
+        { label: "Leave Tracker", href: "/leave", icon: Palmtree },
         { label: "My Portal", href: "/portal/profile", icon: IdCard, match: ["/portal"] },
         { label: "Reports", href: "/reports/my", icon: BarChart3, match: ["/reports"] },
       ],
@@ -112,7 +114,7 @@ const TITLES: [string, string][] = [
   ["/management/jobs", "Jobs"],
   ["/management", "Management"],
   ["/attendance", "Attendance"],
-  ["/portal/leaves", "Leave"],
+  ["/leave", "Leave Tracker"],
   ["/portal/reimbursements", "Reimbursements"],
   ["/portal/profile", "My Profile"],
   ["/reports", "Reports"],

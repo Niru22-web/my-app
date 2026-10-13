@@ -51,19 +51,35 @@ export const LEAVE_STATE_LABEL: Record<LeaveState, string> = {
   cancelled: "Cancelled",
 };
 
-/** Roles that can approve leave (matches the API's approver list). */
-export function canApproveLeave(role: string | null | undefined) {
-  return ["admin", "owner", "hr", "manager", "partner", "sub manager", "sub-manager"].includes(normRole(role));
-}
 /** Roles that can adjust balances and see negative balances firm-wide. */
 export function canManageBalances(role: string | null | undefined) {
   return ["admin", "owner", "hr", "partner"].includes(normRole(role));
 }
 
-export function useLeaves(query: { employeeId?: string; status?: string; dateFrom?: string; dateTo?: string }, enabled = true) {
+export function useLeaves(query: { employeeId?: string; status?: string; dateFrom?: string; dateTo?: string; scope?: "team" | "org" }, enabled = true) {
   return useQuery({
     queryKey: ["leaves", query],
     queryFn: async () => (await api<Envelope<Leave[]>>("leaves", { query })).data ?? [],
+    enabled,
+  });
+}
+
+export interface ScopedBalance {
+  id: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  designation: string;
+  total: number | null;
+  used: number | null;
+  remaining: number | null;
+}
+
+/** Everyone’s balance in a Team / Organization view (null when no balance has been set up). */
+export function useLeaveBalances(scope: "team" | "org", enabled = true) {
+  return useQuery({
+    queryKey: ["leaves", "balances", scope],
+    queryFn: async () => (await api<Envelope<ScopedBalance[]>>("leaves/balances", { query: { scope } })).data ?? [],
     enabled,
   });
 }

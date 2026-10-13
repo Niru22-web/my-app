@@ -2,14 +2,22 @@
 
 import { TabNav } from "@/components/ui/tab-nav";
 import { useAttendanceAccess } from "@/components/attendance/api";
+import { useScopes } from "@/lib/scopes";
 
 export default function AttendanceLayout({ children }: { children: React.ReactNode }) {
-  const { teamLogs } = useAttendanceAccess();
+  const scopes = useScopes();
+  const access = useAttendanceAccess();
+  // IT sees the firm view only when an Admin has granted the Attendance permission.
+  const org = !!scopes.data?.org && (!access.isIT || access.firmWide);
   return (
     <div className="space-y-6">
       <TabNav
-        label="Attendance sections"
-        tabs={[{ href: "/attendance/dashboard", label: "My attendance" }, ...(teamLogs ? [{ href: "/attendance/logs", label: "Team logs" }] : [])]}
+        label="Attendance views"
+        tabs={[
+          { href: "/attendance/dashboard", label: "My attendance" },
+          ...(scopes.data?.team ? [{ href: "/attendance/team", label: "Team attendance" }] : []),
+          ...(org ? [{ href: "/attendance/org", label: "Organization attendance" }] : []),
+        ]}
       />
       {children}
     </div>

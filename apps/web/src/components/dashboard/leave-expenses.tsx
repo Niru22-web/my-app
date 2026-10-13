@@ -20,7 +20,7 @@ export function LeaveCard({ data, loading }: { data?: CombinedDashboard; loading
         title="Leave balance"
         description={`${new Date().getFullYear()} allocation`}
         actions={
-          <Link href="/portal/leaves" className="text-[13px] font-semibold text-brand hover:underline">
+          <Link href="/leave" className="text-[13px] font-semibold text-brand hover:underline">
             Apply
           </Link>
         }

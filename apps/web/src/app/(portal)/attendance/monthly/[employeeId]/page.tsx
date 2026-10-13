@@ -6,13 +6,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useScopePeople, useScopes } from "@/lib/scopes";
 import { assetUrl } from "@/lib/api";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AttendanceMonth } from "@/components/attendance/month-view";
-import { useAttendanceAccess, useMonthly, useScopedPeople } from "@/components/attendance/api";
+import { useAttendanceAccess, useMonthly } from "@/components/attendance/api";
 
 export default function EmployeeMonthPage({ params }: { params: Promise<{ employeeId: string }> }) {
   const { employeeId } = use(params);
@@ -32,13 +33,14 @@ function EmployeeMonth({ code }: { code: string }) {
   const self = user?.employeeId === code;
   const access = useAttendanceAccess();
   const firmWide = access.firmWide;
-  const reviewer = access.teamLogs;
-  const people = useScopedPeople(!self && !firmWide && reviewer);
+  const scopes = useScopes();
+  const reviewer = !!scopes.data?.team;
+  const people = useScopePeople("team", !self && !firmWide && reviewer);
   const header = useMonthly(code, (initial ?? today()).slice(0, 7));
 
-  // Allowed: yourself, firm-wide roles, or managers/partners for their own reports.
+  // Allowed: yourself, firm-wide roles, or anyone above them in the reporting tree.
   const allowed = self || firmWide || (reviewer && !!people.data?.some((p) => p.employeeId === code));
-  const deciding = access.loading || (!self && !firmWide && reviewer && people.isLoading);
+  const deciding = access.loading || scopes.isLoading || (!self && !firmWide && reviewer && people.isLoading);
 
   useEffect(() => {
     if (!deciding && !allowed) router.replace("/attendance/dashboard");

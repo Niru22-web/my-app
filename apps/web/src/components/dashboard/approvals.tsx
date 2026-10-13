@@ -23,7 +23,7 @@ export function ApprovalsPanel({ data, loading, r }: { data?: CombinedDashboard;
   const tiles: Tile[] = [];
 
   if (r.isApprover) {
-    tiles.push({ label: "Leave requests", value: p?.leaves ?? 0, href: "/portal/leaves", icon: CalendarCheck, hint: "awaiting approval" });
+    tiles.push({ label: "Leave requests", value: p?.leaves ?? 0, href: "/leave/team", icon: CalendarCheck, hint: "awaiting approval" });
     tiles.push({ label: "Reimbursements", value: p?.reimbursements ?? 0, href: "/portal/reimbursements", icon: ReceiptText, hint: "awaiting action" });
   }
   if ((r.isAdmin || r.isOwner || r.isHR || r.isIT) && !r.isPartner) {
