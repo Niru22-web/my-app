@@ -8,16 +8,18 @@ export interface WeeklyOffs {
   /** "all", "none" or Saturday week-numbers that are off, e.g. "2,4" */
   saturdaysOff: string;
   sundayOff: boolean;
+  /** Expected hours per working day */
+  standardDayHours: number;
 }
 
 const KEY = "asa:work-calendar";
-const DEFAULT: WeeklyOffs = { saturdaysOff: "all", sundayOff: true };
+const DEFAULT: WeeklyOffs = { saturdaysOff: "all", sundayOff: true, standardDayHours: 8 };
 
 function load(): WeeklyOffs {
   if (typeof window === "undefined") return DEFAULT;
   try {
     const v = JSON.parse(readLocal(KEY) ?? "null") as WeeklyOffs | null;
-    return v && typeof v.saturdaysOff === "string" ? v : DEFAULT;
+    return v && typeof v.saturdaysOff === "string" ? { ...DEFAULT, ...v } : DEFAULT;
   } catch {
     return DEFAULT;
   }
@@ -26,7 +28,7 @@ function load(): WeeklyOffs {
 let current = load();
 
 export function setWeeklyOffs(next: WeeklyOffs) {
-  if (next.saturdaysOff === current.saturdaysOff && next.sundayOff === current.sundayOff) return;
+  if (next.saturdaysOff === current.saturdaysOff && next.sundayOff === current.sundayOff && next.standardDayHours === current.standardDayHours) return;
   current = next;
   writeLocal(KEY, JSON.stringify(next));
 }
@@ -41,3 +43,6 @@ export function isWeeklyOff(ymd: string): boolean {
   if (current.saturdaysOff === "none") return false;
   return current.saturdaysOff.split(",").map(Number).includes(Math.ceil(d / 7));
 }
+
+/** Expected working hours per working day (firm setting). */
+export const standardDayHours = () => current.standardDayHours;

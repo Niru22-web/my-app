@@ -31,7 +31,7 @@ type Row = ComplianceDashboard["employees"][number];
 
 const STATUS_LABEL: Record<string, string> = {
   compliant: "Compliant",
-  under_40_hours: "Under 40 h",
+  under_40_hours: "Below target",
   missing_daily: "Missing days",
   unsubmitted: "Nothing logged",
   pending: "Pending",
@@ -104,7 +104,7 @@ export default function CompliancePage() {
       header: "Hours",
       sortValue: (e) => e.weeklyHours,
       cell: (e) => {
-        const pct = Math.min(100, Math.round((e.weeklyHours / (e.targetHours || 40)) * 100));
+        const pct = Math.min(100, Math.round((e.weeklyHours / (e.targetHours || 1)) * 100));
         return (
           <div className="w-28">
             <p className="text-sm font-semibold tabular text-ink">
@@ -153,7 +153,7 @@ export default function CompliancePage() {
     <div className="space-y-6">
       <PageHeader
         title="Timesheet compliance"
-        description={d ? `Week of ${formatDate(d.weekStart, { day: "numeric", month: "short" })} – ${formatDate(d.weekEnd, { day: "numeric", month: "short", year: "numeric" })} · target 40 hours, Monday–Friday` : "This week’s timesheet completeness"}
+        description={d ? `Week of ${formatDate(d.weekStart, { day: "numeric", month: "short" })} – ${formatDate(d.weekEnd, { day: "numeric", month: "short", year: "numeric" })} · target = working days × expected hours per day` : "This week’s timesheet completeness"}
         actions={
           <Button
             variant="secondary"
@@ -174,7 +174,7 @@ export default function CompliancePage() {
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Summary">
         <StatCard label="Compliant this week" icon={ShieldCheck} tone="brand" loading={q.isLoading} value={k ? `${k.weeklyCompliance}%` : "—"} hint={k ? `${k.compliantEmployees} of ${k.totalEmployees} people` : undefined} />
         <StatCard label="Missed yesterday" icon={Clock3} loading={q.isLoading} value={formatNumber(k?.missingYesterday)} tone={k?.missingYesterday ? "warning" : "neutral"} />
-        <StatCard label="Under 40 hours" icon={Gauge} loading={q.isLoading} value={formatNumber(k?.below40Hours)} />
+        <StatCard label="Below target hours" icon={Gauge} loading={q.isLoading} value={formatNumber(k?.below40Hours)} />
         <StatCard label="Critical risk" icon={AlertTriangle} loading={q.isLoading} value={formatNumber(k?.criticalRisk)} tone={k?.criticalRisk ? "danger" : "neutral"} hint={k ? `${k.remindersSentToday} reminder${k.remindersSentToday === 1 ? "" : "s"} sent today` : undefined} />
       </section>
 

@@ -1,7 +1,9 @@
 import { prisma } from "../../config/db";
+import { currentCalendar } from "../../utils/work-calendar";
 import { type Ctx, type ReportDef, eachDay, holidaysIn, isWeekend, leaveDays, round1, round2, ymd } from "./engine";
 
-const STD_DAY_HOURS = 8; // firm standard: 40 h / week, Monday–Friday
+// Expected hours per working day come from the firm settings (Leave Tracker → Leave policy).
+const stdDayHours = () => currentCalendar().standardDayHours;
 
 async function logs(ctx: Ctx) {
   return prisma.timelog.findMany({
@@ -49,7 +51,7 @@ function totalsKpis(ls: Log[]) {
 async function expectedHours(ctx: Ctx) {
   const [hol, lv] = await Promise.all([holidaysIn(ctx.from, ctx.to), leaveDays(ctx.emps.map((e) => e.id), ctx.from, ctx.to)]);
   const days = eachDay(ctx.from, ctx.to).filter((d) => !isWeekend(d) && !hol.has(ymd(d)));
-  return new Map(ctx.emps.map((e) => [e.id, days.filter((d) => !e.doj || d >= e.doj).reduce((s, d) => s + STD_DAY_HOURS * (1 - (lv.get(e.id)?.get(ymd(d))?.fraction ?? 0)), 0)]));
+  return new Map(ctx.emps.map((e) => [e.id, days.filter((d) => !e.doj || d >= e.doj).reduce((s, d) => s + stdDayHours() * (1 - (lv.get(e.id)?.get(ymd(d))?.fraction ?? 0)), 0)]));
 }
 
 export const timeReports: ReportDef[] = [
@@ -209,7 +211,7 @@ export const timeReports: ReportDef[] = [
     key: "scheduled-vs-worked",
     category: "time",
     title: "Scheduled vs Worked hours",
-    description: "Hours logged against the 40-hour week standard, after leave and holidays.",
+    description: "Hours logged against the firm’s expected hours per working day, after leave and holidays.",
     tiers: ["my", "team", "org"],
     params: ["range"],
     async run(ctx) {
@@ -237,7 +239,7 @@ export const timeReports: ReportDef[] = [
           { key: "pct", label: "Utilisation", format: "percent", align: "right" },
         ],
         rows: rows.sort((a, b) => a.pct - b.pct),
-        notes: ["Scheduled = 8 h for each Monday–Friday from the joining date, less firm holidays and approved leave."],
+        notes: [`Scheduled = ${stdDayHours()} h for each working day from the joining date, less weekly offs, firm holidays and approved leave.`],
       };
     },
   },

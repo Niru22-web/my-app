@@ -15,6 +15,7 @@ export interface LeaveTypeDef {
   annualDays: number | null;
   accrual: "yearly" | "monthly";
   prorateOnJoining: boolean;
+  carryForward: "none" | "all" | "limit";
   carryForwardMax: number | null;
   encashable: boolean;
   encashMax: number | null;
@@ -30,7 +31,16 @@ export interface LeaveTypeDef {
 }
 
 export interface LeavePolicy {
-  calendar: { leaveYearStartMonth: number; saturdaysOff: string; sundayOff: boolean; leaveAccrualFrom: string | null; configured: boolean; summary: string };
+  calendar: {
+    leaveYearStartMonth: number;
+    saturdaysOff: string;
+    sundayOff: boolean;
+    leaveAccrualFrom: string | null;
+    standardDayHours: number;
+    leaveApprovalLevels: number;
+    configured: boolean;
+    summary: string;
+  };
   currentYear: { year: number; label: string; start: string; end: string };
   types: LeaveTypeDef[];
 }
@@ -65,7 +75,7 @@ export function WorkCalendarSync() {
   const p = useLeavePolicy();
   const cal = p.data?.calendar;
   useEffect(() => {
-    if (cal) setWeeklyOffs({ saturdaysOff: cal.saturdaysOff, sundayOff: cal.sundayOff });
+    if (cal) setWeeklyOffs({ saturdaysOff: cal.saturdaysOff, sundayOff: cal.sundayOff, standardDayHours: cal.standardDayHours });
   }, [cal]);
   return null;
 }
@@ -120,7 +130,14 @@ export function usePolicyMutations() {
   };
   return {
     settings: useMutation({
-      mutationFn: (b: { leaveYearStartMonth: number; saturdaysOff: string; sundayOff: boolean; leaveAccrualFrom: string | null }) =>
+      mutationFn: (b: {
+        leaveYearStartMonth: number;
+        saturdaysOff: string;
+        sundayOff: boolean;
+        leaveAccrualFrom: string | null;
+        standardDayHours: number;
+        leaveApprovalLevels: number;
+      }) =>
         api("leave-policy/settings", { method: "PUT", body: b }),
       onSuccess: refresh,
     }),

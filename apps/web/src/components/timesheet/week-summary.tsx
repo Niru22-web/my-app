@@ -3,15 +3,14 @@
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { fmtDay, isWeekend, today, workDate, type YMD } from "@/lib/dates";
+import { standardDayHours } from "@/lib/work-calendar";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { statusOf, type Timelog } from "./api";
 
-const TARGET = 40;
-
 /**
- * Week overview: progress towards 40 h and a day strip. Mirrors how the compliance
- * reminders count — Monday to Friday, every entry regardless of approval status.
+ * Week overview: progress towards the week’s expected hours (working days × the firm’s hours per day)
+ * and a day strip. Mirrors how compliance counts — working days only, every entry regardless of status.
  */
 export function WeekSummary({
   days,
@@ -33,7 +32,8 @@ export function WeekSummary({
   }
   const weekdayHours = days.filter((d) => !isWeekend(d)).reduce((a, d) => a + (perDay.get(d) ?? 0), 0);
   const weekTotal = days.reduce((a, d) => a + (perDay.get(d) ?? 0), 0);
-  const pct = Math.min(100, Math.round((weekdayHours / TARGET) * 100));
+  const TARGET = days.filter((d) => !isWeekend(d)).length * standardDayHours();
+  const pct = TARGET ? Math.min(100, Math.round((weekdayHours / TARGET) * 100)) : 0;
   const now = today();
   const missing = days.filter((d) => !isWeekend(d) && d < now && !(perDay.get(d) ?? 0));
 
@@ -45,7 +45,7 @@ export function WeekSummary({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
         <div className="lg:w-[300px] lg:shrink-0">
           <div className="flex items-baseline justify-between">
-            <p className="text-[13px] font-medium text-ink-muted">Weekday hours</p>
+            <p className="text-[13px] font-medium text-ink-muted">Working-day hours</p>
             <p className="text-xs text-ink-subtle">Target {TARGET} h</p>
           </div>
           {loading ? (
@@ -56,7 +56,7 @@ export function WeekSummary({
               <span className="ml-1 text-base font-semibold text-ink-subtle">/ {TARGET} h</span>
             </p>
           )}
-          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to 40 hours">
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-surface-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to this week’s expected hours">
             <div className={cn("h-full rounded-full transition-[width] duration-500", pct >= 100 ? "bg-success" : "bg-brand")} style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-subtle">

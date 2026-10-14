@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
 import { authenticate, normRole, requireRoles } from "../plugins/auth";
+import { getWorkCalendar, isOffDay } from "../utils/work-calendar";
 import { createNotification } from "../utils/notify";
 
 function currentWeekBounds(now = new Date()): { weekStart: Date; weekEnd: Date } {
@@ -10,7 +11,7 @@ function currentWeekBounds(now = new Date()): { weekStart: Date; weekEnd: Date }
   const weekStart = new Date(utc);
   weekStart.setUTCDate(utc.getUTCDate() + diff);
   const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekStart.getUTCDate() + 4); // Friday
+  weekEnd.setUTCDate(weekStart.getUTCDate() + 6); // Sunday — working Saturdays count (firm calendar)
   return { weekStart, weekEnd };
 }
 
@@ -89,13 +90,16 @@ export async function complianceRoutes(app: FastifyInstance) {
     ]);
 
     const holidayYmds = new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
-    const workingDays: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      const d = new Date(weekStart.getTime() + i * 86_400_000).toISOString().slice(0, 10);
-      if (d <= todayYmd && !holidayYmds.has(d)) {
-        workingDays.push(d);
-      }
+    // Firm work calendar: weekly offs (e.g. Sundays + 2nd/4th Saturdays) and expected hours per working day.
+    const cal = await getWorkCalendar();
+    const stdHours = cal.standardDayHours;
+    const weekWorkingDays: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStart.getTime() + i * 86_400_000);
+      const d = day.toISOString().slice(0, 10);
+      if (!isOffDay(day, cal) && !holidayYmds.has(d)) weekWorkingDays.push(d);
     }
+    const workingDays = weekWorkingDays.filter((d) => d <= todayYmd);
 
     const logsByEmp = new Map<string, typeof timelogs>();
     for (const l of timelogs) {
@@ -136,7 +140,8 @@ export async function complianceRoutes(app: FastifyInstance) {
       const missingDays = workingDays.filter((ymd) => !loggedDates.has(ymd) && !isOnLeave(ymd));
       if (yesterdayYmd && missingDays.includes(yesterdayYmd)) missingYesterday++;
 
-      const targetHours = 40;
+      // Expected hours this week = working days not on leave × expected hours per day
+      const targetHours = Math.round((weekWorkingDays.length - weekWorkingDays.filter(isOnLeave).length) * stdHours * 100) / 100;
       const complianceStatus =
         weeklyHours >= targetHours && missingDays.length === 0
           ? "compliant"
@@ -171,7 +176,7 @@ export async function complianceRoutes(app: FastifyInstance) {
         billableHours,
         targetHours,
         complianceStatus,
-        compliancePct: Math.min(100, Math.round((weeklyHours / targetHours) * 100)),
+        compliancePct: targetHours > 0 ? Math.min(100, Math.round((weeklyHours / targetHours) * 100)) : 100,
         missingDays,
         riskScore,
         riskLevel,
@@ -184,7 +189,8 @@ export async function complianceRoutes(app: FastifyInstance) {
 
     const totalEmployees = empRows.length;
     const weeklyCompliance = totalEmployees > 0 ? Math.round((compliantEmployees / totalEmployees) * 100) : 100;
-    const teamUtilization = totalEmployees > 0 ? Math.min(100, Math.round((totalHoursAll / (totalEmployees * 40)) * 100)) : 0;
+    const totalTarget = empRows.reduce((s, x) => s + x.targetHours, 0);
+    const teamUtilization = totalTarget > 0 ? Math.min(100, Math.round((totalHoursAll / totalTarget) * 100)) : 0;
 
     // Department breakdown
     const deptMap = new Map<string, typeof empRows>();
@@ -201,9 +207,12 @@ export async function complianceRoutes(app: FastifyInstance) {
         compliantCount: comp,
         compliancePct: Math.round((comp / list.length) * 100),
         avgHours: Math.round((hrs / list.length) * 10) / 10,
-        utilizationPct: Math.min(100, Math.round((hrs / (list.length * 40)) * 100)),
+        utilizationPct: (() => {
+          const t = list.reduce((s, x) => s + x.targetHours, 0);
+          return t > 0 ? Math.min(100, Math.round((hrs / t) * 100)) : 0;
+        })(),
         criticalCount: list.filter((x) => x.riskLevel === "critical").length,
-        belowHoursCount: list.filter((x) => x.weeklyHours < 40).length,
+        belowHoursCount: list.filter((x) => x.weeklyHours < x.targetHours).length,
       };
     });
 

@@ -22,6 +22,21 @@ export interface Leave {
   employeeId: string;
   employee?: { id: string; firstName: string; lastName: string; officeEmail: string } | null;
   approver?: { firstName: string; lastName: string } | null;
+  /** Pending requests only: which approval step it is waiting for */
+  stage?: "level1" | "level2" | "final" | null;
+  /** Pending requests only: what the signed-in person may do (step-1 approval or final decision) */
+  canAct?: "level1" | "final" | null;
+  approvals?: { id: string; level: number; decision: string; comment: string | null; createdAt: string; approver: { firstName: string; lastName: string } }[];
+}
+
+/** Short text for where a pending request is in the approval chain. */
+export function stageLabel(l: Pick<Leave, "stage" | "approvals">): string | null {
+  if (l.stage === "level1") return "With reporting manager";
+  if (l.stage === "level2") {
+    const step1 = l.approvals?.find((a) => a.level === 1 && a.decision === "approved");
+    return step1 ? `Approved by ${step1.approver.firstName} · with partner` : "With reporting partner";
+  }
+  return null;
 }
 
 export type LeaveState = "pending" | "approved" | "rejected" | "cancelled";
@@ -92,7 +107,8 @@ export function useLeaveMutations() {
     edit: useMutation({ mutationFn: ({ id, body }: { id: string; body: LeaveInput }) => api(`leaves/${id}`, { method: "PATCH", body }), onSuccess: refresh }),
     cancel: useMutation({ mutationFn: (id: string) => api(`leaves/${id}`, { method: "DELETE" }), onSuccess: refresh }),
     decide: useMutation({
-      mutationFn: ({ id, status }: { id: string; status: "approved" | "rejected" }) => api(`leaves/${id}`, { method: "PUT", body: { status } }),
+      mutationFn: ({ id, status, comment }: { id: string; status: "approved" | "rejected"; comment?: string }) =>
+        api<{ success: boolean; message?: string }>(`leaves/${id}`, { method: "PUT", body: { status, comment } }),
       onSuccess: refresh,
     }),
   };

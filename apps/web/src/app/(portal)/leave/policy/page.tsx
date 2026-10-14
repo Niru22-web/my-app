@@ -10,7 +10,6 @@ import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
@@ -70,7 +69,16 @@ function CalendarCard({ data }: { data: LeavePolicy }) {
   const [sat, setSat] = useState(c.saturdaysOff);
   const [sun, setSun] = useState(c.sundayOff);
   const [from, setFrom] = useState(c.leaveAccrualFrom ?? "");
-  const dirty = month !== String(c.leaveYearStartMonth) || sat !== c.saturdaysOff || sun !== c.sundayOff || from !== (c.leaveAccrualFrom ?? "") || !c.configured;
+  const [hours, setHours] = useState(String(c.standardDayHours));
+  const [levels, setLevels] = useState(String(c.leaveApprovalLevels));
+  const dirty =
+    month !== String(c.leaveYearStartMonth) ||
+    sat !== c.saturdaysOff ||
+    sun !== c.sundayOff ||
+    from !== (c.leaveAccrualFrom ?? "") ||
+    hours !== String(c.standardDayHours) ||
+    levels !== String(c.leaveApprovalLevels) ||
+    !c.configured;
 
   return (
     <Card>
@@ -100,16 +108,25 @@ function CalendarCard({ data }: { data: LeavePolicy }) {
         <FormRow label="Leave rules start on" htmlFor="cal-from" hint="Accrual counts from this month; earlier balances come in as opening balances.">
           <Input id="cal-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </FormRow>
+        <FormRow label="Expected hours per working day" htmlFor="cal-hours" hint="Used for timesheet compliance and scheduled hours.">
+          <Input id="cal-hours" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} />
+        </FormRow>
+        <FormRow label="Leave approval" htmlFor="cal-levels" className="sm:col-span-2 xl:col-span-3">
+          <Select id="cal-levels" value={levels} onChange={(e) => setLevels(e.target.value)}>
+            <option value="1">One step — anyone above the person in the reporting line</option>
+            <option value="2">Two steps — reporting manager first, then reporting partner</option>
+          </Select>
+        </FormRow>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3">
-        <p className="text-xs text-ink-muted">Firm holidays come from the Calendar (events of type Holiday).</p>
+        <p className="text-xs text-ink-muted">Firm holidays come from the Calendar (events of type Holiday). Shift times are in Administration → Masters → Shifts.</p>
         <Button
           size="sm"
           disabled={!dirty}
           loading={settings.isPending}
           onClick={() =>
             settings.mutate(
-              { leaveYearStartMonth: Number(month), saturdaysOff: sat, sundayOff: sun, leaveAccrualFrom: from || null },
+              { leaveYearStartMonth: Number(month), saturdaysOff: sat, sundayOff: sun, leaveAccrualFrom: from || null, standardDayHours: Number(hours), leaveApprovalLevels: Number(levels) },
               { onSuccess: () => toast.success("Work calendar saved"), onError: (e) => toast.error("Couldn’t save", e instanceof ApiError ? e.message : undefined) },
             )
           }
@@ -149,7 +166,8 @@ function TypesCard({ data }: { data: LeavePolicy }) {
       key: "carry",
       header: "Carry forward",
       hideBelow: "md",
-      cell: (t) => (t.carryForwardMax ? `Up to ${t.carryForwardMax} days` : <span className="text-ink-subtle">None</span>),
+      cell: (t) =>
+        t.carryForward === "all" ? "All unused days" : t.carryForward === "limit" ? `Up to ${t.carryForwardMax} days` : <span className="text-ink-subtle">None — lapses</span>,
     },
     { key: "encash", header: "Encashable", hideBelow: "lg", cell: (t) => (t.encashable ? (t.encashMax ? `Yes, up to ${t.encashMax}` : "Yes") : <span className="text-ink-subtle">No</span>) },
     {
@@ -164,7 +182,7 @@ function TypesCard({ data }: { data: LeavePolicy }) {
         </span>
       ),
     },
-    { key: "status", header: "Status", cell: (t) => <Badge tone={t.active ? "success" : "neutral"}>{t.active ? "Active" : "Inactive"}</Badge> },
+    { key: "status", header: "Enabled", cell: (t) => <ActiveSwitch t={t} /> },
     {
       key: "edit",
       header: "",
@@ -192,6 +210,33 @@ function TypesCard({ data }: { data: LeavePolicy }) {
   );
 }
 
+/** Enable / disable a leave type straight from the list. Disabled types can't be applied for; history stays. */
+function ActiveSwitch({ t }: { t: LeaveTypeDef }) {
+  const toast = useToast();
+  const { saveType } = usePolicyMutations();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={t.active}
+      aria-label={`${t.active ? "Disable" : "Enable"} ${t.name}`}
+      disabled={saveType.isPending}
+      onClick={() =>
+        saveType.mutate(
+          { id: t.id, body: { active: !t.active } },
+          {
+            onSuccess: () => toast.success(`${t.name} ${t.active ? "disabled" : "enabled"}`),
+            onError: (e) => toast.error("Couldn’t change it", e instanceof ApiError ? e.message : undefined),
+          },
+        )
+      }
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${t.active ? "bg-success" : "bg-line-strong"}`}
+    >
+      <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${t.active ? "translate-x-5" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
+
 const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s));
 
 function TypeDialog({ entry, onClose }: { entry: LeaveTypeDef | null; onClose: () => void }) {
@@ -205,6 +250,7 @@ function TypeDialog({ entry, onClose }: { entry: LeaveTypeDef | null; onClose: (
     annualDays: entry?.annualDays != null ? String(entry.annualDays) : "",
     accrual: entry?.accrual ?? "monthly",
     prorateOnJoining: entry?.prorateOnJoining ?? true,
+    carryForward: entry?.carryForward ?? "none",
     carryForwardMax: entry?.carryForwardMax != null ? String(entry.carryForwardMax) : "",
     encashable: entry?.encashable ?? false,
     encashMax: entry?.encashMax != null ? String(entry.encashMax) : "",
@@ -244,7 +290,8 @@ function TypeDialog({ entry, onClose }: { entry: LeaveTypeDef | null; onClose: (
           annualDays: f.paid ? numOrNull(f.annualDays) : null,
           accrual: f.accrual,
           prorateOnJoining: f.prorateOnJoining,
-          carryForwardMax: numOrNull(f.carryForwardMax),
+          carryForward: f.paid ? (f.carryForward as LeaveTypeDef["carryForward"]) : "none",
+          carryForwardMax: f.carryForward === "limit" ? numOrNull(f.carryForwardMax) : null,
           encashable: f.encashable,
           encashMax: numOrNull(f.encashMax),
           allowNegative: f.allowNegative,
@@ -305,9 +352,18 @@ function TypeDialog({ entry, onClose }: { entry: LeaveTypeDef | null; onClose: (
                 <option value="yearly">Yearly (all at the start of the year)</option>
               </Select>
             </FormRow>
-            <FormRow label="Carry forward to next year (max days)" htmlFor="lt-cf" hint="Blank or 0 = unused days lapse.">
-              <Input id="lt-cf" inputMode="decimal" value={f.carryForwardMax} onChange={(e) => set("carryForwardMax", e.target.value)} />
+            <FormRow label="At year end, unused days" htmlFor="lt-cfm">
+              <Select id="lt-cfm" value={f.carryForward} onChange={(e) => set("carryForward", e.target.value as LeaveTypeDef["carryForward"])}>
+                <option value="all">Carry forward — all of them</option>
+                <option value="limit">Carry forward — up to a limit</option>
+                <option value="none">Lapse</option>
+              </Select>
             </FormRow>
+            {f.carryForward === "limit" && (
+              <FormRow label="Carry forward up to (days)" htmlFor="lt-cf">
+                <Input id="lt-cf" inputMode="decimal" value={f.carryForwardMax} onChange={(e) => set("carryForwardMax", e.target.value)} />
+              </FormRow>
+            )}
             <FormRow label="Max days per request" htmlFor="lt-max" hint="Blank = no limit.">
               <Input id="lt-max" inputMode="decimal" value={f.maxPerRequest} onChange={(e) => set("maxPerRequest", e.target.value)} />
             </FormRow>

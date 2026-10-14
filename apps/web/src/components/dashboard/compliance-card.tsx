@@ -73,7 +73,7 @@ export function ComplianceCard({
             </div>
             <dl className="mt-5 grid grid-cols-3 gap-3">
               <Metric label="Missed yesterday" value={k.missingYesterday} />
-              <Metric label="Under 40 hours" value={k.below40Hours} />
+              <Metric label="Below target hours" value={k.below40Hours} />
               <Metric label="Utilisation" value={`${k.teamUtilization}%`} />
             </dl>
           </>

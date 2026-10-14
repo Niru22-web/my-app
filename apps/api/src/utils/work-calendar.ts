@@ -12,10 +12,14 @@ export interface WorkCalendar {
   sundayOff: boolean;
   /** Leave accrues from this date (null = from the start of each leave year) */
   leaveAccrualFrom: Date | null;
+  /** Expected working hours on a working day */
+  standardDayHours: number;
+  /** 1 = single approver, 2 = reporting manager then reporting partner */
+  leaveApprovalLevels: number;
   configured: boolean;
 }
 
-const DEFAULT: WorkCalendar = { leaveYearStartMonth: 1, saturdaysOff: "all", sundayOff: true, leaveAccrualFrom: null, configured: false };
+const DEFAULT: WorkCalendar = { leaveYearStartMonth: 1, saturdaysOff: "all", sundayOff: true, leaveAccrualFrom: null, standardDayHours: 8, leaveApprovalLevels: 1, configured: false };
 let cache: { value: WorkCalendar; at: number } = { value: DEFAULT, at: 0 };
 
 export function parseSaturdays(raw: string): WorkCalendar["saturdaysOff"] {
@@ -31,7 +35,7 @@ export async function getWorkCalendar(): Promise<WorkCalendar> {
   if (Date.now() - cache.at < 60_000) return cache.value;
   const row = await prisma.firmSettings.findUnique({ where: { id: "default" } });
   const value: WorkCalendar = row
-    ? { leaveYearStartMonth: row.leaveYearStartMonth, saturdaysOff: parseSaturdays(row.saturdaysOff), sundayOff: row.sundayOff, leaveAccrualFrom: row.leaveAccrualFrom, configured: true }
+    ? { leaveYearStartMonth: row.leaveYearStartMonth, saturdaysOff: parseSaturdays(row.saturdaysOff), sundayOff: row.sundayOff, leaveAccrualFrom: row.leaveAccrualFrom, standardDayHours: row.standardDayHours, leaveApprovalLevels: row.leaveApprovalLevels, configured: true }
     : DEFAULT;
   cache = { value, at: Date.now() };
   return value;

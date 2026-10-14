@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
-import { authenticate, isTeamMemberOrSelf, normRole, requireRoles, leadsATeam } from "../plugins/auth";
+import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
 import { isScope, scopeIds } from "../utils/scope";
 import { checkRequest, computeBalances, leaveYearOf, yearBounds } from "../utils/leave-policy";
 import { getWorkCalendar } from "../utils/work-calendar";
 import { createNotification } from "../utils/notify";
+import { approvalContext, approversFor, notifyTargets, stageOf, stepOneApproved } from "../utils/leave-approval";
 
 async function nextLeaveCode(): Promise<string> {
   const rows = await prisma.leave.findMany({ select: { leaveId: true } });
@@ -86,11 +87,18 @@ export async function leaveRoutes(app: FastifyInstance) {
       include: {
         employee: { select: { id: true, firstName: true, lastName: true, officeEmail: true } },
         approver: { select: { firstName: true, lastName: true } },
+        approvals: { orderBy: { createdAt: "asc" }, include: { approver: { select: { firstName: true, lastName: true } } } },
       },
       orderBy: { appliedDate: "desc" },
     });
 
-    return reply.send({ success: true, data: leaves });
+    // Two-step approval: which step each pending request is at, and whether the caller can act on it.
+    const pending = leaves.filter((l) => l.status.toLowerCase() === "pending");
+    const ctx = await approvalContext(u, pending);
+    const data = leaves.map((l) =>
+      l.status.toLowerCase() === "pending" ? { ...l, stage: ctx.stage(l), canAct: ctx.power(l) } : { ...l, stage: null, canAct: null },
+    );
+    return reply.send({ success: true, data, approvalLevels: ctx.levels });
   });
 
   // GET /api/leaves/balance — totals of paid leave types from the rules engine (legacy response shape)
@@ -189,6 +197,23 @@ export async function leaveRoutes(app: FastifyInstance) {
       },
     });
 
+    if (!autoApprove) {
+      const cal = await getWorkCalendar();
+      const a = (await approversFor([u.id])).get(u.id);
+      const stage = stageOf(cal.leaveApprovalLevels, a, false);
+      for (const to of notifyTargets(stage, a)) {
+        await createNotification({
+          userId: to,
+          title: "Leave request to review",
+          message: `${created.employee.firstName} ${created.employee.lastName} applied for ${created.totalDays} day(s) of ${created.type}${stage === "level1" && cal.leaveApprovalLevels === 2 && a?.level2.size ? " — your approval is step 1 of 2" : ""}.`,
+          type: "leave_request",
+          module: "HR",
+          actionUrl: "/leave/team",
+        });
+      }
+    } else {
+      await prisma.leaveApproval.create({ data: { leaveId: created.id, level: 2, approverId: u.id, decision: "approved", comment: "Auto-approved (Admin/Owner)" } });
+    }
     // Balances are computed from approved leave, so nothing else needs updating.
     return reply.code(201).send({ success: true, data: created, warnings: check.warnings });
   });
@@ -202,6 +227,9 @@ export async function leaveRoutes(app: FastifyInstance) {
     }
     if (existing.status.toLowerCase() !== "pending") {
       return reply.code(400).send({ success: false, message: "Only pending leave requests can be edited." });
+    }
+    if ((await stepOneApproved([id])).size) {
+      return reply.code(400).send({ success: false, message: "Your manager has already approved this request. Cancel it and apply again to change it." });
     }
 
     const body = (req.body ?? {}) as Record<string, any>;
@@ -253,24 +281,56 @@ export async function leaveRoutes(app: FastifyInstance) {
     const u = req.user!;
     const r = normRole(u.role);
 
-    if (!["admin", "owner", "hr"].includes(r) && !(await leadsATeam(u.id))) {
-      return reply.code(403).send({ success: false, message: "You are not authorized to approve leave." });
-    }
+    const { comment } = (req.body ?? {}) as { comment?: string };
     if (!status || !["approved", "rejected"].includes(status)) {
       return reply.code(400).send({ success: false, message: "Status must be 'approved' or 'rejected'." });
     }
 
-    const existing = await prisma.leave.findUnique({ where: { id } });
+    const existing = await prisma.leave.findUnique({ where: { id }, include: { employee: { select: { firstName: true, lastName: true } } } });
     if (!existing) return reply.code(404).send({ success: false, message: "Leave request not found." });
-
+    if (existing.status.toLowerCase() !== "pending") {
+      return reply.code(400).send({ success: false, message: `This request is already ${existing.status.toLowerCase()}.` });
+    }
     if (existing.employeeId === u.id && !["admin", "owner"].includes(r)) {
       return reply.code(403).send({ success: false, message: "You cannot approve or reject your own leave request." });
     }
-    if (!(await isTeamMemberOrSelf(u, existing.employeeId))) {
-      return reply.code(403).send({ success: false, message: "This employee is not in your reporting team." });
+
+    const ctx = await approvalContext(u, [existing]);
+    const power = ctx.power(existing);
+    if (!power) {
+      const stage = ctx.stage(existing);
+      return reply.code(403).send({
+        success: false,
+        message: stage === "level2" && ctx.stepOne.has(existing.id) ? "Step 1 is done — this now waits for the reporting partner." : "This request isn’t yours to decide.",
+      });
     }
 
-    if (status === "approved" && existing.status.toLowerCase() !== "approved") {
+    // Step 1 approval: record it and pass the request on to the partner
+    if (status === "approved" && power === "level1") {
+      await prisma.leaveApproval.create({ data: { leaveId: id, level: 1, approverId: u.id, decision: "approved", comment: comment?.trim() || null } });
+      const a = ctx.approvers.get(existing.employeeId);
+      for (const to of notifyTargets("level2", a)) {
+        await createNotification({
+          userId: to,
+          title: "Leave request to approve",
+          message: `${existing.employee.firstName} ${existing.employee.lastName}’s ${existing.type} request (${existing.totalDays} day(s)) was approved by their manager and needs your final approval.`,
+          type: "leave_request",
+          module: "HR",
+          actionUrl: "/leave/team",
+        });
+      }
+      await createNotification({
+        userId: existing.employeeId,
+        title: "Leave approved by your manager",
+        message: `Your ${existing.type} request (${existing.totalDays} day(s)) passed step 1 and is now with your reporting partner.`,
+        type: "leave_step",
+        module: "HR",
+        actionUrl: "/leave",
+      });
+      return reply.send({ success: true, data: { ...existing, stage: "level2" }, message: "Approved at step 1 — sent to the reporting partner." });
+    }
+
+    if (status === "approved") {
       const check = await checkRequest({
         employeeId: existing.employeeId, type: existing.type, fromDate: existing.fromDate, toDate: existing.toDate,
         duration: existing.duration, excludeLeaveId: existing.id, forApproval: true,
@@ -278,24 +338,23 @@ export async function leaveRoutes(app: FastifyInstance) {
       if (check.errors.length) return reply.code(400).send({ success: false, message: `Can’t approve: ${check.errors.join(" ")}` });
     }
 
-    const updated = await prisma.leave.update({
-      where: { id },
-      data: {
-        status,
-        approvedBy: u.id,
-        approvedDate: new Date(),
-        approvedRole: u.role,
-      },
-      include: {
-        employee: { select: { id: true, firstName: true, lastName: true, officeEmail: true } },
-        approver: { select: { firstName: true, lastName: true } },
-      },
-    });
+    const level = ctx.levels === 2 ? 2 : 1;
+    const [updated] = await prisma.$transaction([
+      prisma.leave.update({
+        where: { id },
+        data: { status, approvedBy: u.id, approvedDate: new Date(), approvedRole: u.role },
+        include: {
+          employee: { select: { id: true, firstName: true, lastName: true, officeEmail: true } },
+          approver: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      prisma.leaveApproval.create({ data: { leaveId: id, level: power === "level1" ? 1 : level, approverId: u.id, decision: status, comment: comment?.trim() || null } }),
+    ]);
 
     await createNotification({
       userId: existing.employeeId,
       title: `Leave Request ${status === "approved" ? "Approved" : "Declined"}`,
-      message: `Your ${existing.type} request (${existing.totalDays} day(s)) was ${status}.`,
+      message: `Your ${existing.type} request (${existing.totalDays} day(s)) was ${status}.${comment?.trim() ? ` Note: ${comment.trim()}` : ""}`,
       type: `leave_${status}`,
       module: "HR",
       actionUrl: "/leave",

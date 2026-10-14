@@ -9,7 +9,7 @@ const POLICY_ROLES = ["admin", "owner", "hr"];
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const TYPE_FIELDS = [
-  "code", "name", "description", "paid", "annualDays", "accrual", "prorateOnJoining", "carryForwardMax", "encashable", "encashMax",
+  "code", "name", "description", "paid", "annualDays", "accrual", "prorateOnJoining", "carryForward", "carryForwardMax", "encashable", "encashMax",
   "allowNegative", "allowHalfDay", "countNonWorkingDays", "minServiceDays", "maxPerRequest", "noticeDays", "gender", "active", "sortOrder",
 ] as const;
 
@@ -29,6 +29,8 @@ function typeData(b: Record<string, unknown>, partial: boolean) {
   if (out.code !== undefined) out.code = String(out.code).toUpperCase().replace(/[^A-Z0-9_]/g, "");
   if (out.accrual !== undefined && !["yearly", "monthly"].includes(String(out.accrual))) errors.push("Accrual must be yearly or monthly.");
   if (out.gender !== undefined && !["all", "female", "male"].includes(String(out.gender))) errors.push("Gender must be all, female or male.");
+  if (out.carryForward !== undefined && !["none", "all", "limit"].includes(String(out.carryForward))) errors.push("Carry forward must be none, all or limit.");
+  if (out.carryForward === "limit" && (out.carryForwardMax == null || (out.carryForwardMax as number) <= 0)) errors.push("Set how many days can be carried forward.");
   for (const f of ["annualDays", "carryForwardMax", "encashMax", "maxPerRequest"])
     if (out[f] != null && (!Number.isFinite(out[f] as number) || (out[f] as number) < 0 || (out[f] as number) > 366)) errors.push(`${f} must be between 0 and 366.`);
   return { data: out, errors };
@@ -55,7 +57,13 @@ export async function leavePolicyRoutes(app: FastifyInstance) {
 
   // PUT /api/leave-policy/settings — work calendar & leave year
   app.put("/api/leave-policy/settings", { preHandler: [requireRoles(POLICY_ROLES)] }, async (req, reply) => {
-    const b = (req.body ?? {}) as { leaveYearStartMonth?: number; saturdaysOff?: string; sundayOff?: boolean; leaveAccrualFrom?: string | null };
+    const b = (req.body ?? {}) as {
+      leaveYearStartMonth?: number; saturdaysOff?: string; sundayOff?: boolean; leaveAccrualFrom?: string | null; standardDayHours?: number; leaveApprovalLevels?: number;
+    };
+    const hours = Number(b.standardDayHours ?? 8);
+    if (!(hours >= 1 && hours <= 16)) return reply.code(400).send({ success: false, message: "Expected hours per day must be between 1 and 16." });
+    const levels = Number(b.leaveApprovalLevels ?? 1);
+    if (![1, 2].includes(levels)) return reply.code(400).send({ success: false, message: "Leave approval is one or two steps." });
     const month = Number(b.leaveYearStartMonth ?? 1);
     if (![1, 4].includes(month)) return reply.code(400).send({ success: false, message: "The leave year starts in January or April." });
     const saturdaysOff = formatSaturdays(parseSaturdays(String(b.saturdaysOff ?? "all")));
@@ -64,6 +72,8 @@ export async function leavePolicyRoutes(app: FastifyInstance) {
     const data = {
       leaveYearStartMonth: month, saturdaysOff, sundayOff: b.sundayOff !== false, updatedBy: req.user!.id,
       leaveAccrualFrom: from ? new Date(`${from}T00:00:00.000Z`) : null,
+      standardDayHours: hours,
+      leaveApprovalLevels: levels,
     };
     await prisma.firmSettings.upsert({ where: { id: "default" }, create: { id: "default", ...data }, update: data });
     invalidateWorkCalendar();
@@ -236,7 +246,8 @@ export async function leavePolicyRoutes(app: FastifyInstance) {
         const t = types.find((x) => x.id === bal.leaveTypeId)!;
         if (bal.closed) { skipped++; continue; }
         const closing = bal.available;
-        const carry = closing < 0 ? closing : round2(Math.min(closing, t.carryForwardMax ?? 0));
+        const carry =
+          closing < 0 ? closing : t.carryForward === "all" ? closing : t.carryForward === "limit" ? round2(Math.min(closing, t.carryForwardMax ?? 0)) : 0;
         const lapse = closing > 0 ? round2(closing - carry) : 0;
         const ops = [
           prisma.leaveTypeBalance.upsert({

@@ -25,6 +25,7 @@ import {
   canManageBalances,
   leaveState,
   personName,
+  stageLabel,
   useLeaveMutations,
   useLeaves,
   useNegativeBalances,
@@ -67,7 +68,9 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
 
   const team = useMemo(() => (leaves.data ?? []).filter((l) => l.employeeId !== user?.id), [leaves.data, user?.id]);
   const match = (l: Leave) => !search.trim() || `${personName(l.employee)} ${l.leaveId} ${l.type} ${l.reason}`.toLowerCase().includes(search.trim().toLowerCase());
-  const pending = team.filter((l) => leaveState(l) === "pending" && match(l));
+  // Requests this person can act on come first; others (e.g. waiting for another approver) are listed for visibility.
+  const pending = team.filter((l) => leaveState(l) === "pending" && match(l)).sort((a, b) => Number(!!b.canAct) - Number(!!a.canAct));
+  const actionable = pending.filter((l) => l.canAct).length;
   const approved = team.filter((l) => leaveState(l) === "approved");
   const overlaps = (l: Leave, a: string, b: string) => workDate(l.fromDate) <= b && workDate(l.toDate) >= a;
   const awayToday = approved.filter((l) => overlaps(l, now, now));
@@ -98,7 +101,18 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
       header: "Processed",
       hideBelow: "lg",
       sortValue: (l) => l.approvedDate ?? "",
-      cell: (l) => <span className="text-ink-muted">{l.approvedDate ? `${formatDate(l.approvedDate)}${l.approver ? ` · ${personName(l.approver)}` : ""}` : "—"}</span>,
+      cell: (l) =>
+        l.approvals?.length ? (
+          <span className="block text-xs text-ink-muted">
+            {l.approvals.map((a) => (
+              <span key={a.id} className="block">
+                {a.level === 1 ? "Step 1" : "Final"} · {a.decision} by {personName(a.approver)} · {formatDate(a.createdAt)}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-ink-muted">{l.approvedDate ? `${formatDate(l.approvedDate)}${l.approver ? ` · ${personName(l.approver)}` : ""}` : "—"}</span>
+        ),
     },
   ];
 
@@ -158,7 +172,7 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
       </div>
 
       <Card>
-        <CardHeader icon={Inbox} title={canDecide ? "Waiting for your decision" : "Waiting for a decision"} description={leaves.isLoading ? undefined : `${pending.length} request${pending.length === 1 ? "" : "s"}`} />
+        <CardHeader icon={Inbox} title="Pending requests" description={leaves.isLoading ? undefined : `${actionable} waiting for you · ${pending.length} pending in total`} />
         {leaves.isLoading ? (
           <div className="grid gap-3 p-5 md:grid-cols-2">
             <Skeleton className="h-36" />
@@ -184,13 +198,15 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
                   {l.type} · {period(l)}
                 </p>
                 <p className="mt-1 line-clamp-3 flex-1 text-[13px] text-ink-muted">{l.reason}</p>
-                {canDecide && (
+                {stageLabel(l) && <p className="mt-2 text-xs font-medium text-brand">{stageLabel(l)}</p>}
+                {!l.canAct && <p className="mt-2 text-xs text-ink-subtle">Waiting for another approver.</p>}
+                {l.canAct && (
                 <div className="mt-3 flex gap-2">
                   <Button size="sm" variant="secondary" className="flex-1 justify-center text-danger" onClick={() => setDecision({ leave: l, status: "rejected" })}>
                     <X className="h-4 w-4" /> Reject
                   </Button>
                   <Button size="sm" className="flex-1 justify-center" onClick={() => setDecision({ leave: l, status: "approved" })}>
-                    <Check className="h-4 w-4" /> Approve
+                    <Check className="h-4 w-4" /> {l.canAct === "level1" ? "Approve step 1" : "Approve"}
                   </Button>
                 </div>
                 )}
@@ -243,13 +259,17 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         open={!!decision}
         onClose={() => setDecision(null)}
         tone={decision?.status === "rejected" ? "danger" : "primary"}
-        title={decision?.status === "approved" ? "Approve this leave?" : "Reject this leave?"}
+        title={decision?.status === "approved" ? (decision.leave.canAct === "level1" ? "Approve step 1?" : "Approve this leave?") : "Reject this leave?"}
         confirmLabel={decision?.status === "approved" ? "Approve" : "Reject"}
         busy={m.decide.isPending}
         description={
           decision
             ? `${personName(decision.leave.employee)} · ${decision.leave.type} · ${period(decision.leave)} (${decision.leave.totalDays} day${decision.leave.totalDays === 1 ? "" : "s"}).${
-                decision.status === "approved" ? " The days will be deducted from their balance." : " They’ll be notified."
+                decision.status === "approved"
+                  ? decision.leave.canAct === "level1"
+                    ? " It then goes to their reporting partner for final approval."
+                    : " The days will be deducted from their balance."
+                  : " They’ll be notified."
               }`
             : undefined
         }
@@ -258,7 +278,13 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
           m.decide.mutate(
             { id: decision.leave.id, status: decision.status },
             {
-              onSuccess: () => (toast.success(decision.status === "approved" ? "Leave approved" : "Leave rejected", `${personName(decision.leave.employee)} has been notified.`), setDecision(null)),
+              onSuccess: () => (
+                toast.success(
+                  decision.status === "rejected" ? "Leave rejected" : decision.leave.canAct === "level1" ? "Approved — sent to the partner" : "Leave approved",
+                  `${personName(decision.leave.employee)} has been notified.`,
+                ),
+                setDecision(null)
+              ),
               onError: (e) => toast.error("Couldn’t update the request", e instanceof ApiError ? e.message : undefined),
             },
           )
