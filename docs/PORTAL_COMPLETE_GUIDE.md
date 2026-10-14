@@ -94,7 +94,7 @@ The **ASA Practice Portal** is the firm's internal enterprise management platfor
                     └──────────────────────┘
                          │              │
                          ▼              ▼
-              [ apps/api ]       [ apps/web ]
+              [ backend ]       [ frontend ]
               Fastify 5 API      Next.js 16 UI
               TypeScript         React 19
               Prisma ORM         TanStack Query
@@ -112,10 +112,10 @@ The **ASA Practice Portal** is the firm's internal enterprise management platfor
 ### How a typical request flows
 
 1. Employee opens a page (e.g. `/timesheet`) in their browser.
-2. **Next.js** (`apps/web`) serves the React page on port 3000.
+2. **Next.js** (`frontend`) serves the React page on port 3000.
 3. The React component calls `api("timelogs/my")` → the API client prefixes this with `/api/` and attaches the JWT from `localStorage`.
 4. **Nginx** forwards the `/api/*` request to the Fastify server on port 5000.
-5. **Fastify** (`apps/api`) authenticates the JWT, enforces role-based permissions, queries PostgreSQL via Prisma, and returns JSON.
+5. **Fastify** (`backend`) authenticates the JWT, enforces role-based permissions, queries PostgreSQL via Prisma, and returns JSON.
 6. React Query caches the result, renders the data, and **auto-refreshes** every 30 seconds.
 7. Any write action (save, approve, delete) goes through a React Query mutation, which calls the API and invalidates the cache so data refreshes immediately.
 
@@ -1181,17 +1181,17 @@ npm run dev
 ```
 
 Starts:
-- `apps/api` on `http://127.0.0.1:5000` (labeled `[api]` in cyan)
-- `apps/web` on `http://localhost:3000` (labeled `[web]` in magenta)
+- `backend` on `http://127.0.0.1:5000` (labeled `[api]` in cyan)
+- `frontend` on `http://localhost:3000` (labeled `[web]` in magenta)
 
 ### Start separately
 
 ```bash
 # Terminal 1 — API server
-cd apps/api && npm run dev
+cd backend && npm run dev
 
 # Terminal 2 — Web frontend
-cd apps/web && npm run dev
+cd frontend && npm run dev
 ```
 
 ### Local test accounts
@@ -1230,8 +1230,8 @@ EC2 Instance (Ubuntu 24.04 LTS — t3.medium / t3.large)
     │     └── /*          → Next.js  :3000
     │
     ├── PM2 (keeps both processes running, auto-restart on reboot)
-    │     ├── asa-api  (Fastify — apps/api)
-    │     └── asa-web  (Next.js — apps/web)
+    │     ├── asa-api  (Fastify — backend)
+    │     └── asa-web  (Next.js — frontend)
     │
     ├── PostgreSQL 16 (same EC2, or AWS RDS for managed backups)
     │
@@ -1312,7 +1312,7 @@ server {
 sudo certbot --nginx -d portal.asaind.co.in
 ```
 
-#### 6. Production environment (`apps/api/.env`)
+#### 6. Production environment (`backend/.env`)
 
 ```env
 NODE_ENV=production
@@ -1333,12 +1333,12 @@ SMTP_PASS=<app password>
 
 ```bash
 # Build the apps
-cd apps/api  && npm run build
-cd apps/web  && npm run build
+cd backend  && npm run build
+cd frontend  && npm run build
 
 # Start with PM2
-pm2 start apps/api/dist/server.js --name "asa-api"
-pm2 start apps/web/node_modules/.bin/next --name "asa-web" -- start
+pm2 start backend/dist/server.js --name "asa-api"
+pm2 start frontend/node_modules/.bin/next --name "asa-web" -- start
 pm2 save
 pm2 startup    # Auto-restart on server reboot
 ```

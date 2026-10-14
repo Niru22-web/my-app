@@ -1,16 +1,42 @@
-# ASA Portal
+# ASA Practice Portal
 
-Redesign and re-platform of the ASA timesheet management portal.
+The firm's internal portal for Ashish Shah & Associates: timesheets, attendance, leave, reports, management, accounts, assets, help desk and administration.
 
-| Folder | Purpose |
+## Project layout
+
+| Folder | What it holds |
 |---|---|
-| `legacy/` | Read-only reference copy of the current production app (React/Vite + Express/Prisma). Used as a behavioural baseline. |
-| `apps/web` | New frontend — Next.js 16, React 19, TypeScript, Tailwind CSS 4. |
-| `apps/api` | New backend — Fastify 5, TypeORM 0.3, Socket.IO, on the **existing** PostgreSQL schema. |
-| `_local/` | Local-only secrets and DB dumps. Git-ignored. |
+| `frontend/` | The website — Next.js 16, React 19, TypeScript, Tailwind CSS 4. Screens only; it talks to the backend through `/api`. |
+| `backend/` | The API — Fastify 5, Prisma 5, Socket.IO, on the firm's PostgreSQL database. |
+| `backend/prisma/` | Database schema (`schema.prisma`) and reviewed, additive-only migrations (`migrations-additive/`). |
+| `backend/scripts/` | One-off tools, e.g. `import-zoho.cjs` (Zoho People + asset register import). |
+| `backend/uploads/` | **Data, not code** — uploaded photos, documents, receipts, ticket attachments. Git-ignored. |
+| `backend/.env` | **Settings, not code** — database URL, JWT secret. Git-ignored; copy from `.env.example`. |
+| `docs/` | Guides: `PORTAL_COMPLETE_GUIDE.md`, `HOW_IT_WORKS.md`, `FEATURE_PARITY.md`, `ROADMAP_HR_PAYROLL.md`. |
+| `legacy/` | The old Express/React portal, kept read-only for reference. |
+| `scripts/dev.mjs` | Starts backend and frontend together. |
+| `_local/` | Local-only secrets, test logins and data exports. Git-ignored. |
 
-## Ground rules
-- The PostgreSQL schema is not modified by the new backend (`synchronize: false`, no destructive migrations).
-- New API endpoints keep the same paths and response shapes as `legacy/timesheet-backend`.
-- No mock, sample or placeholder figures in the UI — real data or an explicit empty state.
-- Brand palette: `#003887` (primary), `#8E8E93` (neutral), `#FFFFFF`.
+## Run it locally
+
+Prerequisites: Node.js 20+, PostgreSQL 16 with the `timesheet` database.
+
+```bash
+npm --prefix backend install
+npm --prefix frontend install
+npm run prisma:generate
+npm run dev
+```
+
+- Backend: http://127.0.0.1:5000 (health check: `/api/health`)
+- Frontend: http://localhost:3000
+
+Database changes are only ever **added** (new tables/columns) through the SQL files in `backend/prisma/migrations-additive/`, applied in date order:
+
+```bash
+cd backend
+npx prisma db execute --file prisma/migrations-additive/20261013_leave_rules.sql --schema prisma/schema.prisma
+npx prisma db execute --file prisma/migrations-additive/20261014_leave_approvals.sql --schema prisma/schema.prisma
+```
+
+On Windows, stop the dev server before `npm run prisma:generate` (the database engine file is locked while it runs).

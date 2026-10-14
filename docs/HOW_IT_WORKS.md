@@ -20,11 +20,11 @@ It is a **redesign** of the existing timesheet portal (timesheet.asaind.co.in). 
 
 ```
   Your browser  ──►  New ASA Portal website  ──►  New ASA Portal server (API)  ──►  Database
-   (screens)          (apps/web — Next.js)         (apps/api — Fastify)             (PostgreSQL)
+   (screens)          (frontend — Next.js)         (backend — Fastify)             (PostgreSQL)
 ```
 
-- **Website (`apps/web`):** the screens you see. Built with Next.js.
-- **Server (`apps/api`):** the new hardened Phase 3 API server built with Fastify, Prisma and Socket.IO. It connects to the exact same PostgreSQL database while fixing every security and data-integrity issue recorded in `docs/BACKEND_FINDINGS.md`.
+- **Website (`frontend`):** the screens you see. Built with Next.js.
+- **Server (`backend`):** the new hardened Phase 3 API server built with Fastify, Prisma and Socket.IO. It connects to the exact same PostgreSQL database while fixing every security and data-integrity issue recorded in `docs/BACKEND_FINDINGS.md`.
 - **Database:** where everything is stored — employees, hours, leave, claims, tickets, assets, finance records and so on.
 
 ---
@@ -62,7 +62,7 @@ Admin can also give individual people extra access per module (view / add / edit
 
 ## 4. Modules, one by one
 
-Status key: ✅ ready in the new design and backed by the new `apps/api` server.
+Status key: ✅ ready in the new design and backed by the new `backend` server.
 
 ### ✅ Dashboard
 Your home page. Shows a greeting, today's attendance, hours logged this week, leave balance, items waiting for your approval, upcoming events and birthdays, and recent activity. Managers and admins also see team and firm figures. Everything shown comes from real records and refreshes every 30 seconds.
@@ -188,7 +188,7 @@ All amounts are shown in ₹, each document at its own exchange rate. **Drafts a
 - **No fake numbers.** Every figure comes from the database. If there is nothing, the screen says so.
 - **Nothing is deleted by surprise.** Deleting always asks for confirmation, and records with history are deactivated instead.
 - **Only in-portal links are followed** from notifications, to block phishing links.
-- **Every issue recorded in `docs/BACKEND_FINDINGS.md`** has been fixed in both the new `apps/api` server and backported to `legacy/timesheet-backend`.
+- **Every issue recorded in `docs/BACKEND_FINDINGS.md`** has been fixed in both the new `backend` server and backported to `legacy/timesheet-backend`.
 
 ---
 
@@ -198,8 +198,8 @@ All amounts are shown in ₹, each document at its own exchange rate. **Drafts a
 |---|---|---|
 | 0 | Set up tools and the new project folder | Done |
 | 1 | Copy of real data on a local computer for testing | Done (local PostgreSQL `timesheet` DB + seed scripts) |
-| 2 | New website (`apps/web`) | Done — every module and sub-tab built |
-| 3 | New, safer server (`apps/api`, same database) that fixes every recorded problem | Done |
+| 2 | New website (`frontend`) | Done — every module and sub-tab built |
+| 3 | New, safer server (`backend`, same database) that fixes every recorded problem | Done |
 | 4 | Hosting set-up (servers, storage, backups) | Next |
 | 5 | Full testing with real users, then switch the live portal over | After Phase 4 |
 
@@ -213,19 +213,19 @@ You need: Node.js 20 or newer, and PostgreSQL 16 with the local `timesheet` data
 ```bash
 npm run dev
 ```
-This launches both `apps/api` (`http://127.0.0.1:5000`) and `apps/web` (`http://localhost:3000`) concurrently.
+This launches both `backend` (`http://127.0.0.1:5000`) and `frontend` (`http://localhost:3000`) concurrently.
 
 ### Option B: Start each service separately
-1. **Start the new API server** (in `apps/api`): `npm run dev` → runs at http://127.0.0.1:5000
-2. **Start the new website** (in `apps/web`): `npm run dev` → open http://localhost:3000
+1. **Start the new API server** (in `backend`): `npm run dev` → runs at http://127.0.0.1:5000
+2. **Start the new website** (in `frontend`): `npm run dev` → open http://localhost:3000
 3. **Sign in** with one of the local test accounts (`_local/sample-logins.txt` — kept private, never uploaded).
 
 ### Folder guide
 
 | Folder | What's inside |
 |---|---|
-| `apps/web` | The new ASA Portal website (Next.js 16 + React 19) |
-| `apps/api` | The new Phase 3 ASA Portal API server (Fastify 5 + Prisma + Socket.IO) |
+| `frontend` | The new ASA Portal website (Next.js 16 + React 19) |
+| `backend` | The new Phase 3 ASA Portal API server (Fastify 5 + Prisma + Socket.IO) |
 | `legacy/timesheet-backend` | The legacy Express server (also patched with security & bug fixes) |
 | `legacy/timesheet-frontend` | The old website, kept for reference |
 | `docs` | This guide, backend findings and the security hot-fix note |

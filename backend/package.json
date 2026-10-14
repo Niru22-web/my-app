@@ -7,7 +7,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "import:zoho": "node scripts/import-zoho.cjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

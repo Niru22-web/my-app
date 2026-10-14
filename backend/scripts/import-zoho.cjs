@@ -9,7 +9,7 @@
 //   • Only jobs that belong to a project, and only projects that have at least one job, are imported.
 //   • Zoho's system user "Zoho Admin" (ID 1) is never imported.
 require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
-require("dotenv").config({ path: require("path").resolve(__dirname, "../../../legacy/timesheet-backend/.env") });
+require("dotenv").config({ path: require("path").resolve(__dirname, "../../legacy/timesheet-backend/.env") });
 const path = require("path");
 const ExcelJS = require("exceljs");
 const { PrismaClient } = require("@prisma/client");

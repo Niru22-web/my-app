@@ -1,4 +1,4 @@
-# Legacy backend findings — to fix in `apps/api` (Phase 3)
+# Legacy backend findings — to fix in `backend` (Phase 3)
 
 Found while building the new frontend against `legacy/timesheet-backend`. The new API must keep endpoint
 paths and response shapes, but these behaviours should be corrected (with a compatible response).

@@ -10,9 +10,9 @@ const services = [
   {
     name: 'api',
     color: '\x1b[36m', // cyan
-    cwd: path.join(rootDir, 'apps', 'api'),
+    cwd: path.join(rootDir, 'backend'),
     args: [
-      path.join(rootDir, 'apps', 'api', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      path.join(rootDir, 'backend', 'node_modules', 'tsx', 'dist', 'cli.mjs'),
       'watch',
       'src/server.ts',
     ],
@@ -20,9 +20,9 @@ const services = [
   {
     name: 'web',
     color: '\x1b[35m', // magenta
-    cwd: path.join(rootDir, 'apps', 'web'),
+    cwd: path.join(rootDir, 'frontend'),
     args: [
-      path.join(rootDir, 'apps', 'web', 'node_modules', 'next', 'dist', 'bin', 'next'),
+      path.join(rootDir, 'frontend', 'node_modules', 'next', 'dist', 'bin', 'next'),
       'dev',
     ],
   },

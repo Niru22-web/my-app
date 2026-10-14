@@ -20,7 +20,7 @@ _local/
 **/uploads/
 *.sql
 # …except reviewed schema migrations, which must ship with the code
-!apps/api/prisma/migrations-additive/*.sql
+!backend/prisma/migrations-additive/*.sql
 *.dump
 *.backup
 *.log

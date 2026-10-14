@@ -2,7 +2,7 @@
 
 **Date:** October 2026  
 **Status:** Phases 0, 1, 2, and 3 Complete · Production-Ready Monorepo  
-**Codebases:** `apps/web` (Next.js 16 Frontend) · `apps/api` (Fastify 5 Backend) · `legacy/timesheet-backend` (Patched Express Backend)
+**Codebases:** `frontend` (Next.js 16 Frontend) · `backend` (Fastify 5 Backend) · `legacy/timesheet-backend` (Patched Express Backend)
 
 ---
 
@@ -20,14 +20,14 @@ The ASA Practice Portal has been completely modernized from the legacy timesheet
 | **New API Server** | Fastify 5, TypeScript, Prisma ORM, Socket.IO | High-throughput Phase 3 backend serving `/api/*` endpoints, streaming multipart file uploads, preSerialization password-stripping hooks, and real-time WebSockets. |
 | **Legacy API Server** | Express 4, TypeScript, Prisma ORM | Fully audited and patched to ensure 100% backwards-compatibility and emergency fallback capability. |
 | **Database** | PostgreSQL 16 (83 Prisma Models) | Shared transactional database. All 33 newly referenced models and relations verified with zero missing schema tables. |
-| **Monorepo Tooling** | `package.json`, `scripts/dev.mjs` | Root script runner launching both `apps/api` (`:5000`) and `apps/web` (`:3000`) concurrently with colored, prefixed process output and graceful SIGINT handling. |
-| **Type & Lint Health** | TypeScript 5.8, ESLint 9 | `tsc --noEmit` and `eslint` pass with **0 errors** across `apps/web`, `apps/api`, and `legacy/timesheet-backend`. |
+| **Monorepo Tooling** | `package.json`, `scripts/dev.mjs` | Root script runner launching both `backend` (`:5000`) and `frontend` (`:3000`) concurrently with colored, prefixed process output and graceful SIGINT handling. |
+| **Type & Lint Health** | TypeScript 5.8, ESLint 9 | `tsc --noEmit` and `eslint` pass with **0 errors** across `frontend`, `backend`, and `legacy/timesheet-backend`. |
 
 ---
 
 ## 2. Security Audits & Vulnerability Fixes (40+ Issues Resolved)
 
-All critical vulnerabilities identified in `docs/BACKEND_FINDINGS.md` and `docs/URGENT_SECURITY_HOTFIX.md` were remediated across both `apps/api` and `legacy/timesheet-backend`:
+All critical vulnerabilities identified in `docs/BACKEND_FINDINGS.md` and `docs/URGENT_SECURITY_HOTFIX.md` were remediated across both `backend` and `legacy/timesheet-backend`:
 
 1. **Authentication & Authorization Hardening**:
    - Removed unauthenticated development mock-Admin bypass in auth middleware (`S1`).
@@ -51,7 +51,7 @@ All critical vulnerabilities identified in `docs/BACKEND_FINDINGS.md` and `docs/
 
 ---
 
-## 3. Completed Feature Modules (`apps/web` + Backend)
+## 3. Completed Feature Modules (`frontend` + Backend)
 
 ### 3.1. Dashboard (`/dashboard`)
 - **Real-Time KPIs**: Total active projects, weekly logged hours, leave balances, pending approvals counter across all modules, and expense claim summaries.
@@ -128,7 +128,7 @@ All critical vulnerabilities identified in `docs/BACKEND_FINDINGS.md` and `docs/
 
 ## 4. Accounts & Finance Suite (All 11 Sub-Tabs Completed)
 
-The Accounts & Finance module in `apps/web/src/app/(portal)/accounts` and backend APIs was fully built:
+The Accounts & Finance module in `frontend/src/app/(portal)/accounts` and backend APIs was fully built:
 
 | Sub-Tab | Route | Key Capabilities |
 |---|---|---|
@@ -150,10 +150,10 @@ The Accounts & Finance module in `apps/web/src/app/(portal)/accounts` and backen
 
 - **Prisma Schema Audit**: Verified that all **33 models** referenced across the newly implemented modules are present and fully mapped in `schema.prisma`.
 - **Static Analysis**:
-  - `apps/api`: `tsc --noEmit` passed with 0 errors.
+  - `backend`: `tsc --noEmit` passed with 0 errors.
   - `legacy/timesheet-backend`: `tsc --noEmit` passed with 0 errors.
-  - `apps/web`: `tsc --noEmit` passed with 0 errors.
-  - `apps/web`: `eslint src` passed with 0 errors.
+  - `frontend`: `tsc --noEmit` passed with 0 errors.
+  - `frontend`: `eslint src` passed with 0 errors.
 - **Automated Smoke Testing**: Executed against live running server with real database accounts:
   - Verified Health and Ping endpoints.
   - Verified Admin authentication and JWT issuance.
@@ -169,7 +169,7 @@ The Accounts & Finance module in `apps/web/src/app/(portal)/accounts` and backen
    - Configure and test background cron workers: auto-checkout at shift end, weekly compliance reminder emails, ESSL biometric punch polling.
    - Configure production SMTP/OAuth mailbox credentials for live email delivery.
 2. **Phase 4: Deployment & Production Hosting**:
-   - Create Dockerfiles and container configurations for `apps/api` and `apps/web`.
+   - Create Dockerfiles and container configurations for `backend` and `frontend`.
    - Setup reverse proxy (Nginx or Caddy) with SSL certificate provisioning.
    - Configure production PostgreSQL backup schedules and environment variables.
 3. **Phase 5: User Acceptance Testing (UAT) & Cutover**:

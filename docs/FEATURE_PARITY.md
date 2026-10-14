@@ -1,6 +1,6 @@
 # Feature Parity — Old Portal vs New ASA Portal
 
-**Audit date:** 13 Oct 2026 · **Compared:** old `timesheet-backend` + `timesheet-frontend` (Express/React) vs `apps/api` + `apps/web` (Fastify/Next.js)
+**Audit date:** 13 Oct 2026 · **Compared:** old `timesheet-backend` + `timesheet-frontend` (Express/React) vs `backend` + `frontend` (Fastify/Next.js)
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ➖ dropped on purpose
 
@@ -12,7 +12,7 @@ Old backend ≈ 363 endpoints, new API ≈ 205. All main screens exist in the ne
 
 | # | Gap | Old behaviour | New status |
 |---|---|---|---|
-| B1 | **Background jobs** | node-cron: birthday notifications (09:00), auto check-out (23:59), compliance — daily missing-timesheet (Mon–Fri 09:00), Thu 14:00 <32h warning, Fri 18:00 <40h critical, Mon 10:00 escalation; ESSL sync every 5 min | ⬜ No scheduler in `apps/api` |
+| B1 | **Background jobs** | node-cron: birthday notifications (09:00), auto check-out (23:59), compliance — daily missing-timesheet (Mon–Fri 09:00), Thu 14:00 <32h warning, Fri 18:00 <40h critical, Mon 10:00 escalation; ESSL sync every 5 min | ⬜ No scheduler in `backend` |
 | B2 | **Real email sending** | SMTP + Microsoft 365 / Google OAuth; send-from-template; Save & Send invoices | ⬜ Test email only logs a row; `/email/connect` stores settings, no OAuth |
 | B3 | **ESSL biometric sync** | Manual "Sync now", auto-sync, live punch feed | ⬜ `test-connection` returns a fixed "Online" |
 | B4 | Profile photo upload | `POST /employees/profile-photo` | ✅ Fixed 13 Oct |
@@ -88,7 +88,7 @@ Leave (now with full leave rules — see Leave Tracker → Leave policy) · User
 ---
 
 ## Data migration from Zoho People + asset register — ✅ loaded into LOCAL database 13 Oct 2026
-Script: `apps/api/scripts/import-zoho.cjs` (re-runnable; refuses non-local databases without `--allow-remote`).
+Script: `backend/scripts/import-zoho.cjs` (re-runnable; refuses non-local databases without `--allow-remote`).
 
 | Source | Rows | Imported |
 |---|---|---|
