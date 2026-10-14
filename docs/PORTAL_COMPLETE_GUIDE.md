@@ -1196,7 +1196,7 @@ cd frontend && npm run dev
 
 ### Local test accounts
 
-**Password for all accounts:** `see `_local/test-accounts.env` (TEST_PASSWORD) — never committed`
+**Password for all accounts:** stored only on the developer machine in `_local/test-accounts.env` (`TEST_PASSWORD`) — never committed.
 
 | Role | Email |
 |---|---|
