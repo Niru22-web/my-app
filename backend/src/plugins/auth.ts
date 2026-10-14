@@ -11,6 +11,8 @@ export interface JwtUser {
   lastName?: string;
   role: string;
   hasAccountsAccess?: boolean;
+  /** Issue time in milliseconds (exact session revocation) */
+  iatMs?: number;
   iat?: number;
   exp?: number;
 }
@@ -36,9 +38,54 @@ export function normRole(role?: string | null): string {
   return (role ?? "").trim().toLowerCase();
 }
 
-export function signToken(payload: Omit<JwtUser, "iat" | "exp">): string {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: "2d" });
+export function signToken(payload: Omit<JwtUser, "iat" | "exp" | "iatMs">): string {
+  return jwt.sign({ ...payload, iatMs: Date.now() }, env.JWT_SECRET, { expiresIn: "12h" });
 }
+
+// ── Live account check ───────────────────────────────────────────────────────
+// The JWT only proves who the caller is. Role, accounts access and active status are read from the
+// database on every request (cached for a few seconds), so deactivation, rejection or a role change
+// takes effect immediately instead of when the token expires.
+interface LiveAccount { active: boolean; role: string; hasAccountsAccess: boolean; /** ms */ validAfter: number; at: number }
+const LIVE_TTL_MS = 5_000;
+const live = new Map<string, LiveAccount>();
+
+async function liveAccount(id: string): Promise<LiveAccount | null> {
+  const hit = live.get(id);
+  if (hit && Date.now() - hit.at < LIVE_TTL_MS) return hit;
+  const [emp, state] = await Promise.all([
+    prisma.employee.findUnique({ where: { id }, select: { status: true, approvalStatus: true, role: true, hasAccountsAccess: true } }),
+    prisma.authState.findUnique({ where: { employeeId: id }, select: { tokensValidAfter: true } }),
+  ]);
+  if (!emp) return null;
+  const r = normRole(emp.role);
+  const value: LiveAccount = {
+    active: (emp.status ?? "").toLowerCase() === "active" && emp.approvalStatus !== "REJECTED",
+    role: emp.role,
+    hasAccountsAccess: emp.hasAccountsAccess || ACCOUNTS_ROLES.has(r) || r === "admin",
+    validAfter: state ? state.tokensValidAfter.getTime() : 0,
+    at: Date.now(),
+  };
+  live.set(id, value);
+  return value;
+}
+
+/**
+ * Signs the person out everywhere: every token issued before now stops working.
+ * Call on password change/reset, deactivation, rejection and role changes.
+ */
+export async function revokeSessions(employeeId: string, reason: string) {
+  // Exact to the millisecond (tokens carry iatMs), so a sign-in straight after still works.
+  const now = new Date();
+  await prisma.authState.upsert({
+    where: { employeeId },
+    create: { employeeId, tokensValidAfter: now, reason },
+    update: { tokensValidAfter: now, reason },
+  });
+  live.delete(employeeId);
+}
+/** Drop the cached account state after a profile change that doesn't need a sign-out. */
+export const forgetLiveAccount = (employeeId: string) => live.delete(employeeId);
 
 /**
  * Strict Bearer JWT authentication (fixes S1 dev-mode bypass and S8 query-string token leak).
@@ -52,15 +99,28 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
   if (!token) {
     return reply.code(401).send({ success: false, message: "Unauthorized" });
   }
+  const result = await verifyAccessToken(token);
+  if ("error" in result) return reply.code(401).send({ success: false, ...result.error });
+  req.user = result.user;
+}
+
+/**
+ * Checks a login token: valid signature, account still active, not signed out since it was issued.
+ * Role and accounts access in the returned user always come from the database. Shared by HTTP and Socket.IO.
+ */
+export async function verifyAccessToken(token: string): Promise<{ user: JwtUser } | { error: { message: string; errorCode?: string } }> {
+  let decoded: JwtUser;
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtUser;
-    if (!decoded?.id || !decoded?.employeeId) {
-      return reply.code(401).send({ success: false, message: "Invalid authentication token" });
-    }
-    req.user = decoded;
+    decoded = jwt.verify(token, env.JWT_SECRET, { algorithms: ["HS256"] }) as JwtUser;
+    if (!decoded?.id || !decoded?.employeeId) return { error: { message: "Invalid authentication token" } };
   } catch {
-    return reply.code(401).send({ success: false, message: "Invalid or expired token" });
+    return { error: { message: "Invalid or expired token" } };
   }
+  const acct = await liveAccount(decoded.id);
+  if (!acct || !acct.active) return { error: { message: "Your account is no longer active.", errorCode: "ACCOUNT_INACTIVE" } };
+  const issuedMs = decoded.iatMs ?? (decoded.iat ?? 0) * 1000;
+  if (issuedMs <= acct.validAfter) return { error: { message: "Your session has ended. Please sign in again.", errorCode: "SESSION_REVOKED" } };
+  return { user: { ...decoded, role: acct.role, hasAccountsAccess: acct.hasAccountsAccess } };
 }
 
 /**
@@ -135,9 +195,11 @@ export async function isTeamMemberOrSelf(
 ): Promise<boolean> {
   if (caller.id === targetEmployeeId) return true;
   const r = normRole(caller.role);
-  if (["admin", "owner", "hr", "it"].includes(r)) return true;
-  // Sensitive records (KYC documents) stay limited to Manager / Partner / Sub-manager roles.
-  if (opts.leadRolesOnly && !["manager", "partner", "sub-manager", "sub manager"].includes(r)) return false;
+  // Sensitive records (KYC documents): the person, HR/Admin/Owner, and their Manager/Partner — never IT.
+  if (opts.leadRolesOnly) {
+    if (["admin", "owner", "hr"].includes(r)) return true;
+    if (!["manager", "partner", "sub-manager", "sub manager"].includes(r)) return false;
+  } else if (["admin", "owner", "hr", "it"].includes(r)) return true;
   return (await reportingTreeIds(caller.id)).includes(targetEmployeeId);
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
+import { getToken } from "./api";
 
 // One Socket.IO connection per tab, shared by notifications, chat and any future live feature.
 // Reference-counted so it closes when the last user unmounts (e.g. on sign-out).
@@ -17,7 +18,13 @@ export function acquireSocket(): Socket {
     closeTimer = null;
   }
   if (!socket) {
-    socket = io(SOCKET_URL, { transports: ["websocket", "polling"], reconnectionAttempts: 10, reconnectionDelay: 2000 });
+    // The server only accepts signed-in connections; the token is read on every (re)connect.
+    socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      auth: (cb) => cb({ token: getToken() }),
+    });
   }
   refs++;
   return socket;

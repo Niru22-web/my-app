@@ -356,7 +356,7 @@ function People({ label, people }: { label: string; people?: EmployeeDetails["ma
 }
 
 function PasswordDialog({ onClose }: { onClose: () => void }) {
-  const toast = useToast();
+  const { logout } = useAuth();
   const { password } = useProfileMutations();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -373,7 +373,8 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
     password.mutate(
       { currentPassword: current, newPassword: next },
       {
-        onSuccess: () => (toast.success("Password changed", "Use your new password next time you sign in."), onClose()),
+        // The server ends every session after a password change, so sign out cleanly here.
+        onSuccess: () => logout("password"),
         onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn’t change the password."),
       },
     );

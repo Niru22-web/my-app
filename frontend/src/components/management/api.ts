@@ -123,11 +123,10 @@ export const canManageWork = (role?: string | null) => ["admin", "owner", "partn
 export const canDeleteClient = (role?: string | null) => ["admin", "it"].includes(r(role));
 /** May delete projects (API: Admin, Partner, IT). */
 export const canDeleteProject = (role?: string | null) => ["admin", "partner", "it"].includes(r(role));
-/** May add employees and change their status (legacy "canEditEmployee"). */
-export const canManagePeople = (role?: string | null) => ["admin", "owner", "manager", "partner", "it"].includes(r(role));
-/** May approve/reject registrations (API checkManagerRole). */
-export const canApprovePeople = (role?: string | null) =>
-  ["admin", "owner", "manager", "partner", "hr", "it", "accountant", "accounts", "sub manager", "sub-manager"].includes(r(role));
+/** May invite, edit, activate/deactivate people (API: HR, Admin, Owner only). */
+export const canManagePeople = (role?: string | null) => ["admin", "owner", "hr"].includes(r(role));
+/** May approve/reject registrations and re-send invitations (API: HR, Admin, Owner only). */
+export const canApprovePeople = (role?: string | null) => ["admin", "owner", "hr"].includes(r(role));
 export const isEmployeeRole = (role?: string | null) => ["employee", "user", ""].includes(r(role));
 
 // ---- Queries ---------------------------------------------------------------------------------
@@ -206,7 +205,8 @@ export function useMgmtMutations() {
     void qc.invalidateQueries({ queryKey: ["mgmt"] });
     void qc.invalidateQueries({ queryKey: ["lookup"] });
   };
-  const useAction = <T,>(fn: (v: T) => Promise<unknown>) => useMutation({ mutationFn: fn, onSuccess: refresh });
+  // Keeps each action’s own response type so callers can read e.g. the invitation link.
+  const useAction = <T, R = unknown>(fn: (v: T) => Promise<R>) => useMutation({ mutationFn: fn, onSuccess: refresh });
   return {
     saveClient: useAction(({ id, body }: { id?: string; body: Record<string, unknown> }) => api(id ? `clients/${id}` : "clients", { method: id ? "PUT" : "POST", body })),
     deleteClient: useAction((id: string) => api(`clients/${id}`, { method: "DELETE" })),
@@ -214,11 +214,13 @@ export function useMgmtMutations() {
     deleteProject: useAction((id: string) => api(`projects/${id}`, { method: "DELETE" })),
     saveJob: useAction(({ id, body }: { id?: string; body: Record<string, unknown> }) => api(id ? `jobs/${id}` : "jobs", { method: id ? "PUT" : "POST", body })),
     deleteJob: useAction((id: string) => api(`jobs/${id}`, { method: "DELETE" })),
-    createPerson: useAction((body: Record<string, unknown>) => api<{ success: boolean; emailStatus?: string; data?: { employeeId?: string } }>("employees", { method: "POST", body })),
+    createPerson: useAction((body: Record<string, unknown>) =>
+      api<{ success: boolean; emailStatus?: string; inviteLink?: string; data?: { employeeId?: string } }>("employees", { method: "POST", body }),
+    ),
     togglePerson: useAction((id: string) => api(`employees/${id}/toggle-status`, { method: "PATCH" })),
     approvePerson: useAction((id: string) => api(`employees/approve-employee/${id}`, { method: "POST" })),
     rejectPerson: useAction(({ id, reason }: { id: string; reason: string }) => api(`employees/reject-employee/${id}`, { method: "POST", body: { reason } })),
-    resendInvite: useAction((id: string) => api(`employees/resend-registration/${id}`, { method: "POST", body: { type: "new" } })),
+    resendInvite: useAction((id: string) => api<{ success: boolean; inviteLink?: string; message?: string }>(`employees/resend-registration/${id}`, { method: "POST" })),
   };
 }
 

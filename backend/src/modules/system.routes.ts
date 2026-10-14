@@ -4,7 +4,8 @@ import path from "path";
 import type { FastifyInstance } from "fastify";
 import { env } from "../config/env";
 import { prisma } from "../config/db";
-import { requireRoles } from "../plugins/auth";
+import { authenticate, requireRoles } from "../plugins/auth";
+import { canReadUpload, resolveUpload, sendUpload, uploadFolder } from "../utils/file-access";
 
 const ALLOWED_STORAGE_CATEGORIES = new Set(["all", "profile", "documents", "tickets", "temp", "logs"]);
 
@@ -67,34 +68,21 @@ export async function systemRoutes(app: FastifyInstance) {
 
   app.get("/api/ping", async () => ({ pong: true }));
 
-  // Serve /uploads/* safely with path-traversal containment (fixes AD6, H6)
+  // Serve /uploads/* (see utils/file-access.ts):
+  //  • profile/ photos are served to anyone with the link — <img> tags can't send a login, and the
+  //    names are random (timestamp + random hex), so they can't be guessed;
+  //  • everything else (KYC documents, receipts, ticket files, logs) needs a signed-in person who is
+  //    allowed to see the record the file belongs to. The web app fetches these with the login header.
   app.get("/uploads/*", async (req, reply) => {
-    const rel = ((req.params as { "*": string })["*"] ?? "").replace(/^[/\\]+/, "");
-    const baseDir = path.resolve(env.UPLOADS_DIR);
-    const resolved = path.resolve(baseDir, rel);
-
-    if (!resolved.startsWith(baseDir + path.sep) || !fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-      return reply.code(404).send({ success: false, message: "File not found" });
+    const rel = (req.params as { "*": string })["*"] ?? "";
+    const full = resolveUpload(rel);
+    if (!full) return reply.code(404).send({ success: false, message: "File not found" });
+    if (uploadFolder(rel) !== "profile") {
+      await authenticate(req, reply);
+      if (reply.sent) return reply;
+      if (!(await canReadUpload(req.user!, rel))) return reply.code(403).send({ success: false, message: "You don’t have access to this file." });
     }
-
-    const ext = path.extname(resolved).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".png": "image/png",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-      ".pdf": "application/pdf",
-      ".csv": "text/csv",
-      ".txt": "text/plain",
-    };
-    const contentType = mimeMap[ext] ?? "application/octet-stream";
-    reply.header("Content-Type", contentType);
-    reply.header("X-Content-Type-Options", "nosniff");
-    if (!contentType.startsWith("image/") && contentType !== "application/pdf") {
-      reply.header("Content-Disposition", `attachment; filename="${path.basename(resolved)}"`);
-    }
-    return reply.send(fs.createReadStream(resolved));
+    return sendUpload(reply, full);
   });
 
   // GET /api/system/status — uses real prisma.ticket.count() (fixes AD12)

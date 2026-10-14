@@ -245,7 +245,7 @@ function Wizard({ invite, token, onDone }: { invite: Invite; token: string; onDo
     for (const [k, v] of Object.entries(clean)) if (v.trim()) fd.append(k, v.trim());
     for (const [k, list] of Object.entries(files) as [keyof Files, File[]][]) if (list[0]) fd.append(k, list[0]);
     try {
-      await api("auth/complete-registration", { method: "POST", body: fd, anonymous: true });
+      await api("auth/complete-registration", { method: "POST", body: fd, anonymous: true, query: { token } });
       onDone();
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");

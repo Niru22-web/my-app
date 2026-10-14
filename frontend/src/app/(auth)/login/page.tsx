@@ -10,9 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 
 const MESSAGES: Record<string, string> = {
-  USER_NOT_FOUND: "We couldn’t find an account with that email.",
-  INCORRECT_PASSWORD: "That password isn’t right. Try again or reset it.",
-  PASSWORD_NOT_SET: "Your account doesn’t have a password yet. Use “Forgot password” to set one.",
+  INVALID_CREDENTIALS: "Email or password is incorrect. New joiners: use the link in your invitation to set a password.",
+  TOO_MANY_ATTEMPTS: "Too many sign-in attempts. Please wait a few minutes and try again.",
   ACCOUNT_DISABLED: "This account has been disabled. Contact HR or IT.",
   ACCOUNT_PENDING: "Your account is awaiting approval.",
   ACCOUNT_REJECTED: "Your registration was not approved. Contact HR.",
@@ -23,6 +22,7 @@ const NOTICES: Record<string, string> = {
   expired: "Your session expired. Please sign in again.",
   inactive: "You were signed out after 15 minutes of inactivity.",
   reset: "Password updated. Sign in with your new password.",
+  password: "Password changed — you’ve been signed out everywhere. Sign in with your new password.",
 };
 
 export default function LoginPage() {

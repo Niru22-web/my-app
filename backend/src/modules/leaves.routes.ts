@@ -265,12 +265,34 @@ export async function leaveRoutes(app: FastifyInstance) {
     if (existing.status.toLowerCase() === "cancelled") {
       return reply.code(400).send({ success: false, message: "Leave is already cancelled." });
     }
+    const wasApproved = existing.status.toLowerCase() === "approved";
+    if (existing.status.toLowerCase() === "rejected") {
+      return reply.code(400).send({ success: false, message: "A rejected request can’t be cancelled." });
+    }
+    // Approved leave can be cancelled only before it starts (the days return to the balance).
+    const todayIst = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+    if (wasApproved && existing.fromDate.toISOString().slice(0, 10) <= todayIst) {
+      return reply.code(400).send({ success: false, message: "This leave has already started. Ask HR to adjust it." });
+    }
 
     const updated = await prisma.leave.update({
       where: { id },
       data: { status: "cancelled" },
     });
 
+    if (wasApproved) {
+      const a = (await approversFor([existing.employeeId])).get(existing.employeeId);
+      for (const to of notifyTargets("final", a)) {
+        await createNotification({
+          userId: to,
+          title: "Approved leave cancelled",
+          message: `${existing.type} (${existing.totalDays} day(s)) from ${existing.fromDate.toISOString().slice(0, 10)} was cancelled by the employee.`,
+          type: "leave_cancelled",
+          module: "HR",
+          actionUrl: "/leave/team",
+        });
+      }
+    }
     return reply.send({ success: true, data: updated });
   });
 

@@ -12,7 +12,7 @@ interface AuthCtx {
   status: Status;
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<AuthUser>;
-  logout: (reason?: "expired" | "inactive") => void;
+  logout: (reason?: "expired" | "inactive" | "password") => void;
   /** Merge fresh fields into the signed-in user (e.g. after a photo change). */
   patchUser: (patch: Partial<AuthUser>) => void;
 }
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const status: Status = rawUser === undefined ? "loading" : user && rawToken ? "authenticated" : "anonymous";
 
   const logout = useCallback(
-    (reason?: "expired" | "inactive") => {
+    (reason?: "expired" | "inactive" | "password") => {
       writeLocal(TOKEN_KEY, null);
       writeLocal(USER_KEY, null);
       qc.clear();

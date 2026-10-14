@@ -20,16 +20,18 @@ import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { downloadCsv } from "@/components/claims/claim-tabs";
 import { canApprovePeople, canManagePeople, fullName, isEmployeeRole, useMgmtMutations, usePeople, type Person } from "@/components/management/api";
-import { AddPersonDialog, PendingDialog } from "@/components/management/person-dialogs";
+import { AddPersonDialog, InviteLinkDialog, PendingDialog } from "@/components/management/person-dialogs";
 import { RowMenu } from "@/components/management/row-menu";
 
 type StatusF = "active" | "pending" | "inactive" | "all";
 const st = (p: Person) => {
   const s = (p.status ?? "").toLowerCase();
   if (s === "active" || s === "on leave") return "active";
-  if (s.startsWith("pending")) return "pending";
+  // Invited (hasn't registered yet) and registered-awaiting-approval are both "pending".
+  if (s.startsWith("pending") || s === "invited") return "pending";
   return "inactive";
 };
+const raw = (p: Person) => (p.status ?? "").toLowerCase();
 
 export default function EmployeesPage() {
   const { user } = useAuth();
@@ -46,6 +48,7 @@ export default function EmployeesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [toggle, setToggle] = useState<Person | null>(null);
+  const [invite, setInvite] = useState<{ name: string; link: string } | null>(null);
 
   const q = usePeople();
   const m = useMgmtMutations();
@@ -106,18 +109,18 @@ export default function EmployeesPage() {
           <RowMenu
             items={[
               { label: "View details", icon: <Eye className="h-4 w-4" />, onClick: () => router.push(`/management/employees/edit/${p.id}`) },
-              ...(manage && st(p) !== "pending" && p.id !== user?.id
-                ? [{ label: st(p) === "active" ? "Mark inactive" : "Reactivate", icon: <Power className="h-4 w-4" />, danger: st(p) === "active", onClick: () => setToggle(p) }]
+              ...(manage && ["active", "inactive"].includes(raw(p)) && p.id !== user?.id
+                ? [{ label: raw(p) === "active" ? "Mark inactive" : "Reactivate", icon: <Power className="h-4 w-4" />, danger: raw(p) === "active", onClick: () => setToggle(p) }]
                 : []),
-              ...(approver && (p.status ?? "").toLowerCase() === "pending"
+              ...(approver && ["invited", "rejected"].includes(raw(p))
                 ? [
                     {
-                      label: "Resend invitation",
+                      label: raw(p) === "rejected" ? "Invite again" : "New invitation link",
                       icon: <MailCheck className="h-4 w-4" />,
                       onClick: () =>
                         m.resendInvite.mutate(p.id, {
-                          onSuccess: () => toast.success("Invitation sent again", p.officeEmail),
-                          onError: (e) => toast.error("Couldn’t send the invitation", e instanceof ApiError ? e.message : undefined),
+                          onSuccess: (r) => (r?.inviteLink ? setInvite({ name: fullName(p), link: r.inviteLink }) : toast.success("Invitation renewed", p.officeEmail), void q.refetch()),
+                          onError: (e) => toast.error("Couldn’t create the invitation", e instanceof ApiError ? e.message : undefined),
                         }),
                     },
                   ]
@@ -243,6 +246,7 @@ export default function EmployeesPage() {
           })
         }
       />
+      {invite && <InviteLinkDialog name={invite.name} link={invite.link} onClose={() => setInvite(null)} />}
     </div>
   );
 }

@@ -11,6 +11,17 @@ const EVENT_COLORS: Record<string, string> = {
   Event: "#16a34a",
 };
 
+/** True when a non-HR/Admin caller tries to create, change or delete a Holiday event. */
+async function touchesHolidays(req: { user?: { role: string }; body?: unknown; params?: unknown }) {
+  if (["admin", "owner", "hr"].includes(normRole(req.user?.role))) return false;
+  const body = (req.body ?? {}) as { type?: string };
+  if (String(body.type ?? "").toLowerCase() === "holiday") return true;
+  const id = (req.params as { id?: string } | undefined)?.id;
+  if (!id) return false;
+  const ev = await prisma.event.findUnique({ where: { id }, select: { type: true } });
+  return ev?.type === "Holiday";
+}
+
 export async function dashboardRoutes(app: FastifyInstance) {
   // GET /api/dashboard/combined — real figures, no fabricated 21-day balance when no row exists (fixes C4, C5)
   app.get("/api/dashboard/combined", { preHandler: [authenticate] }, async (req, reply) => {
@@ -310,6 +321,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     "/api/events",
     { preHandler: [requireRoles(["admin", "owner", "hr", "partner", "manager"])] },
     async (req, reply) => {
+      if (await touchesHolidays(req)) return reply.code(403).send({ success: false, message: "Only HR or an Admin can add, change or remove firm holidays — they affect everyone’s leave balances." });
       const { title, date, time, type } = (req.body ?? {}) as {
         title?: string;
         date?: string;
@@ -337,6 +349,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     "/api/events/:id",
     { preHandler: [requireRoles(["admin", "owner", "hr", "partner", "manager"])] },
     async (req, reply) => {
+      if (await touchesHolidays(req)) return reply.code(403).send({ success: false, message: "Only HR or an Admin can add, change or remove firm holidays — they affect everyone’s leave balances." });
       const { id } = req.params as { id: string };
       await prisma.event.delete({ where: { id } });
       return reply.send({ success: true, message: "Event removed." });

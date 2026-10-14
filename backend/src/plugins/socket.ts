@@ -1,45 +1,40 @@
 import type { Server as HttpServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
-import jwt from "jsonwebtoken";
 import { env } from "../config/env";
-import type { JwtUser } from "./auth";
+import { verifyAccessToken, type JwtUser } from "./auth";
 
 let io: SocketIOServer | null = null;
 
 /**
- * Authenticated Socket.IO server (fixes S5: verifies JWT when present and restricts room joins).
+ * Socket.IO for live notifications and the team chat.
+ * Every connection must carry a valid, current login (same check as the API). Each person is put in
+ * their own room by the server — clients can't choose which notifications they receive.
  */
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.FRONTEND_URL || "*",
+      origin: env.FRONTEND_URL,
       methods: ["GET", "POST"],
       credentials: true,
     },
   });
 
-  io.use((socket, next) => {
-    const rawToken =
+  io.use(async (socket, next) => {
+    const raw =
       (socket.handshake.auth?.token as string | undefined) ||
       (socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, "") as string | undefined);
-    if (rawToken) {
-      try {
-        socket.data.user = jwt.verify(rawToken, env.JWT_SECRET) as JwtUser;
-      } catch {
-        return next(new Error("Invalid socket authentication token"));
-      }
-    }
+    if (!raw) return next(new Error("Sign-in required"));
+    const result = await verifyAccessToken(raw);
+    if ("error" in result) return next(new Error(result.error.message));
+    socket.data.user = result.user;
     next();
   });
 
   io.on("connection", (socket) => {
-    socket.on("join_user_room", (userId: unknown) => {
-      if (typeof userId !== "string" || !userId.trim()) return;
-      const authedUser = socket.data.user as JwtUser | undefined;
-      // If socket has a verified JWT, only allow joining the user's own room (S5)
-      if (authedUser && authedUser.id !== userId) return;
-      socket.join(userId);
-    });
+    const user = socket.data.user as JwtUser;
+    socket.join(user.id);
+    // Older clients still ask to join "their" room — always their own, whatever id they send.
+    socket.on("join_user_room", () => socket.join(user.id));
   });
 
   return io;

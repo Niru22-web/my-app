@@ -99,6 +99,34 @@ export async function api<T = unknown>(path: string, opts: RequestOptions = {}):
 }
 
 /** Downloads a binary response (e.g. an Excel export) and saves it with the given file name. */
+/**
+ * Fetches a protected uploaded file (receipts, ticket attachments, documents) with the login header
+ * and returns a temporary blob: URL. Profile photos don't need this.
+ */
+export async function protectedFileUrl(path: string): Promise<string> {
+  const token = getToken();
+  const res = await fetch(assetUrl(path) ?? path, { headers: token ? { Authorization: `Bearer ${token}` } : undefined, cache: "no-store" });
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new CustomEvent("asa:session-expired"));
+    throw new ApiError(res.status, res.status === 403 ? "You don’t have access to this file." : res.status === 404 ? "The file couldn’t be found." : `Couldn’t open the file (${res.status}).`);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
+/** Opens a protected file in a new tab (the tab is opened first so pop-up blockers allow it). */
+export async function openFile(path: string): Promise<void> {
+  const w = window.open("", "_blank");
+  try {
+    const url = await protectedFileUrl(path);
+    if (w) w.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    w?.close();
+    throw e;
+  }
+}
+
 export async function downloadFile(path: string, fileName: string, query?: Query): Promise<void> {
   const token = getToken();
   const res = await fetch(buildUrl(path, query), {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Check, MailCheck, X } from "lucide-react";
+import { Check, Copy, Link2, MailCheck, X } from "lucide-react";
 import { ApiError, assetUrl } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { Dialog } from "@/components/ui/dialog";
@@ -15,12 +15,53 @@ import { useToast } from "@/components/ui/toast";
 import { fullName, useMaster, useMgmtMutations, usePendingPeople, usePeople, type Person } from "./api";
 
 /** Invite a new employee. They receive an email link to complete registration, then appear in Pending approvals. */
+/**
+ * Shows a registration link for HR to copy and send (email isn't connected yet).
+ * The link works once, for 7 days; re-sending makes a new one and retires the old.
+ */
+export function InviteLinkDialog({ name, link, onClose }: { name: string; link: string; onClose: () => void }) {
+  const toast = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success("Link copied", `Send it to ${name}.`);
+    } catch {
+      toast.error("Couldn’t copy automatically", "Select the link and copy it.");
+    }
+  };
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title={`Invitation link for ${name}`}
+      description="Email isn’t connected yet, so send this link yourself (email, WhatsApp or Teams). It works once and expires in 7 days."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Done
+          </Button>
+          <Button onClick={copy}>
+            <Copy className="h-4 w-4" /> Copy link
+          </Button>
+        </>
+      }
+    >
+      <div className="flex items-start gap-2 rounded-xl border border-line bg-surface-muted p-3">
+        <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
+        <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} aria-label="Invitation link" className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none" />
+      </div>
+    </Dialog>
+  );
+}
+
 export function AddPersonDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   return <AddPersonForm onClose={onClose} />;
 }
 
 function AddPersonForm({ onClose }: { onClose: () => void }) {
+  const [invite, setInvite] = useState<string | null>(null);
   const toast = useToast();
   const { createPerson } = useMgmtMutations();
   const roles = useMaster("roles");
@@ -81,11 +122,12 @@ function AddPersonForm({ onClose }: { onClose: () => void }) {
       isOldEmployee: false,
     };
     try {
-      const res = (await createPerson.mutateAsync(body)) as { emailStatus?: string; data?: { employeeId?: string } };
+      const res = await createPerson.mutateAsync(body);
       const code = res?.data?.employeeId ? ` (${res.data.employeeId})` : "";
-      if (res?.emailStatus === "sent") toast.success("Invitation sent", `${body.firstName} ${body.lastName}${code} will get a link to complete registration.`);
-      else toast.info("Employee added — invitation email not sent", `${body.firstName}${code} was created, but the email service is unavailable. Use “Resend invitation” once it’s configured.`);
-      onClose();
+      if (res?.inviteLink) {
+        toast.success("Employee added", `${body.firstName} ${body.lastName}${code} — copy the invitation link and send it to them.`);
+        setInvite(res.inviteLink);
+      } else onClose();
     } catch (err) {
       setServerError(err instanceof ApiError ? (/unique|P2002|already/i.test(err.message) ? "An employee with this email already exists." : err.message) : "Couldn’t add the employee.");
     }
@@ -103,6 +145,8 @@ function AddPersonForm({ onClose }: { onClose: () => void }) {
       </Select>
     </FormRow>
   );
+
+  if (invite) return <InviteLinkDialog name={`${f.firstName} ${f.lastName}`.trim()} link={invite} onClose={onClose} />;
 
   return (
     <Dialog

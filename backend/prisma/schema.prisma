@@ -1765,3 +1765,14 @@ model LeaveApproval {
   @@index([leaveId])
   @@map("leave_approvals")
 }
+
+/// Session revocation: JWTs issued before tokensValidAfter are rejected (password change/reset,
+/// deactivation, role change). One row per employee, created on first revocation.
+model AuthState {
+  employeeId       String   @id
+  tokensValidAfter DateTime
+  reason           String?
+  updatedAt        DateTime @updatedAt
+
+  @@map("auth_state")
+}

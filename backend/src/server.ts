@@ -24,7 +24,10 @@ import { leavePolicyRoutes } from "./modules/leave-policy.routes";
 export async function buildServer() {
   const app = Fastify({
     logger: env.NODE_ENV === "development",
-    bodyLimit: 50 * 1024 * 1024,
+    // JSON bodies stay small; file uploads have their own per-file limit below.
+    bodyLimit: 2 * 1024 * 1024,
+    // Behind the local proxy (Next.js in dev, Nginx in production) req.ip is the real client address.
+    trustProxy: "127.0.0.1",
   });
 
   await app.register(cors, {
@@ -37,6 +40,36 @@ export async function buildServer() {
       fileSize: 50 * 1024 * 1024,
       files: 10,
     },
+  });
+
+  // Basic security headers on every response.
+  app.addHook("onSend", async (_req, reply, payload) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
+    if (env.NODE_ENV === "production") reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    return payload;
+  });
+
+  // One place that turns failures into safe, useful answers: database internals, file paths and
+  // stack traces are logged on the server but never sent to the browser.
+  app.setErrorHandler((err: Error & { code?: string; statusCode?: number; validation?: unknown }, req, reply) => {
+    const prismaCode = typeof err.code === "string" && /^P\d{4}$/.test(err.code) ? err.code : null;
+    if (prismaCode === "P2025") return reply.code(404).send({ success: false, message: "That record no longer exists." });
+    if (prismaCode === "P2002") return reply.code(409).send({ success: false, message: "A record with these details already exists." });
+    if (prismaCode === "P2003") return reply.code(400).send({ success: false, message: "This refers to something that doesn’t exist or is still in use." });
+    if (err.name === "PrismaClientValidationError" || prismaCode === "P2000" || prismaCode === "P2006" || prismaCode === "P2007") {
+      return reply.code(400).send({ success: false, message: "Some of the details sent aren’t valid. Check dates and numbers and try again." });
+    }
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      // Fastify's own client errors (bad JSON, body too large, unsupported media type…)
+      const message = err.statusCode === 413 ? "That upload is too large." : err.statusCode === 415 ? "Unsupported request format." : "The request couldn’t be read.";
+      return reply.code(err.statusCode).send({ success: false, message });
+    }
+    req.log.error(err);
+    if (env.NODE_ENV !== "development") console.error(`[${new Date().toISOString()}] ${req.method} ${req.url}`, err);
+    return reply.code(500).send({ success: false, message: "Something went wrong on our side. Please try again." });
   });
 
   // Global preSerialization hook: guarantee password hashes are never sent in any JSON response (S4, A3, P2, T9, H4, AS2, AC2)

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CheckCircle2, CornerUpLeft, Flag, MessageSquare, Paperclip, Play, RotateCcw, Send, Trash2, UserCog } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { ApiError, assetUrl } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { formatDate, formatTime } from "@/lib/format";
 import { timeAgo } from "@/lib/notifications";
 import { cn } from "@/lib/cn";
@@ -21,6 +21,7 @@ import { FormRow, Select, Textarea } from "@/components/ui/inputs";
 import { FileDrop } from "@/components/ui/file-drop";
 import { useToast } from "@/components/ui/toast";
 import { fullName, usePeople } from "@/components/management/api";
+import { FileLink, ProtectedImage } from "@/components/ui/protected-file";
 import {
   ATTACH_ACCEPT,
   categoryLabel,
@@ -244,19 +245,17 @@ function Attachments({ items, className }: { items: TicketAttachment[]; classNam
   return (
     <ul className={cn("flex flex-wrap gap-2", className)}>
       {items.map((a) => {
-        const href = assetUrl(a.url) ?? "#";
         const image = a.mimeType?.startsWith("image/");
         return (
           <li key={a.id}>
-            <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-ink hover:border-brand/40">
+            <FileLink path={a.url} className="flex items-center gap-2 rounded-lg border border-line bg-surface-muted px-2.5 py-1.5 text-xs text-ink hover:border-brand/40">
               {image ? (
-                // eslint-disable-next-line @next/next/no-img-element -- user uploads served by the API
-                <img src={href} alt="" className="h-8 w-8 rounded object-cover" />
+                <ProtectedImage path={a.url} className="h-8 w-8 rounded object-cover" />
               ) : (
                 <Paperclip className="h-3.5 w-3.5 text-ink-subtle" aria-hidden />
               )}
               <span className="max-w-[180px] truncate">{a.filename}</span>
-            </a>
+            </FileLink>
           </li>
         );
       })}

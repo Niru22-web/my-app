@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Eraser, Cpu, Database, FileText, HardDrive, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { api, ApiError, assetUrl } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
+import { FileLink } from "@/components/ui/protected-file";
 import { canSystem, useAdminMutations, useSystemStatus } from "@/components/admin/api";
 
 /** Whitelisted storage folders. */
@@ -168,9 +169,9 @@ export default function SystemPage() {
               {files.data.data.map((f) => (
                 <li key={f.relativePath} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[13px]">
                   <span className="min-w-0">
-                    <a href={assetUrl(f.url) ?? f.url} target="_blank" rel="noreferrer" className="block truncate font-medium text-ink hover:text-brand hover:underline">
+                    <FileLink path={f.url} className="block max-w-full truncate text-left font-medium text-ink hover:text-brand hover:underline">
                       {f.name}
-                    </a>
+                    </FileLink>
                     <span className="block truncate text-xs text-ink-subtle">{f.relativePath}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">

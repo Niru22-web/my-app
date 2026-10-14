@@ -2,7 +2,14 @@ import crypto from "crypto";
 import type { FastifyInstance } from "fastify";
 import bcrypt from "bcrypt";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
-import { ACCOUNTS_ROLES, authenticate, normRole, signToken } from "../plugins/auth";
+import { ACCOUNTS_ROLES, authenticate, normRole, revokeSessions, signToken } from "../plugins/auth";
+import { clear as clearLimit, hit as hitLimit } from "../utils/rate-limit";
+
+/** Same rule the screens enforce: at least 8 characters with a letter and a number. */
+const strongEnough = (p: string) => p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p);
+const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
+/** One message for unknown email, missing password and wrong password, so login never reveals who has an account. */
+const BAD_LOGIN = { success: false, message: "Email or password is incorrect.", errorCode: "INVALID_CREDENTIALS" } as const;
 import { parseBodyOrMultipart } from "../utils/uploads";
 import { createNotification } from "../utils/notify";
 
@@ -35,25 +42,23 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
+    // 10 failed attempts per account and 30 per network address in 15 minutes, then a cool-down.
+    const wait = Math.max(hitLimit(`login:email:${email}`, 10, 15 * 60_000), hitLimit(`login:ip:${req.ip}`, 30, 15 * 60_000));
+    if (wait) {
+      return reply
+        .code(429)
+        .header("Retry-After", String(wait))
+        .send({ success: false, message: `Too many sign-in attempts. Try again in ${Math.ceil(wait / 60)} minute(s).`, errorCode: "TOO_MANY_ATTEMPTS" });
+    }
+
     const user = await prisma.employee.findFirst({
       where: { officeEmail: { equals: email, mode: "insensitive" } },
     });
-
-    if (!user) {
-      return reply.code(401).send({
-        success: false,
-        message: "No account found with this email",
-        errorCode: "USER_NOT_FOUND",
-      });
+    // Unknown email or no password yet → same answer as a wrong password (no account enumeration).
+    if (!user?.password || !(await bcrypt.compare(password, user.password))) {
+      return reply.code(401).send(BAD_LOGIN);
     }
-
-    if (!user.password) {
-      return reply.code(401).send({
-        success: false,
-        message: "Password has not been set. Please use your registration invite link.",
-        errorCode: "PASSWORD_NOT_SET",
-      });
-    }
+    clearLimit(`login:email:${email}`);
 
     const status = (user.status ?? "").toLowerCase();
     if (status === "pending" || user.approvalStatus === "PENDING") {
@@ -79,7 +84,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const role = normRole(user.role);
-    if (role && !ALLOWED_LOGIN_ROLES.has(role)) {
+    if (!ALLOWED_LOGIN_ROLES.has(role)) {
       return reply.code(403).send({
         success: false,
         message: "Role is not permitted to sign in.",
@@ -87,15 +92,7 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    // Strict bcrypt check only — never allow plaintext password fallback (fixes S3)
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
-      return reply.code(401).send({
-        success: false,
-        message: "Incorrect password",
-        errorCode: "INCORRECT_PASSWORD",
-      });
-    }
+    // (Password was verified above with bcrypt only — never a plaintext fallback.)
 
     const token = signToken({
       id: user.id,
@@ -183,10 +180,10 @@ export async function authRoutes(app: FastifyInstance) {
       currentPassword?: string;
       newPassword?: string;
     };
-    if (!currentPassword || !newPassword || newPassword.length < 8) {
+    if (!currentPassword || !newPassword || !strongEnough(newPassword)) {
       return reply.code(400).send({
         success: false,
-        message: "Current password and a new password of at least 8 characters are required.",
+        message: "Enter your current password and a new one of at least 8 characters with a letter and a number.",
       });
     }
     const user = await prisma.employee.findUnique({ where: { id: req.user!.id } });
@@ -195,7 +192,9 @@ export async function authRoutes(app: FastifyInstance) {
     }
     const hash = await bcrypt.hash(newPassword, 10);
     await prisma.employee.update({ where: { id: user.id }, data: { password: hash } });
-    return reply.send({ success: true, message: "Password updated successfully." });
+    // Every existing session ends (including this one) — the browser signs in again with the new password.
+    await revokeSessions(user.id, "password changed");
+    return reply.send({ success: true, message: "Password updated. Please sign in again." });
   });
 
   // POST /api/auth/forgot-password
@@ -204,6 +203,9 @@ export async function authRoutes(app: FastifyInstance) {
     const cleanEmail = (email ?? "").trim().toLowerCase();
     if (!cleanEmail) {
       return reply.code(400).send({ success: false, message: "Email is required." });
+    }
+    if (hitLimit(`forgot:${req.ip}`, 10, 60 * 60_000)) {
+      return reply.code(429).send({ success: false, message: "Too many requests. Try again later." });
     }
 
     const emp = await prisma.employee.findFirst({
@@ -215,10 +217,11 @@ export async function authRoutes(app: FastifyInstance) {
       const expiresAt = new Date(Date.now() + 15 * 60_000);
       await prisma.passwordReset.deleteMany({ where: { userId: emp.id } });
       await prisma.passwordReset.create({
+        // Only a hash is stored; the plain token goes in the emailed link.
         data: {
           userId: emp.id,
           email: emp.officeEmail,
-          token,
+          token: sha256(token),
           expiresAt,
         },
       });
@@ -238,25 +241,27 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(400).send({ success: false, valid: false, message: "Reset token is required" });
     }
     const reset = await prisma.passwordReset.findFirst({
-      where: { token, expiresAt: { gt: new Date() } },
+      where: { token: sha256(token), expiresAt: { gt: new Date() } },
     });
     if (!reset) {
       return reply.code(400).send({ success: false, valid: false, message: "Reset token is invalid or expired" });
     }
-    return reply.send({ success: true, valid: true, email: reset.email });
+    // Masked, so a leaked link doesn't reveal the full address.
+    const [local, domain] = reset.email.split("@");
+    return reply.send({ success: true, valid: true, email: `${local.slice(0, 2)}${"•".repeat(Math.max(1, local.length - 2))}@${domain}` });
   });
 
   // POST /api/auth/reset-password
   app.post("/api/auth/reset-password", async (req, reply) => {
     const { token, newPassword } = (req.body ?? {}) as { token?: string; newPassword?: string };
-    if (!token || !newPassword || newPassword.length < 8) {
+    if (!token || !newPassword || !strongEnough(newPassword)) {
       return reply.code(400).send({
         success: false,
-        message: "A valid reset token and a password of at least 8 characters are required.",
+        message: "Use a password of at least 8 characters with a letter and a number.",
       });
     }
     const reset = await prisma.passwordReset.findFirst({
-      where: { token, expiresAt: { gt: new Date() } },
+      where: { token: sha256(token), expiresAt: { gt: new Date() } },
     });
     if (!reset) {
       return reply.code(400).send({ success: false, message: "Reset link is invalid or has expired." });
@@ -267,6 +272,7 @@ export async function authRoutes(app: FastifyInstance) {
       data: { password: hash },
     });
     await prisma.passwordReset.deleteMany({ where: { userId: reset.userId } });
+    await revokeSessions(reset.userId, "password reset");
     return reply.send({ success: true, message: "Password updated successfully." });
   });
 
@@ -301,6 +307,15 @@ export async function authRoutes(app: FastifyInstance) {
 
   // POST /api/auth/complete-registration — fixes RG2 (profileImage saved to /uploads/profile)
   app.post("/api/auth/complete-registration", async (req, reply) => {
+    // The invite token travels in the URL so it can be checked before any file is written to disk.
+    const urlToken = String(((req.query ?? {}) as { token?: string }).token ?? "").trim();
+    if (hitLimit(`register:${req.ip}`, 20, 60 * 60_000)) {
+      return reply.code(429).send({ success: false, message: "Too many attempts. Try again later." });
+    }
+    const pre = urlToken ? await prisma.registrationToken.findUnique({ where: { token: urlToken }, include: { employee: { select: { status: true } } } }) : null;
+    if (!pre || pre.isUsed || pre.expiresAt < new Date() || (pre.employee?.status ?? "").toLowerCase() !== "invited") {
+      return reply.code(400).send({ success: false, message: "This invitation link isn’t valid any more. Ask HR for a new one." });
+    }
     let parsed;
     try {
       parsed = await parseBodyOrMultipart(req, "documents", {
@@ -315,14 +330,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const { fields, files } = parsed;
-    const token = (fields.token ?? "").trim();
+    const token = urlToken;
     const password = fields.password ?? "";
 
-    if (!token || password.length < 8) {
-      return reply.code(400).send({
-        success: false,
-        message: "A valid invitation token and password of at least 8 characters are required.",
-      });
+    if (!strongEnough(password)) {
+      return reply.code(400).send({ success: false, message: "Use a password of at least 8 characters with a letter and a number." });
+    }
+    if (!fields.dob || Number.isNaN(new Date(fields.dob).getTime())) {
+      return reply.code(400).send({ success: false, message: "Date of birth is required." });
     }
 
     const reg = await prisma.registrationToken.findUnique({
@@ -346,7 +361,7 @@ export async function authRoutes(app: FastifyInstance) {
     const bankFile = files.find((f) => f.fieldName === "bankStatementFile");
 
     const hash = await bcrypt.hash(password, 10);
-    const dob = fields.dob ? new Date(fields.dob) : new Date("1995-01-01");
+    const dob = new Date(String(fields.dob).slice(0, 10) + "T00:00:00.000Z");
     const doj = fields.doj ? new Date(fields.doj) : new Date();
 
     await prisma.$transaction(async (tx) => {

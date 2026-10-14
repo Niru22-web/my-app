@@ -4,6 +4,16 @@ import { authenticate, isTeamMemberOrSelf, normRole, leadsATeam, reportingTreeId
 import { isScope, scopeIds } from "../utils/scope";
 import { parseBodyOrMultipart } from "../utils/uploads";
 
+const BILLABLE = new Set(["billable", "non_billable"]);
+
+/** Entries can be logged up to 7 days ahead (planned leave days aside) and not before 2020. */
+function checkEntryDate(d: Date): string | null {
+  if (Number.isNaN(d.getTime())) return "That date isn’t valid.";
+  if (d.getTime() > Date.now() + 7 * 86_400_000) return "Time can be logged at most 7 days ahead.";
+  if (d.getUTCFullYear() < 2020) return "That date is too far in the past.";
+  return null;
+}
+
 function computeWeekStart(d: Date): Date {
   const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const day = utc.getUTCDay(); // 0=Sun, 1=Mon
@@ -231,7 +241,7 @@ export async function timelogRoutes(app: FastifyInstance) {
     };
 
     const hours = Number(body.hours ?? 0);
-    if (!body.jobId || !body.date || !Number.isFinite(hours) || hours <= 0 || hours > 24) {
+    if (!body.jobId || !body.date || !Number.isFinite(hours) || hours < 0.25 || hours > 24) {
       return reply.code(400).send({
         success: false,
         message: "Job, date, and hours between 0.25 and 24 are required.",
@@ -253,6 +263,12 @@ export async function timelogRoutes(app: FastifyInstance) {
     }
 
     const entryDate = new Date(`${body.date.slice(0, 10)}T00:00:00.000Z`);
+    const dateProblem = checkEntryDate(entryDate);
+    if (dateProblem) return reply.code(400).send({ success: false, message: dateProblem });
+    if ((body.description ?? "").length > 2000) return reply.code(400).send({ success: false, message: "Keep the description under 2,000 characters." });
+    if (body.billableStatus !== undefined && !BILLABLE.has(String(body.billableStatus))) {
+      return reply.code(400).send({ success: false, message: "Billable status must be billable or non_billable." });
+    }
     const existingDay = await prisma.timelog.aggregate({
       where: { employeeId: u.id, date: entryDate },
       _sum: { hours: true },
@@ -323,15 +339,20 @@ export async function timelogRoutes(app: FastifyInstance) {
     const data: Record<string, any> = {};
     if (body.hours !== undefined) {
       const h = Number(body.hours);
-      if (!Number.isFinite(h) || h <= 0 || h > 24) {
+      if (!Number.isFinite(h) || h < 0.25 || h > 24) {
         return reply.code(400).send({ success: false, message: "Hours must be between 0.25 and 24." });
       }
       data.hours = h;
     }
-    if (body.description !== undefined) data.description = String(body.description).trim();
+    if (body.description !== undefined) {
+      if (String(body.description).length > 2000) return reply.code(400).send({ success: false, message: "Keep the description under 2,000 characters." });
+      data.description = String(body.description).trim();
+    }
     if (body.workItem !== undefined) data.workItem = body.workItem ? String(body.workItem).trim() : null;
     if (body.date !== undefined) {
       const d = new Date(`${body.date.slice(0, 10)}T00:00:00.000Z`);
+      const dateProblem = checkEntryDate(d);
+      if (dateProblem) return reply.code(400).send({ success: false, message: dateProblem });
       data.date = d;
       data.weekStart = computeWeekStart(d);
     }
@@ -343,20 +364,34 @@ export async function timelogRoutes(app: FastifyInstance) {
       if (!job || !job.project) {
         return reply.code(404).send({ success: false, message: "Selected job not found." });
       }
+      if (!["active", "started"].includes((job.status ?? "").toLowerCase())) {
+        return reply.code(400).send({ success: false, message: `Cannot log time against a job with status "${job.status}".` });
+      }
       data.jobId = job.id;
       data.projectId = job.projectId;
       data.clientId = job.project.clientId;
       data.combinedJobCode = job.combinedId;
     }
     if (body.billableStatus !== undefined) {
+      if (!BILLABLE.has(String(body.billableStatus))) return reply.code(400).send({ success: false, message: "Billable status must be billable or non_billable." });
       data.billableStatus = body.billableStatus;
     } else if (body.isBillable !== undefined) {
       data.billableStatus = body.isBillable ? "billable" : "non_billable";
     }
 
-    if (existing.submissionStatus === "rejected") {
+    // The day's total must stay within 24 h after the change.
+    const newHours = data.hours ?? existing.hours;
+    const newDate: Date = data.date ?? existing.date;
+    const others = await prisma.timelog.aggregate({ where: { employeeId: existing.employeeId, date: newDate, id: { not: id } }, _sum: { hours: true } });
+    if ((others._sum.hours ?? 0) + newHours > 24) {
+      return reply.code(400).send({ success: false, message: "Total logged hours for a single day cannot exceed 24 hours." });
+    }
+
+    // Changing a returned or submitted entry puts it back to draft, so the approver never approves edited time unknowingly.
+    if (existing.submissionStatus === "rejected" || existing.submissionStatus === "submitted") {
       data.submissionStatus = "not_submitted";
       data.rejectionReason = null;
+      data.submittedAt = null;
     }
 
     const updated = await prisma.timelog.update({
@@ -488,6 +523,9 @@ export async function timelogRoutes(app: FastifyInstance) {
     }
     if (!(await isTeamMemberOrSelf(u, entry.employeeId))) {
       return reply.code(403).send({ success: false, message: "This employee is not in your reporting team." });
+    }
+    if (entry.submissionStatus !== "submitted") {
+      return reply.code(400).send({ success: false, message: "Only submitted entries can be returned. Approved time is final." });
     }
 
     const updated = await prisma.timelog.update({

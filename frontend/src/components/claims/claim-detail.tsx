@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Banknote, Check, Paperclip, RotateCcw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { ApiError, assetUrl } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { fmtDay, workDate } from "@/lib/dates";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { timeAgo } from "@/lib/notifications";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Stepper } from "@/components/ui/stepper";
 import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
 import { useToast } from "@/components/ui/toast";
+import { FileLink } from "@/components/ui/protected-file";
 import { claimant, claimSteps, reviewerActions, stageOf, STAGE_LABEL, STAGE_TONE, useClaimMutations, type Claim } from "./api";
 
 type Mode = "view" | "reject" | "sendBack" | "pay";
@@ -124,32 +125,27 @@ function Detail({ claim: c, onClose, reviewer }: { claim: Claim; onClose: () => 
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Receipts & attachments</p>
                 <ul className="flex flex-wrap gap-2">
                   {(c.attachments ?? []).map((att) => {
-                    const href = assetUrl(att.filePath);
                     return (
                       <li key={att.id}>
-                        <a
-                          href={href ?? "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <FileLink
+                          path={att.filePath}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-3 py-1.5 text-xs font-medium text-brand hover:underline"
                         >
                           <Paperclip className="h-3.5 w-3.5" aria-hidden />
                           {att.fileName}
-                        </a>
+                        </FileLink>
                       </li>
                     );
                   })}
                   {!(c.attachments?.length) && c.receiptFile && (
                     <li>
-                      <a
-                        href={assetUrl(c.receiptFile) ?? "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <FileLink
+                        path={c.receiptFile}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-muted px-3 py-1.5 text-xs font-medium text-brand hover:underline"
                       >
                         <Paperclip className="h-3.5 w-3.5" aria-hidden />
                         Receipt
-                      </a>
+                      </FileLink>
                     </li>
                   )}
                 </ul>

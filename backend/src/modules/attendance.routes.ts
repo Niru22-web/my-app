@@ -311,6 +311,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
         where.employee_id = employeeId ? (scoped.includes(employeeId) ? employeeId : "__none__") : { in: scoped };
       }
     } else if (["admin", "owner", "hr", "it"].includes(r)) {
+      if (r === "it") {
+        const perm = await prisma.userPermission.findUnique({ where: { userId: u.id }, select: { attendanceView: true } });
+        if (!perm?.attendanceView) return reply.code(403).send({ success: false, message: "Attendance access hasn’t been granted to you." });
+      }
       if (employeeId) where.employee_id = employeeId;
     } else if (["manager", "partner", "sub-manager", "sub manager"].includes(r)) {
       const team = await prisma.employee.findMany({

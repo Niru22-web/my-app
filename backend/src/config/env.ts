@@ -1,16 +1,17 @@
 import path from "path";
 import dotenv from "dotenv";
 
-// Load environment from backend/.env (falls back to legacy/timesheet-backend/.env for anything missing)
+// Settings come only from backend/.env (or the real environment). The old portal’s .env is never read,
+// so the two systems can’t share a login secret.
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../../../legacy/timesheet-backend/.env") });
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const jwtSecret = process.env.JWT_SECRET;
 
-if (!jwtSecret && nodeEnv === "production") {
-  throw new Error("FATAL: JWT_SECRET environment variable is required in production (S2).");
+if (nodeEnv !== "development" && (!jwtSecret || jwtSecret.length < 32)) {
+  throw new Error("FATAL: set JWT_SECRET (at least 32 random characters) in backend/.env — required outside development (S2).");
 }
+if (!process.env.DATABASE_URL) throw new Error("FATAL: DATABASE_URL is not set in backend/.env.");
 
 export const env = {
   NODE_ENV: nodeEnv,

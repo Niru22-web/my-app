@@ -60,7 +60,15 @@ export async function leavePolicyRoutes(app: FastifyInstance) {
     const b = (req.body ?? {}) as {
       leaveYearStartMonth?: number; saturdaysOff?: string; sundayOff?: boolean; leaveAccrualFrom?: string | null; standardDayHours?: number; leaveApprovalLevels?: number;
     };
-    const hours = Number(b.standardDayHours ?? 8);
+    // Partial update: anything not sent keeps its current value.
+    const cur = await getWorkCalendar();
+    b.leaveYearStartMonth ??= cur.leaveYearStartMonth;
+    b.saturdaysOff ??= formatSaturdays(cur.saturdaysOff);
+    b.sundayOff ??= cur.sundayOff;
+    if (b.leaveAccrualFrom === undefined) b.leaveAccrualFrom = cur.leaveAccrualFrom ? cur.leaveAccrualFrom.toISOString().slice(0, 10) : null;
+    b.standardDayHours ??= cur.standardDayHours;
+    b.leaveApprovalLevels ??= cur.leaveApprovalLevels;
+    const hours = Number(b.standardDayHours);
     if (!(hours >= 1 && hours <= 16)) return reply.code(400).send({ success: false, message: "Expected hours per day must be between 1 and 16." });
     const levels = Number(b.leaveApprovalLevels ?? 1);
     if (![1, 2].includes(levels)) return reply.code(400).send({ success: false, message: "Leave approval is one or two steps." });

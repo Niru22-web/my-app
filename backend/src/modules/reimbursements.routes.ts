@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
-import { ACCOUNTS_ROLES, authenticate, normRole } from "../plugins/auth";
+import { ACCOUNTS_ROLES, authenticate, normRole, reportingTreeIds, type JwtUser } from "../plugins/auth";
+import { approversFor, powerOver } from "../utils/leave-approval";
 import { parseBodyOrMultipart } from "../utils/uploads";
 import { createNotification } from "../utils/notify";
 
@@ -40,6 +41,23 @@ const CLAIM_INCLUDE = {
   },
 } as const;
 
+/** Claims still waiting for a decision. */
+const OPEN = ["PENDING_MANAGER", "MANAGER_APPROVED", "PENDING_PARTNER"];
+
+/**
+ * What the caller may do on a claim: "level1" (manager approval), "final" (partner/higher/Admin/Owner) or null.
+ * Same reporting chain as leave. Nobody — Admin included — decides on their own claim.
+ */
+async function claimPower(u: JwtUser, claim: { employeeId: string; status: string }) {
+  if (claim.employeeId === u.id) return null;
+  const r = normRole(u.role);
+  if (r === "admin" || r === "owner") return "final" as const;
+  const [a, tree] = await Promise.all([approversFor([claim.employeeId]), reportingTreeIds(u.id)]);
+  // HR's "final" in powerOver is for leave; claims are decided by the reporting line (or Admin/Owner).
+  const asLead = { ...u, role: r === "hr" ? "employee" : u.role };
+  return powerOver(asLead, claim.employeeId, 2, a.get(claim.employeeId), claim.status !== "PENDING_MANAGER", new Set(tree));
+}
+
 export async function reimbursementRoutes(app: FastifyInstance) {
   // GET /api/reimbursements — current user's claims with attachments & logs (fixes U3)
   app.get("/api/reimbursements", { preHandler: [authenticate] }, async (req, reply) => {
@@ -57,27 +75,12 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const r = normRole(u.role);
     const { status } = (req.query ?? {}) as { status?: string };
 
-    const isOrgWide =
-      ["admin", "owner", "partner", "hr", "finance manager"].includes(r) || ACCOUNTS_ROLES.has(r);
+    const isOrgWide = ["admin", "owner", "finance manager"].includes(r) || ACCOUNTS_ROLES.has(r);
 
     const where: Record<string, any> = {};
     if (!isOrgWide) {
-      const team = await prisma.employee.findMany({
-        where: {
-          OR: [
-            { managerId: u.id },
-            { partnerId: u.id },
-            { subManagerId: u.id },
-            { reportingManagerIds: { has: u.id } },
-            { reportingPartnerIds: { has: u.id } },
-            { subManagerIds: { has: u.id } },
-            { managers: { some: { managerId: u.id } } },
-            { partners: { some: { partnerId: u.id } } },
-          ],
-        },
-        select: { id: true },
-      });
-      where.employeeId = { in: team.map((t) => t.id) };
+      // Everyone below the caller in the reporting line (direct and indirect)
+      where.employeeId = { in: await reportingTreeIds(u.id) };
     }
 
     if (status === "pending") {
@@ -258,30 +261,25 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { remarks } = (req.body ?? {}) as { remarks?: string };
     const u = req.user!;
-    const role = normRole(u.role);
-
-    if (!["manager", "partner", "admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "Only managers, partners, or admins can approve claims." });
-    }
 
     const claim = await prisma.reimbursement.findUnique({ where: { id } });
     if (!claim) return reply.code(404).send({ success: false, message: "Claim not found" });
-
-    if (claim.employeeId === u.id && !["admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "You cannot approve your own expense claim." });
+    if (claim.employeeId === u.id) return reply.code(403).send({ success: false, message: "You cannot approve your own expense claim." });
+    if (!OPEN.includes(claim.status)) {
+      return reply.code(400).send({ success: false, message: `This claim is ${claim.status.replace(/_/g, " ").toLowerCase()} — it can’t be approved now.` });
     }
-
-    const isFinalRole = ["partner", "admin", "owner"].includes(role);
-    const nextStatus =
-      claim.status === "PENDING_MANAGER" && role === "manager"
-        ? "MANAGER_APPROVED"
-        : isFinalRole && ["PENDING_MANAGER", "MANAGER_APPROVED", "PENDING_PARTNER"].includes(claim.status)
-          ? "APPROVED"
-          : null;
-
-    if (!nextStatus) {
-      return reply.code(400).send({ success: false, message: `Cannot approve claim in status ${claim.status}` });
+    const power = await claimPower(u, claim);
+    if (!power) {
+      return reply.code(403).send({
+        success: false,
+        message: claim.status === "PENDING_MANAGER" ? "This claim isn’t yours to approve." : "Step 1 is done — this claim now waits for the reporting partner.",
+      });
     }
+    const nextStatus = power === "level1" ? "MANAGER_APPROVED" : "APPROVED";
+
+    // Only moves if nobody else decided in the meantime (no double approvals).
+    const moved = await prisma.reimbursement.updateMany({ where: { id, status: claim.status }, data: { status: nextStatus } });
+    if (!moved.count) return reply.code(409).send({ success: false, message: "Someone else just acted on this claim. Refresh and try again." });
 
     const now = new Date();
     const updated = await prisma.reimbursement.update({
@@ -320,16 +318,15 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { remarks } = (req.body ?? {}) as { remarks?: string };
     const u = req.user!;
-    const role = normRole(u.role);
-
-    if (!["manager", "partner", "admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "Forbidden" });
-    }
     const claim = await prisma.reimbursement.findUnique({ where: { id } });
     if (!claim) return reply.code(404).send({ success: false, message: "Claim not found" });
-    if (claim.employeeId === u.id && !["admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "You cannot reject your own claim." });
+    if (claim.employeeId === u.id) return reply.code(403).send({ success: false, message: "You cannot reject your own claim." });
+    if (!OPEN.includes(claim.status)) {
+      return reply.code(400).send({ success: false, message: `This claim is ${claim.status.replace(/_/g, " ").toLowerCase()} — only claims awaiting approval can be rejected.` });
     }
+    if (!(await claimPower(u, claim))) return reply.code(403).send({ success: false, message: "This claim isn’t yours to decide." });
+    const moved = await prisma.reimbursement.updateMany({ where: { id, status: claim.status }, data: { status: "REJECTED" } });
+    if (!moved.count) return reply.code(409).send({ success: false, message: "Someone else just acted on this claim. Refresh and try again." });
 
     const updated = await prisma.reimbursement.update({
       where: { id },
@@ -356,16 +353,15 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const { remarks } = (req.body ?? {}) as { remarks?: string };
     const u = req.user!;
-    const role = normRole(u.role);
-
-    if (!["manager", "partner", "admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "Forbidden" });
-    }
     const claim = await prisma.reimbursement.findUnique({ where: { id } });
     if (!claim) return reply.code(404).send({ success: false, message: "Claim not found" });
-    if (claim.employeeId === u.id && !["admin", "owner"].includes(role)) {
-      return reply.code(403).send({ success: false, message: "You cannot return your own claim." });
+    if (claim.employeeId === u.id) return reply.code(403).send({ success: false, message: "You cannot return your own claim." });
+    if (!OPEN.includes(claim.status)) {
+      return reply.code(400).send({ success: false, message: `This claim is ${claim.status.replace(/_/g, " ").toLowerCase()} — only claims awaiting approval can be returned.` });
     }
+    if (!(await claimPower(u, claim))) return reply.code(403).send({ success: false, message: "This claim isn’t yours to decide." });
+    const moved = await prisma.reimbursement.updateMany({ where: { id, status: claim.status }, data: { status: "SENT_BACK" } });
+    if (!moved.count) return reply.code(409).send({ success: false, message: "Someone else just acted on this claim. Refresh and try again." });
 
     const updated = await prisma.reimbursement.update({
       where: { id },
@@ -407,6 +403,12 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     if (claim.status !== "APPROVED" && claim.status !== "PENDING_PAYMENT") {
       return reply.code(400).send({ success: false, message: "Only approved claims can be marked as paid." });
     }
+    if (claim.employeeId === u.id && !["admin", "owner"].includes(role)) {
+      return reply.code(403).send({ success: false, message: "Someone else in Finance must pay your own claim." });
+    }
+    // Claim the payment atomically so two clicks (or two people) can't pay it twice.
+    const claimed = await prisma.reimbursement.updateMany({ where: { id, status: { in: ["APPROVED", "PENDING_PAYMENT"] } }, data: { status: "PAID" } });
+    if (!claimed.count) return reply.code(409).send({ success: false, message: "This claim has just been paid by someone else." });
 
     const now = new Date();
     const updated = await prisma.reimbursement.update({
