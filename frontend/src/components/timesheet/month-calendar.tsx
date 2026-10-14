@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { addDays, endOfMonth, fmtDay, isWeekend, startOfMonth, today, workDate, type YMD } from "@/lib/dates";
 import { formatHours } from "@/lib/format";
+import { standardDayHours } from "@/lib/work-calendar";
 import { cn } from "@/lib/cn";
 import type { Envelope } from "@/lib/types";
 import { Card } from "@/components/ui/card";
@@ -93,7 +94,7 @@ export function MonthCalendar({
         if (!perDay.get(d)?.hours && d < now) missed++;
       }
     }
-    return { logged, target: expectedDays * 8, expectedDays, missed };
+    return { logged, target: expectedDays * standardDayHours(), expectedDays, missed };
   }, [from, to, now, perDay, holidays, onLeave, startOn]);
   const workday = (d: YMD) => !isWeekend(d) && !holidays.has(d) && !onLeave.has(d);
 

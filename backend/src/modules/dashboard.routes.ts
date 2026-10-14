@@ -37,8 +37,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
       myAssetRequests,
       myTickets,
     ] = await Promise.all([
-      prisma.project.count({ where: { status: { in: ["Active", "Started"] } } }),
-      prisma.job.count({ where: { status: { in: ["Active", "Started"] } } }),
+      // "My projects" — open projects/jobs this person is on (team member, manager or partner of the project)
+      prisma.project.count({
+        where: {
+          status: { in: ["Active", "Started"] },
+          OR: [{ users: { some: { employeeId: u.id } } }, { managerId: u.id }, { partnerId: u.id }],
+        },
+      }),
+      prisma.job.count({ where: { status: { in: ["Active", "Started"] }, users: { some: { employeeId: u.id } } } }),
       prisma.timelog.aggregate({
         where: { employeeId: u.id },
         _sum: { hours: true },
