@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BriefcaseBusiness, CircleSlash, Download, ListChecks, Pencil, Plus, Power, Search, Timer, Trash2 } from "lucide-react";
+import { ImportButton } from "@/components/ui/import-dialog";
+import { BriefcaseBusiness, CircleSlash, Download, ListChecks, Pencil, Plus, Power, Timer, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { today, workDate } from "@/lib/dates";
@@ -11,8 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/inputs";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
@@ -122,19 +122,7 @@ export default function JobsPage() {
         description="Deliverables within a project. People log time to the jobs they’re assigned."
         actions={
           <>
-            <Button
-              variant="secondary"
-              disabled={!rows.length}
-              onClick={() =>
-                downloadCsv(
-                  `jobs-${today()}.csv`,
-                  ["Job code", "Name", "Project", "Client", "Status", "Billable", "Start date", "End date", "Assigned", "Entries", "Logged hours"],
-                  rows.map((j) => [j.jobId, j.name, j.project?.name, j.project?.client?.name, j.status, j.billable ? "Yes" : "No", j.startDate ? workDate(j.startDate) : "", j.endDate ? workDate(j.endDate) : "", j.users?.length ?? 0, j._count?.timelogs ?? 0, j.loggedHours ?? 0]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
+            {manage && <ImportButton kind="jobs" label="Jobs" invalidate={[["mgmt"], ["lookup"]]} />}
             {manage && (
               <Button onClick={() => setEditor({})}>
                 <Plus className="h-4 w-4" /> New job
@@ -151,35 +139,48 @@ export default function JobsPage() {
         <StatCard label="Hours logged" icon={Timer} loading={q.isLoading} value={formatHours(all.reduce((a, j) => a + (j.loggedHours ?? 0), 0))} hint="all time" />
       </section>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Status"
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: "open", label: "Open" },
-            { value: "closed", label: "Completed / inactive" },
-            { value: "all", label: "All" },
-          ]}
-        />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select aria-label="Project" value={project} onChange={(e) => setProject(e.target.value)} className="sm:w-64">
-            <option value="">All projects</option>
-            {projects.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </Select>
-          <div className="relative sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input placeholder="Search jobs" aria-label="Search jobs" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </div>
-      </div>
-
       <DataTable
+        exportName={false}
+        itemsLabel="jobs"
+        filterTabs={[
+          { key: "open", label: "Open", count: all.filter(open).length },
+          { key: "closed", label: "Completed / inactive", count: all.filter((j) => !open(j)).length },
+          { key: "all", label: "All", count: all.length },
+        ]}
+        activeFilterTab={status}
+        onFilterTabChange={(k) => setStatus(k as StatusF)}
+        searchable
+        searchPlaceholder="Search jobs"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <>
+            <Select aria-label="Project" value={project} onChange={(e) => setProject(e.target.value)} className="w-64">
+              <option value="">All projects</option>
+              {projects.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!rows.length}
+              onClick={() =>
+                downloadCsv(
+                  `jobs-${today()}.csv`,
+                  ["Job code", "Name", "Project", "Client", "Status", "Billable", "Start date", "End date", "Assigned", "Entries", "Logged hours"],
+                  rows.map((j) => [j.jobId, j.name, j.project?.name, j.project?.client?.name, j.status, j.billable ? "Yes" : "No", j.startDate ? workDate(j.startDate) : "", j.endDate ? workDate(j.endDate) : "", j.users?.length ?? 0, j._count?.timelogs ?? 0, j.loggedHours ?? 0]),
+                )
+              }
+            >
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </>
+        }
         rows={rows}
+        rowLabel={manage ? (j) => `Edit ${j.name}` : undefined}
         columns={columns}
         rowKey={(j) => j.id}
         loading={q.isLoading}

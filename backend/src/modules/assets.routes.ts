@@ -501,9 +501,11 @@ export async function assetRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/assets/masters/types", { preHandler: [requireRoles(ASSET_ADMIN_ROLES)] }, async (req, reply) => {
-    const { name, assetCategoryId } = (req.body ?? {}) as { name?: string; assetCategoryId?: string };
+    const b = (req.body ?? {}) as { name?: string; assetCategoryId?: string; categoryId?: string };
+    const name = b.name;
+    const assetCategoryId = b.assetCategoryId ?? b.categoryId;
     if (!name?.trim() || !assetCategoryId) {
-      return reply.code(400).send({ success: false, message: "name and assetCategoryId are required." });
+      return reply.code(400).send({ success: false, message: "Enter a type name and choose its category." });
     }
     const created = await prisma.assetType.create({
       data: { name: name.trim(), assetCategoryId },

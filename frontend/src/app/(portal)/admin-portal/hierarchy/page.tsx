@@ -172,6 +172,7 @@ export default function HierarchyPage() {
             </div>
           </div>
           <DataTable
+        exportName={false}
             rows={shown}
             columns={columns}
             rowKey={(r) => r.id}

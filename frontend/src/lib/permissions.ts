@@ -7,12 +7,14 @@ import { useAuth } from "./auth";
 import { roleInfo } from "./roles";
 import type { PermissionFlags, PermissionsResponse } from "./types";
 
-// The API returns camelCase keys for some modules; screens use snake_case names.
+// The API keys modules by their snake_case name (admin_panel). Older responses used camelCase — accept either.
 const MODULE_ALIASES: Record<string, string> = {
   admin_panel: "adminPanel",
   email_templates: "emailTemplates",
   leave_management: "leaveManagement",
 };
+const flagsFor = (perms: Record<string, Partial<Record<Action, boolean>>> | undefined, module: string) =>
+  perms?.[module] ?? (MODULE_ALIASES[module] ? perms?.[MODULE_ALIASES[module]] : undefined);
 
 export type Action = keyof PermissionFlags;
 
@@ -31,15 +33,14 @@ export function usePermissions() {
       const r = roleInfo(user?.role);
       if (r.isAdmin || r.isOwner || r.isIT) return true;
       if (r.isAccounts && ["employees", "projects", "clients"].includes(module)) return action === "canView";
-      const key = MODULE_ALIASES[module] ?? module;
-      return !!q.data?.permissions?.[key]?.[action];
+      return !!flagsFor(q.data?.permissions, module)?.[action];
     },
     [user?.role, q.data],
   );
 
   /** Only what an Admin has actually granted (no role-based bypass). Used where access must be configurable. */
   const granted = useCallback(
-    (module: string, action: Action = "canView") => !!q.data?.permissions?.[MODULE_ALIASES[module] ?? module]?.[action],
+    (module: string, action: Action = "canView") => !!flagsFor(q.data?.permissions, module)?.[action],
     [q.data],
   );
 

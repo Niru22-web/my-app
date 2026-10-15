@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, Inbox, RotateCcw, X } from "lucide-react";
+import { Check, CheckCheck, Download, Inbox, Lock, RotateCcw, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { ApiError } from "@/lib/api";
+import { ApiError, downloadFile } from "@/lib/api";
 import { fmtDay, startOfMonth, today, workDate } from "@/lib/dates";
 import { roleInfo } from "@/lib/roles";
 import { SCOPE_TEXT, useScopePeople, useScopes } from "@/lib/scopes";
@@ -12,23 +12,23 @@ import { formatHours, formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/ui/stat";
 import { useToast } from "@/components/ui/toast";
-import {
-  employeeName,
-  statusOf,
-  useProjects,
-  useTeamTimelogs,
-  useTimelogMutations,
-  type TeamFilters,
-  type Timelog,
-} from "@/components/timesheet/api";
+import { employeeName, statusOf, useProjects, useTeamTimelogs, useTimelogMutations, type TeamFilters, type Timelog } from "@/components/timesheet/api";
 import { StatusBadge } from "@/components/timesheet/status-badge";
+import { LockDialog } from "@/components/timesheet/lock-dialog";
+
+const STATUS_TABS: { key: string; label: string }[] = [
+  { key: "Submitted", label: "Awaiting approval" },
+  { key: "Approved", label: "Approved" },
+  { key: "Rejected", label: "Returned" },
+  { key: "Draft", label: "Draft" },
+  { key: "", label: "All" },
+];
 
 /** Team and Organization timesheets — the same screen, scoped by the API. */
 export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
@@ -47,6 +47,26 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<Timelog | null>(null);
   const [rejecting, setRejecting] = useState<string[] | null>(null);
+  const [lockOpen, setLockOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [search, setSearch] = useState("");
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      await downloadFile("timelogs/export", `timesheets-${scope}-${today()}.xlsx`, {
+        scope,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        employeeId: filters.employeeId,
+        status: filters.status ? filters.status.toLowerCase() : undefined,
+      });
+    } catch (e) {
+      toast.error("Couldn’t export", e instanceof ApiError ? e.message : undefined);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const q = useTeamTimelogs(filters, allowed);
   const people = useScopePeople(scope, allowed);
@@ -54,6 +74,10 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
   const m = useTimelogMutations();
 
   const rows = useMemo(() => q.data ?? [], [q.data]);
+  const term = search.trim().toLowerCase();
+  const visible = term
+    ? rows.filter((t) => `${employeeName(t)} ${t.employee?.employeeId ?? ""} ${t.job?.project?.name ?? ""} ${t.job?.jobId ?? ""} ${t.description ?? ""}`.toLowerCase().includes(term))
+    : rows;
   const actionable = (t: Timelog) => canAct && statusOf(t) === "submitted" && t.employeeId !== user?.id;
   const selectable = rows.filter(actionable);
   const selectedIds = [...selected].filter((id) => selectable.some((r) => r.id === id));
@@ -69,14 +93,6 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
     setFilters((f) => ({ ...f, ...patch }));
   };
 
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-
   const onErr = (title: string) => (e: unknown) => toast.error(title, e instanceof ApiError ? e.message : undefined);
 
   const approve = (ids: string[]) => {
@@ -89,7 +105,10 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
       m.approveMany.mutate(ids, {
         onSuccess: (r) => {
           const n = r.data?.count ?? 0;
-          toast.success(`${n} entr${n === 1 ? "y" : "ies"} approved`, n < ids.length ? `${ids.length - n} skipped — not yours to approve or no longer pending.` : undefined);
+          toast.success(
+            `${n} entr${n === 1 ? "y" : "ies"} approved`,
+            n < ids.length ? `${ids.length - n} skipped — not yours to approve or no longer pending.` : undefined,
+          );
           setSelected(new Set());
         },
         onError: onErr("Couldn’t approve"),
@@ -100,22 +119,6 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
   const pendingPeople = new Set(rows.filter((r) => statusOf(r) === "submitted").map((r) => r.employeeId)).size;
 
   const columns: Column<Timelog>[] = [
-    {
-      key: "select",
-      header: "",
-      className: "w-10",
-      cell: (t) =>
-        actionable(t) ? (
-          <input
-            type="checkbox"
-            checked={selected.has(t.id)}
-            onChange={() => toggle(t.id)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label={`Select entry by ${employeeName(t)} on ${workDate(t.date)}`}
-            className="h-4 w-4 accent-[var(--brand)]"
-          />
-        ) : null,
-    },
     {
       key: "employee",
       header: "Employee",
@@ -130,7 +133,12 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
         </div>
       ),
     },
-    { key: "date", header: "Date", sortValue: (t) => workDate(t.date), cell: (t) => <span className="whitespace-nowrap">{fmtDay(workDate(t.date))}</span> },
+    {
+      key: "date",
+      header: "Date",
+      sortValue: (t) => workDate(t.date),
+      cell: (t) => <span className="whitespace-nowrap">{fmtDay(workDate(t.date))}</span>,
+    },
     {
       key: "work",
       header: "Project / job",
@@ -144,8 +152,20 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
         </div>
       ),
     },
-    { key: "hours", header: "Hours", align: "right", sortValue: (t) => t.hours, cell: (t) => <span className="font-semibold">{formatHours(t.hours)}</span> },
-    { key: "status", header: "Status", hideBelow: "sm", sortValue: (t) => statusOf(t), cell: (t) => <StatusBadge entry={t} /> },
+    {
+      key: "hours",
+      header: "Hours",
+      align: "right",
+      sortValue: (t) => t.hours,
+      cell: (t) => <span className="font-semibold">{formatHours(t.hours)}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      hideBelow: "sm",
+      sortValue: (t) => statusOf(t),
+      cell: (t) => <StatusBadge entry={t} />,
+    },
     {
       key: "actions",
       header: "",
@@ -153,10 +173,20 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
       cell: (t) =>
         actionable(t) ? (
           <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => approve([t.id])} className="grid h-8 w-8 place-items-center rounded-lg text-success hover:bg-success-soft" aria-label="Approve" title="Approve">
+            <button
+              onClick={() => approve([t.id])}
+              className="grid h-8 w-8 place-items-center rounded-lg text-success hover:bg-success-soft"
+              aria-label="Approve"
+              title="Approve"
+            >
               <Check className="h-4 w-4" />
             </button>
-            <button onClick={() => setRejecting([t.id])} className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger-soft" aria-label="Return" title="Return with reason">
+            <button
+              onClick={() => setRejecting([t.id])}
+              className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger-soft"
+              aria-label="Return"
+              title="Return with reason"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -169,7 +199,20 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
       <PageHeader
         title={scope === "team" ? "Team timesheets" : "Organization timesheets"}
         description={`${SCOPE_TEXT[scope]} ${canAct ? "Approve or return submitted time here." : "View only — approvals are done by each person’s manager or partner."}`}
+        actions={
+          <>
+            <Button variant="secondary" onClick={exportExcel} loading={exporting} disabled={!allowed}>
+              <Download className="h-4 w-4" /> Export to Excel
+            </Button>
+            {(r.isAdmin || r.isOwner) && (
+              <Button variant="secondary" onClick={() => setLockOpen(true)}>
+                <Lock className="h-4 w-4" /> Lock period
+              </Button>
+            )}
+          </>
+        }
       />
+      <LockDialog open={lockOpen} onClose={() => setLockOpen(false)} />
 
       <section className="grid gap-4 sm:grid-cols-3" aria-label="Summary">
         <StatCard label="Awaiting approval" value={rows.filter((r) => statusOf(r) === "submitted").length} tone="brand" loading={q.isLoading} hint="entries" />
@@ -177,49 +220,13 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
         <StatCard label="People with pending time" value={pendingPeople} loading={q.isLoading} />
       </section>
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-        <FormRow label="Status" htmlFor="f-status">
-          <Select id="f-status" value={filters.status ?? ""} onChange={(e) => set({ status: e.target.value as TeamFilters["status"] })}>
-            <option value="Submitted">Awaiting approval</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Returned</option>
-            <option value="Draft">Draft</option>
-            <option value="">All statuses</option>
-          </Select>
-        </FormRow>
-        <FormRow label="Employee" htmlFor="f-emp">
-          <Select id="f-emp" value={filters.employeeId ?? ""} onChange={(e) => set({ employeeId: e.target.value || undefined })}>
-            <option value="">Everyone</option>
-            {(people.data ?? [])
-              .filter((p) => p.id !== user?.id)
-              .sort((a, b) => a.firstName.localeCompare(b.firstName))
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.firstName} {p.lastName}
-                </option>
-              ))}
-          </Select>
-        </FormRow>
-        <FormRow label="Project" htmlFor="f-proj">
-          <Select id="f-proj" value={filters.projectId ?? ""} onChange={(e) => set({ projectId: e.target.value || undefined })}>
-            <option value="">All projects</option>
-            {(projects.data ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </FormRow>
-        <FormRow label="From" htmlFor="f-from">
-          <Input id="f-from" type="date" value={filters.dateFrom ?? ""} onChange={(e) => set({ dateFrom: e.target.value || undefined })} />
-        </FormRow>
-        <FormRow label="To" htmlFor="f-to">
-          <Input id="f-to" type="date" value={filters.dateTo ?? ""} min={filters.dateFrom} onChange={(e) => set({ dateTo: e.target.value || undefined })} />
-        </FormRow>
-      </Card>
-
       {selectable.length > 0 && (
-        <div className={cn("flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3", selectedIds.length ? "border-brand/30 bg-brand-softer" : "border-line bg-surface")}>
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3",
+            selectedIds.length ? "border-brand/30 bg-brand-softer" : "border-line bg-surface",
+          )}
+        >
           <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
@@ -243,7 +250,44 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
       )}
 
       <DataTable
-        rows={rows}
+        exportName={false}
+        itemsLabel="entries"
+        filterTabs={STATUS_TABS.map((s) => ({ ...s, count: s.key === (filters.status ?? "") && !q.isLoading && !q.isError ? rows.length : undefined }))}
+        activeFilterTab={filters.status ?? ""}
+        onFilterTabChange={(k) => set({ status: k as TeamFilters["status"] })}
+        searchable
+        searchPlaceholder="Search name, project, job, description…"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Select aria-label="Employee" value={filters.employeeId ?? ""} onChange={(e) => set({ employeeId: e.target.value || undefined })} className="w-40">
+              <option value="">Everyone</option>
+              {(people.data ?? [])
+                .filter((p) => p.id !== user?.id)
+                .sort((a, b) => a.firstName.localeCompare(b.firstName))
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.firstName} {p.lastName}
+                  </option>
+                ))}
+            </Select>
+            <Select aria-label="Project" value={filters.projectId ?? ""} onChange={(e) => set({ projectId: e.target.value || undefined })} className="w-40">
+              <option value="">All projects</option>
+              {(projects.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            <Input type="date" aria-label="From" title="From" value={filters.dateFrom ?? ""} onChange={(e) => set({ dateFrom: e.target.value || undefined })} className="h-9 w-[150px]" />
+            <Input type="date" aria-label="To" title="To" value={filters.dateTo ?? ""} min={filters.dateFrom} onChange={(e) => set({ dateTo: e.target.value || undefined })} className="h-9 w-[150px]" />
+          </div>
+        }
+        selectable={selectable.length > 0}
+        selectedKeys={selected}
+        onSelectionChange={(s) => setSelected(new Set([...s].filter((id) => selectable.some((r) => r.id === id))))}
+        rows={visible}
         columns={columns}
         rowKey={(t) => t.id}
         loading={q.isLoading}
@@ -253,8 +297,8 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
         initialSort={{ key: "date", dir: "desc" }}
         empty={{
           icon: Inbox,
-          title: filters.status === "Submitted" ? "Nothing waiting for approval" : "No entries match these filters",
-          description: filters.status === "Submitted" ? "Submitted time will appear here." : undefined,
+          title: filters.status === "Submitted" && !term ? "Nothing waiting for approval" : "No entries match these filters",
+          description: filters.status === "Submitted" && !term ? "Submitted time will appear here." : undefined,
         }}
       />
 
@@ -262,7 +306,9 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
         open={!!detail}
         onClose={() => setDetail(null)}
         title="Time entry"
-        description={detail ? `${employeeName(detail)} · ${fmtDay(workDate(detail.date), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}` : undefined}
+        description={
+          detail ? `${employeeName(detail)} · ${fmtDay(workDate(detail.date), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}` : undefined
+        }
         footer={
           detail && actionable(detail) ? (
             <>
@@ -311,8 +357,22 @@ export function ScopedTimesheets({ scope }: { scope: "team" | "org" }) {
             setDetail(null);
             setSelected(new Set());
           };
-          if (ids.length === 1) m.reject.mutate({ id: ids[0], reason }, { onSuccess: () => done(1), onError: onErr("Couldn’t return entry") });
-          else m.rejectMany.mutate({ ids, reason }, { onSuccess: (r) => done(r.data?.count ?? ids.length), onError: onErr("Couldn’t return entries") });
+          if (ids.length === 1)
+            m.reject.mutate(
+              { id: ids[0], reason },
+              {
+                onSuccess: () => done(1),
+                onError: onErr("Couldn’t return entry"),
+              },
+            );
+          else
+            m.rejectMany.mutate(
+              { ids, reason },
+              {
+                onSuccess: (r) => done(r.data?.count ?? ids.length),
+                onError: onErr("Couldn’t return entries"),
+              },
+            );
         }}
       />
     </div>
@@ -374,7 +434,15 @@ function RejectDialog({
       }
     >
       <FormRow label="Reason" htmlFor="reject-reason" required error={error ?? undefined}>
-        <Textarea id="reject-reason" rows={3} maxLength={500} value={reason} invalid={!!error} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Please split this across the correct jobs" />
+        <Textarea
+          id="reject-reason"
+          rows={3}
+          maxLength={500}
+          value={reason}
+          invalid={!!error}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Please split this across the correct jobs"
+        />
       </FormRow>
     </Dialog>
   );

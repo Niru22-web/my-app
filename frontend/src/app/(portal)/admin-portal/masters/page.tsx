@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useState, type FormEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ListTree, Pencil, Plus, Power, Search, Trash2 } from "lucide-react";
+import { ListTree, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/ui/page-header";
@@ -118,31 +118,26 @@ function Masters() {
         }}
         options={MASTERS.map((x) => ({ value: x.kind, label: x.label }))}
       />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[13px] text-ink-muted">{meta.hint}</p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Segmented
-            aria-label="Status"
-            value={status}
-            onChange={setStatus}
-            options={[
-              { value: "all", label: "All" },
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-            ]}
-          />
-          <div className="relative sm:w-56">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input placeholder={`Search ${meta.label.toLowerCase()}`} aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </div>
-      </div>
+      <p className="text-[13px] text-ink-muted">{meta.hint}</p>
       {q.isError ? (
         <Card>
           <ErrorState message={`${meta.label} couldn’t be loaded.`} onRetry={() => q.refetch()} />
         </Card>
       ) : (
         <DataTable
+          exportName={`masters-${kind}`}
+          itemsLabel={meta.label.toLowerCase()}
+          filterTabs={[
+            { key: "all", label: "All", count: q.data?.length ?? 0 },
+            { key: "active", label: "Active", count: (q.data ?? []).filter((x) => x.isActive).length },
+            { key: "inactive", label: "Inactive", count: (q.data ?? []).filter((x) => !x.isActive).length },
+          ]}
+          activeFilterTab={status}
+          onFilterTabChange={(k) => setStatus(k as "all" | "active" | "inactive")}
+          searchable
+          searchPlaceholder={`Search ${meta.label.toLowerCase()}`}
+          searchValue={search}
+          onSearchChange={setSearch}
           rows={rows}
           columns={columns}
           rowKey={(x) => x.id}

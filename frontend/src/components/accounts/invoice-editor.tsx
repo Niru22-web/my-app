@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { addDays, today, workDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/format";
@@ -10,20 +10,13 @@ import { Button } from "@/components/ui/button";
 import { FormRow, Input, Select } from "@/components/ui/inputs";
 import { useToast } from "@/components/ui/toast";
 import { useClientOptions, useProjectList, type Client } from "@/components/management/api";
-import { round2, useAccountsMutations, useEntities, type Invoice, type InvoiceInput } from "./api";
+import { round2, useAccountsMutations, useCurrencies, useEntities, usePlaceOfSupply, type Invoice, type InvoiceInput } from "./api";
 
-const CURRENCIES = ["INR", "USD", "AED", "EUR", "GBP"];
+const FALLBACK_CURRENCIES = ["INR", "USD", "AED", "EUR", "GBP"];
 const GST_RATES = [0, 5, 12, 18, 28];
 const UDIN = /^\d{8}[A-Z]{6}\d{4}$/;
 
-/** Same rule the API applies when it stores CGST/SGST vs IGST (accounts.routes.ts:487-531). */
-export function isLocalSupply(c?: Pick<Client, "gstin" | "state" | "address"> | null) {
-  if (!c) return true;
-  if (c.gstin && c.gstin.trim().length >= 2) return c.gstin.trim().slice(0, 2) === "27";
-  if (c.state) return c.state.toLowerCase() === "maharashtra";
-  const a = (c.address ?? "").toUpperCase();
-  return a ? /MAHARASHTRA|\bMH\b|MUMBAI|THANE|PUNE/.test(a) : true;
-}
+const SUPPLY_TAX: Record<string, string> = { INTRA: "CGST + SGST", INTER: "IGST", EXPORT: "IGST (0% if exported under LUT)", NO_GST: "No GST" };
 
 interface Line {
   key: number;
@@ -62,7 +55,16 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
     return invoice?.client && !l.some((c) => c.id === invoice.clientId) ? [...l, invoice.client as unknown as Client] : l;
   }, [clients.data, invoice]);
   const client = clientList.find((c) => c.id === clientId);
-  const local = isLocalSupply(client);
+  const pos = usePlaceOfSupply(entityId, clientId);
+  const supply = pos.data?.supplyType;
+  const noGst = supply === "NO_GST";
+  const local = supply !== "INTER" && supply !== "EXPORT";
+  const currencyRows = useCurrencies();
+  const currencies = useMemo(() => {
+    const codes = (currencyRows.data ?? []).map((c) => c.code.toUpperCase());
+    const base = codes.length ? ["INR", ...codes.filter((c) => c !== "INR")] : FALLBACK_CURRENCIES;
+    return base.includes(currency) ? base : [...base, currency];
+  }, [currencyRows.data, currency]);
   const clientProjects = (projects.data ?? []).filter((p) => p.clientId === clientId);
 
   const num = (s: string) => (s.trim() === "" ? NaN : Number(s));
@@ -70,7 +72,7 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
     (t, l) => {
       const q = num(l.quantity), p = num(l.unitPrice), g = num(l.gstRate);
       const base = Number.isFinite(q) && Number.isFinite(p) ? q * p : 0;
-      return { sub: t.sub + base, tax: t.tax + base * ((Number.isFinite(g) ? g : 0) / 100) };
+      return { sub: t.sub + base, tax: t.tax + (noGst ? 0 : base * ((Number.isFinite(g) ? g : 0) / 100)) };
     },
     { sub: 0, tax: 0 },
   );
@@ -111,8 +113,7 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
         onSaved?.(invoice.id);
       } else {
         const res = await m.createInvoice.mutateAsync(body);
-        if (issueDate !== now) await m.setIssueDate.mutateAsync({ id: res.data.id, issueDate });
-        toast.success(`Draft ${res.data.invoiceNumber} created`, "Review it, then mark it sent.");
+        toast.success("Draft saved", "Review it, then issue it — the invoice number is given when you issue.");
         onSaved?.(res.data.id);
       }
       onClose();
@@ -126,8 +127,8 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
       open
       onClose={onClose}
       size="lg"
-      title={invoice ? `Edit draft ${invoice.invoiceNumber}` : "New invoice"}
-      description="Saved as a draft. Drafts aren’t counted as billed until you mark them sent."
+      title={invoice ? "Edit draft invoice" : "New invoice"}
+      description="Saved as a draft. Drafts aren’t counted as billed, and get their invoice number only when you issue them."
       footer={
         <>
           <span className="mr-auto text-sm text-ink-muted">
@@ -154,7 +155,7 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
               ))}
             </Select>
           </FormRow>
-          <FormRow label="Client" htmlFor="iv-client" required error={tried ? errors.clientId : undefined} hint={client ? `${client.gstin ? `GSTIN ${client.gstin}` : "No GSTIN"} · ${local ? "CGST + SGST" : "IGST"}` : undefined}>
+          <FormRow label="Client" htmlFor="iv-client" required error={tried ? errors.clientId : undefined} hint={client ? (client.gstin ? `GSTIN ${client.gstin}` : "No GSTIN") : undefined}>
             <Select id="iv-client" value={clientId} onChange={(e) => (setClient(e.target.value), setProject(""))} invalid={tried && !!errors.clientId}>
               <option value="">Choose…</option>
               {clientList.map((c) => (
@@ -185,7 +186,7 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
           </FormRow>
           <FormRow label="Currency" htmlFor="iv-cur">
             <Select id="iv-cur" value={currency} onChange={(e) => (setCurrency(e.target.value), e.target.value === "INR" && setRate("1"))}>
-              {CURRENCIES.map((c) => (
+              {currencies.map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </Select>
@@ -196,6 +197,28 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
             </FormRow>
           )}
         </div>
+
+        {entityId && clientId && (
+          <div className="rounded-xl border border-line px-3.5 py-2.5 text-[13px]">
+            {pos.isLoading ? (
+              <span className="text-ink-muted">Checking place of supply…</span>
+            ) : pos.isError ? (
+              <span className="text-ink-muted">Place of supply couldn’t be checked. It is worked out again when you issue the invoice.</span>
+            ) : pos.data ? (
+              <>
+                <p className="text-ink">
+                  <span className="text-ink-muted">Place of supply:</span> {pos.data.label} · <strong>{SUPPLY_TAX[pos.data.supplyType] ?? pos.data.supplyType}</strong>
+                </p>
+                {noGst && <p className="mt-1 text-ink-muted">This entity has no GSTIN, so no GST is charged on this invoice.</p>}
+                {pos.data.problem && (
+                  <p role="alert" className="mt-1.5 flex items-start gap-2 text-warning">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {pos.data.problem}
+                  </p>
+                )}
+              </>
+            ) : null}
+          </div>
+        )}
 
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -240,7 +263,7 @@ export function InvoiceEditor({ invoice, onClose, onSaved }: { invoice?: Invoice
         <dl className="ml-auto grid max-w-xs grid-cols-2 gap-y-1 text-sm">
           <dt className="text-ink-muted">Taxable value</dt>
           <dd className="text-right tabular text-ink">{formatCurrency(round2(totals.sub), currency)}</dd>
-          {local ? (
+          {noGst ? null : local ? (
             <>
               <dt className="text-ink-muted">CGST</dt>
               <dd className="text-right tabular text-ink">{formatCurrency(round2(totals.tax / 2), currency)}</dd>

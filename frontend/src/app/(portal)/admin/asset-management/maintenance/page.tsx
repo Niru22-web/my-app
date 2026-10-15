@@ -9,7 +9,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ErrorState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
@@ -28,9 +27,15 @@ export default function MaintenancePage() {
   const m = useAssetMutations();
   const [view, setView] = useState<"open" | "done">("open");
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState("");
 
   const all = useMemo(() => q.data ?? [], [q.data]);
-  const rows = all.filter((x) => (view === "open" ? x.status !== "Completed" : x.status === "Completed"));
+  const openCount = all.filter((x) => x.status !== "Completed").length;
+  const rows = all.filter((x) => {
+    if (view === "open" ? x.status === "Completed" : x.status !== "Completed") return false;
+    const s = search.trim().toLowerCase();
+    return !s || `${x.inventory?.assetName ?? ""} ${x.inventory?.serialNumber ?? ""} ${x.inventory?.officeTagNo ?? ""} ${x.type} ${x.description ?? ""}`.toLowerCase().includes(s);
+  });
   const spent = all.filter((x) => x.status === "Completed").reduce((s, x) => s + (x.cost ?? 0), 0);
 
   const setStatus = (x: Maintenance, status: string) =>
@@ -97,23 +102,26 @@ export default function MaintenancePage() {
           )
         }
       />
-      <Segmented
-        aria-label="Show"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: "open", label: "Open", count: all.filter((x) => x.status !== "Completed").length || undefined },
-          { value: "done", label: "Completed" },
-        ]}
-      />
       <DataTable
+        exportName="asset-maintenance"
+        itemsLabel="records"
+        filterTabs={[
+          { key: "open", label: "Open", count: openCount },
+          { key: "done", label: "Completed", count: all.length - openCount },
+        ]}
+        activeFilterTab={view}
+        onFilterTabChange={(k) => setView(k as "open" | "done")}
+        searchable
+        searchPlaceholder="Search asset, serial or work"
+        searchValue={search}
+        onSearchChange={setSearch}
         rows={rows}
         columns={columns}
         rowKey={(x) => x.id}
         loading={q.isLoading}
         initialSort={{ key: "date", dir: "desc" }}
         pageSize={20}
-        empty={{ icon: Wrench, title: view === "open" ? "No open maintenance" : "No completed maintenance yet" }}
+        empty={{ icon: Wrench, title: search.trim() ? "No maintenance matches your search" : view === "open" ? "No open maintenance" : "No completed maintenance yet" }}
       />
       {adding && <MaintenanceDialog assets={assets.data ?? []} onClose={() => setAdding(false)} />}
     </div>

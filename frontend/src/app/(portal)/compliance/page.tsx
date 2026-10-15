@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, BellRing, Building2, CheckCircle2, Clock3, Download, Flag, Gauge, History, Search, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, BellRing, Building2, CheckCircle2, Clock3, Download, Flag, Gauge, History, ShieldCheck, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/inputs";
+import { Select } from "@/components/ui/inputs";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
@@ -68,6 +68,7 @@ export default function CompliancePage() {
       }),
     [d, dept, risk, status, search],
   );
+  const riskCount = (level: string) => (d?.employees ?? []).filter((e) => level === "all" || e.riskLevel === level).length;
   const depts = useMemo(() => [...new Set((d?.employees ?? []).map((e) => e.department).filter(Boolean) as string[])].sort(), [d]);
 
   // The API answers 200 with {success:false} when an employee isn't found — treat that as an error.
@@ -154,21 +155,6 @@ export default function CompliancePage() {
       <PageHeader
         title="Timesheet compliance"
         description={d ? `Week of ${formatDate(d.weekStart, { day: "numeric", month: "short" })} – ${formatDate(d.weekEnd, { day: "numeric", month: "short", year: "numeric" })} · target = working days × expected hours per day` : "This week’s timesheet completeness"}
-        actions={
-          <Button
-            variant="secondary"
-            disabled={!rows.length}
-            onClick={() =>
-              downloadCsv(
-                `compliance-${d?.weekStart?.slice(0, 10)}.csv`,
-                ["Employee", "Email", "Department", "Manager", "Hours", "Target", "Missing days", "Status", "Risk", "Risk score", "Reminders"],
-                rows.map((e) => [e.name, e.email, e.department, e.managerName, e.weeklyHours, e.targetHours, e.missingDays.join("; "), STATUS_LABEL[e.complianceStatus] ?? e.complianceStatus, e.riskLevel, e.riskScore, e.reminderCount]),
-              )
-            }
-          >
-            <Download className="h-4 w-4" /> Export
-          </Button>
-        }
       />
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Summary">
@@ -270,43 +256,55 @@ export default function CompliancePage() {
         </Card>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Risk"
-          value={risk}
-          onChange={setRisk}
-          options={[
-            { value: "all", label: "Everyone" },
-            { value: "critical", label: "Critical" },
-            { value: "warning", label: "Warning" },
-            { value: "healthy", label: "Healthy" },
-          ]}
-        />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="sm:w-44">
-            <option value="">Any status</option>
-            {Object.entries(STATUS_LABEL).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
-          {depts.length > 1 && (
-            <Select aria-label="Department" value={dept} onChange={(e) => setDept(e.target.value)} className="sm:w-48">
-              <option value="">All departments</option>
-              {depts.map((x) => (
-                <option key={x}>{x}</option>
+      <DataTable
+        exportName={false}
+        itemsLabel="people"
+        filterTabs={[
+          { key: "all", label: "Everyone", count: riskCount("all") },
+          { key: "critical", label: "Critical", count: riskCount("critical") },
+          { key: "warning", label: "Warning", count: riskCount("warning") },
+          { key: "healthy", label: "Healthy", count: riskCount("healthy") },
+        ]}
+        activeFilterTab={risk}
+        onFilterTabChange={(v) => setRisk(v as "all" | "critical" | "warning" | "healthy")}
+        searchable
+        searchPlaceholder="Search people"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <>
+            <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-40">
+              <option value="">Any status</option>
+              {Object.entries(STATUS_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
               ))}
             </Select>
-          )}
-          <div className="relative sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input placeholder="Search people" aria-label="Search people" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </div>
-      </div>
-
-      <DataTable
+            {depts.length > 1 && (
+              <Select aria-label="Department" value={dept} onChange={(e) => setDept(e.target.value)} className="w-44">
+                <option value="">All departments</option>
+                {depts.map((x) => (
+                  <option key={x}>{x}</option>
+                ))}
+              </Select>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!rows.length}
+              onClick={() =>
+                downloadCsv(
+                  `compliance-${d?.weekStart?.slice(0, 10)}.csv`,
+                  ["Employee", "Email", "Department", "Manager", "Hours", "Target", "Missing days", "Status", "Risk", "Risk score", "Reminders"],
+                  rows.map((e) => [e.name, e.email, e.department, e.managerName, e.weeklyHours, e.targetHours, e.missingDays.join("; "), STATUS_LABEL[e.complianceStatus] ?? e.complianceStatus, e.riskLevel, e.riskScore, e.reminderCount]),
+                )
+              }
+            >
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </>
+        }
         rows={rows}
         columns={columns}
         rowKey={(e) => e.id}

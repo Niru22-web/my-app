@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Clock4, Download, Eye, LogOut, MapPin, Pencil, Search, UserCheck, UserX, Users } from "lucide-react";
+import { CalendarDays, Clock4, Download, Eye, LogOut, MapPin, Pencil, UserCheck, UserX, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, assetUrl } from "@/lib/api";
 import { fmtDay, today, type YMD } from "@/lib/dates";
@@ -13,7 +13,6 @@ import { cn } from "@/lib/cn";
 import { SCOPE_TEXT, useScopePeople, useScopes } from "@/lib/scopes";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -21,7 +20,6 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { FormRow, Input, Select } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
 import {
 
@@ -173,11 +171,6 @@ export function ScopedAttendance({ scope }: { scope: "team" | "org" }) {
       <PageHeader
         title={firmWide ? "Organization attendance" : "Team attendance"}
         description={SCOPE_TEXT[scope]}
-        actions={
-          <Button variant="secondary" onClick={exportCsv} disabled={!rows.length}>
-            <Download className="h-4 w-4" /> Export CSV
-          </Button>
-        }
       />
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Summary">
@@ -198,48 +191,35 @@ export function ScopedAttendance({ scope }: { scope: "team" | "org" }) {
         <StatCard label="Avg hours per day" icon={Clock4} loading={logs.isLoading} value={avg ? formatHours(avg) : "—"} hint={scoped.filter((r) => r.status === "auto-closed").length ? `${scoped.filter((r) => r.status === "auto-closed").length} auto-closed` : undefined} />
       </section>
 
-      <Card className="grid gap-3 p-4 md:grid-cols-[1fr_auto_auto] md:items-end">
-        <FormRow label="Search" htmlFor="att-search">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input id="att-search" placeholder="Name or employee ID" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </FormRow>
-        <div className="grid grid-cols-2 gap-3">
-          <FormRow label="From" htmlFor="att-from">
-            <Input id="att-from" type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} />
-          </FormRow>
-          <FormRow label="To" htmlFor="att-to">
-            <Input id="att-to" type="date" value={to} min={from} max={today()} onChange={(e) => e.target.value && setTo(e.target.value)} />
-          </FormRow>
-        </div>
-        <FormRow label="Status" htmlFor="att-status">
-          <Select id="att-status" value={status} onChange={(e) => setStatus(e.target.value as StatusF)}>
-            <option value="all">All statuses</option>
-            <option value="open">Checked in now</option>
-            <option value="present">Present</option>
-            <option value="auto-closed">Auto-closed</option>
-          </Select>
-        </FormRow>
-      </Card>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented
-          aria-label="Source"
-          value={source}
-          onChange={setSource}
-          options={[
-            { value: "all", label: "All sources" },
-            { value: "web", label: "Web / mobile" },
-            { value: "biometric", label: "Biometric" },
-          ]}
-        />
-        <p className="text-[13px] text-ink-muted">
-          {rows.length} record{rows.length === 1 ? "" : "s"}
-        </p>
-      </div>
-
       <DataTable
+        exportName={false}
+        itemsLabel="records"
+        filterTabs={[
+          { key: "all", label: "All", count: scoped.length },
+          { key: "open", label: "Checked in now", count: scoped.filter((r) => r.openSession).length },
+          { key: "present", label: "Present", count: scoped.filter((r) => r.status === "present").length },
+          { key: "auto-closed", label: "Auto-closed", count: scoped.filter((r) => r.status === "auto-closed").length },
+        ]}
+        activeFilterTab={status}
+        onFilterTabChange={(k) => setStatus(k as StatusF)}
+        searchable
+        searchPlaceholder="Name or employee ID"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Select aria-label="Source" value={source} onChange={(e) => setSource(e.target.value as Source)} className="w-36">
+              <option value="all">All sources</option>
+              <option value="web">Web / mobile</option>
+              <option value="biometric">Biometric</option>
+            </Select>
+            <Input type="date" aria-label="From" title="From" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} className="h-9 w-[150px]" />
+            <Input type="date" aria-label="To" title="To" value={to} min={from} max={today()} onChange={(e) => e.target.value && setTo(e.target.value)} className="h-9 w-[150px]" />
+            <Button variant="secondary" size="sm" onClick={exportCsv} disabled={!rows.length}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </div>
+        }
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}

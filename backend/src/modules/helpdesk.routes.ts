@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
-import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
+import { authenticate, isTeamMemberOrSelf, normRole, reportingTreeIds, requireRoles } from "../plugins/auth";
 import { parseBodyOrMultipart } from "../utils/uploads";
 import { createNotification } from "../utils/notify";
 
@@ -8,6 +8,11 @@ function isSupportRole(role?: string | null): boolean {
   const r = normRole(role);
   return r === "admin" || r === "owner" || r === "it" || r.includes("support");
 }
+
+/** History action for agent-only notes (hidden from the person who raised the ticket). */
+const INTERNAL_NOTE = "Internal note";
+
+const TICKET_STATUSES = ["Open", "In Progress", "Resolved", "Returned", "Closed"];
 
 async function nextTicketCode(): Promise<string> {
   const rows = await prisma.ticket.findMany({ select: { ticketId: true } });
@@ -38,6 +43,41 @@ function mapCategory(c: any): any {
     autoAssignUserId: c.auto_assign_user_id,
     ...(c.children ? { children: c.children.map(mapCategory) } : {}),
   };
+}
+
+/** Active people who can work tickets (Admin, IT, support roles). */
+async function activeAgents() {
+  const rows = await prisma.employee.findMany({
+    where: { status: { equals: "active", mode: "insensitive" } },
+    select: { id: true, role: true, firstName: true, lastName: true },
+  });
+  return rows.filter((e) => isSupportRole(e.role) && normRole(e.role) !== "owner");
+}
+
+/**
+ * Adds what the screens need: the assignee's name, the response target (subcategory, then category, then 24 h),
+ * when the ticket was resolved, and whether the target was met.
+ */
+async function decorate<T extends { assignedTo: string | null; createdAt: Date; status: string; categoryRel?: any; subcategoryRel?: any; history?: { toStatus: string | null; performedAt: Date }[] }>(tickets: T[]) {
+  const ids = [...new Set(tickets.map((t) => t.assignedTo).filter(Boolean) as string[])];
+  const people = ids.length ? await prisma.employee.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } }) : [];
+  const names = new Map(people.map((p) => [p.id, `${p.firstName} ${p.lastName}`.trim()]));
+  return tickets.map((t) => {
+    const slaHours: number = t.subcategoryRel?.sla_hours ?? t.categoryRel?.sla_hours ?? 24;
+    const dueAt = new Date(t.createdAt.getTime() + slaHours * 3_600_000);
+    const done = ["resolved", "closed"].includes(t.status.toLowerCase());
+    const resolvedAt = done
+      ? ([...(t.history ?? [])].reverse().find((h) => ["resolved", "closed"].includes((h.toStatus ?? "").toLowerCase()))?.performedAt ?? null)
+      : null;
+    return {
+      ...t,
+      assigneeName: t.assignedTo ? (names.get(t.assignedTo) ?? null) : null,
+      slaHours,
+      slaDueAt: dueAt,
+      resolvedAt,
+      slaMet: done && resolvedAt ? resolvedAt <= dueAt : null,
+    };
+  });
 }
 
 const TICKET_INCLUDE = {
@@ -72,25 +112,9 @@ export async function helpdeskRoutes(app: FastifyInstance) {
     if (isSupportRole(r)) {
       where = {};
     } else if (["manager", "partner", "sub-manager", "sub manager"].includes(r)) {
-      const team = await prisma.employee.findMany({
-        where: {
-          OR: [
-            { id: u.id },
-            { managerId: u.id },
-            { partnerId: u.id },
-            { subManagerId: u.id },
-            { reportingManagerIds: { has: u.id } },
-            { reportingPartnerIds: { has: u.id } },
-            { subManagerIds: { has: u.id } },
-            { managers: { some: { managerId: u.id } } },
-            { partners: { some: { partnerId: u.id } } },
-          ],
-        },
-        select: { id: true },
-      });
-      where = { createdById: { in: team.map((t) => t.id) } };
+      where = { OR: [{ createdById: { in: [u.id, ...(await reportingTreeIds(u.id))] } }, { assignedTo: u.id }] };
     } else {
-      where = { createdById: u.id };
+      where = { OR: [{ createdById: u.id }, { assignedTo: u.id }] };
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -98,7 +122,7 @@ export async function helpdeskRoutes(app: FastifyInstance) {
       include: TICKET_INCLUDE,
       orderBy: { createdAt: "desc" },
     });
-    return reply.send({ success: true, data: tickets });
+    return reply.send({ success: true, data: await decorate(tickets) });
   });
 
   // GET /api/tickets/:id
@@ -111,10 +135,13 @@ export async function helpdeskRoutes(app: FastifyInstance) {
     });
     if (!ticket) return reply.code(404).send({ success: false, message: "Ticket not found." });
 
-    if (!isSupportRole(u.role) && !(await isTeamMemberOrSelf(u, ticket.createdById))) {
+    if (!isSupportRole(u.role) && ticket.assignedTo !== u.id && !(await isTeamMemberOrSelf(u, ticket.createdById))) {
       return reply.code(403).send({ success: false, message: "Access denied." });
     }
-    return reply.send({ success: true, data: ticket });
+    // Internal notes are for the support team only.
+    const agentView = isSupportRole(u.role) || ticket.assignedTo === u.id;
+    const visible = agentView ? ticket : { ...ticket, history: ticket.history.filter((h) => h.action !== INTERNAL_NOTE) };
+    return reply.send({ success: true, data: { ...(await decorate([visible]))[0], agentView } });
   });
 
   // POST /api/tickets — multipart form with safe extension filter (fixes H6, H8)
@@ -139,9 +166,22 @@ export async function helpdeskRoutes(app: FastifyInstance) {
       });
     }
 
-    const ticketId = await nextTicketCode();
     const categoryId = fields.categoryId ? Number(fields.categoryId) : null;
     const subcategoryId = fields.subcategoryId ? Number(fields.subcategoryId) : null;
+    const [cat, sub, agents] = await Promise.all([
+      categoryId && Number.isFinite(categoryId) ? prisma.helpdeskCategory.findUnique({ where: { id: categoryId } }) : null,
+      subcategoryId && Number.isFinite(subcategoryId) ? prisma.helpdeskCategory.findUnique({ where: { id: subcategoryId } }) : null,
+      activeAgents(),
+    ]);
+    const agentIds = new Set(agents.map((a) => a.id));
+    const wanted = isSupportRole(req.user!.role) && fields.assignedTo ? String(fields.assignedTo) : null;
+    if (wanted && !agentIds.has(wanted)) {
+      return reply.code(400).send({ success: false, message: "Tickets can only be assigned to an active support agent." });
+    }
+    // The category's default agent if still active; otherwise the ticket waits in the queue.
+    const auto = [sub?.auto_assign_user_id, cat?.auto_assign_user_id].find((x) => x && agentIds.has(x)) ?? null;
+    const assignedTo = wanted ?? auto;
+    const ticketId = await nextTicketCode();
 
     const created = await prisma.ticket.create({
       data: {
@@ -153,6 +193,7 @@ export async function helpdeskRoutes(app: FastifyInstance) {
         categoryId: Number.isFinite(categoryId) ? categoryId : null,
         subcategoryId: Number.isFinite(subcategoryId) ? subcategoryId : null,
         status: "Open",
+        assignedTo,
         createdById: req.user!.id,
         attachmentUrl: files[0]?.filePath ?? null,
         attachments: {
@@ -169,13 +210,28 @@ export async function helpdeskRoutes(app: FastifyInstance) {
             toStatus: "Open",
             performedById: req.user!.id,
             remarks: "Ticket submitted",
+            ...(assignedTo ? { toAssignee: assignedTo } : {}),
           },
         },
       },
       include: TICKET_INCLUDE,
     });
 
-    return reply.code(201).send({ success: true, data: created });
+    // Tell the assignee; when nobody is assigned, tell every agent so the ticket is picked up.
+    const notifyIds = (assignedTo ? [assignedTo] : agents.map((a) => a.id)).filter((x) => x !== req.user!.id);
+    for (const userId of notifyIds) {
+      await createNotification({
+        userId,
+        title: assignedTo ? `Ticket ${ticketId} assigned to you` : `New ticket ${ticketId}`,
+        message: `${title} (${created.priority ?? "Medium"} priority)${assignedTo ? "" : ", waiting to be picked up"}.`,
+        type: "ticket_assigned",
+        module: "HelpDesk",
+        actionUrl: `/help-desk/${created.id}`,
+      });
+    }
+
+    const [data] = await decorate([created]);
+    return reply.code(201).send({ success: true, data: { ...data, assignedTeam: sub?.assigned_team ?? cat?.assigned_team ?? "IT" } });
   });
 
   // PATCH /api/tickets/:id — update status or assignee
@@ -194,6 +250,12 @@ export async function helpdeskRoutes(app: FastifyInstance) {
       assignedTo?: string | null;
       remarks?: string;
     };
+    if (status !== undefined && !TICKET_STATUSES.includes(status)) {
+      return reply.code(400).send({ success: false, message: `Status must be one of: ${TICKET_STATUSES.join(", ")}.` });
+    }
+    if (assignedTo && !(await activeAgents()).some((a) => a.id === assignedTo)) {
+      return reply.code(400).send({ success: false, message: "Tickets can only be assigned to an active support agent." });
+    }
 
     const updated = await prisma.ticket.update({
       where: { id },
@@ -215,6 +277,17 @@ export async function helpdeskRoutes(app: FastifyInstance) {
       include: TICKET_INCLUDE,
     });
 
+    if (assignedTo && assignedTo !== existing.assignedTo && assignedTo !== u.id) {
+      await createNotification({
+        userId: assignedTo,
+        title: `Ticket ${existing.ticketId ?? ""} assigned to you`,
+        message: remarks ? `${existing.title}: ${remarks}` : existing.title,
+        type: "ticket_assigned",
+        module: "HelpDesk",
+        actionUrl: `/help-desk/${existing.id}`,
+      });
+    }
+
     if (status && status !== existing.status && existing.createdById !== u.id) {
       await createNotification({
         userId: existing.createdById,
@@ -222,11 +295,11 @@ export async function helpdeskRoutes(app: FastifyInstance) {
         message: `Your support ticket "${existing.title}" is now ${status}.`,
         type: "ticket_update",
         module: "HelpDesk",
-        actionUrl: "/help-desk",
+        actionUrl: `/help-desk/${existing.id}`,
       });
     }
 
-    return reply.send({ success: true, data: updated });
+    return reply.send({ success: true, data: (await decorate([updated]))[0] });
   });
 
   // POST /api/tickets/:id/history — add comment/reply with optional attachments and status change
@@ -236,8 +309,8 @@ export async function helpdeskRoutes(app: FastifyInstance) {
     const existing = await prisma.ticket.findUnique({ where: { id } });
     if (!existing) return reply.code(404).send({ success: false, message: "Ticket not found." });
 
-    if (!isSupportRole(u.role) && existing.createdById !== u.id) {
-      return reply.code(403).send({ success: false, message: "Forbidden" });
+    if (!isSupportRole(u.role) && existing.createdById !== u.id && existing.assignedTo !== u.id) {
+      return reply.code(403).send({ success: false, message: "Only the person who raised this ticket or a support agent can reply." });
     }
 
     let parsed;
@@ -252,12 +325,18 @@ export async function helpdeskRoutes(app: FastifyInstance) {
 
     const { fields, files } = parsed;
     const remarks = (fields.remarks ?? fields.comment ?? "").trim();
-    const nextStatus = isSupportRole(u.role) && fields.status ? fields.status : existing.status;
+    const internal = String(fields.internal ?? "") === "true";
+    if (internal && !isSupportRole(u.role) && existing.assignedTo !== u.id) {
+      return reply.code(403).send({ success: false, message: "Only the support team can add internal notes." });
+    }
+    if (internal && !remarks) return reply.code(400).send({ success: false, message: "Write the note first." });
+    const wantedStatus = fields.status ?? fields.toStatus;
+    const nextStatus = isSupportRole(u.role) && wantedStatus && TICKET_STATUSES.includes(wantedStatus) ? wantedStatus : existing.status;
 
     const event = await prisma.ticketHistory.create({
       data: {
         ticketId: id,
-        action: fields.action || (nextStatus !== existing.status ? `Status changed to ${nextStatus}` : "Comment added"),
+        action: internal ? INTERNAL_NOTE : fields.action || (nextStatus !== existing.status ? `Status changed to ${nextStatus}` : "Comment added"),
         fromStatus: existing.status,
         toStatus: nextStatus,
         performedById: u.id,
@@ -282,6 +361,37 @@ export async function helpdeskRoutes(app: FastifyInstance) {
       await prisma.ticket.update({
         where: { id },
         data: { status: nextStatus },
+      });
+    }
+
+    // Tell the other side: support replies reach the raiser; the raiser's replies reach the assignee (or every agent).
+    const escalated = (fields.action ?? "").toLowerCase() === "escalate";
+    const fromSupport = u.id !== existing.createdById;
+    const targets = internal
+      ? [existing.assignedTo, ...(existing.assignedTo ? [] : (await activeAgents()).map((a) => a.id))].filter((x): x is string => !!x)
+      : escalated
+      ? (await activeAgents()).map((a) => a.id)
+      : fromSupport
+        ? [existing.createdById]
+        : existing.assignedTo
+          ? [existing.assignedTo]
+          : (await activeAgents()).map((a) => a.id);
+    const code = existing.ticketId ?? "";
+    const title = internal
+      ? `Internal note on ticket ${code}`
+      : escalated
+      ? `Ticket ${code} escalated`
+      : nextStatus !== existing.status
+        ? `Ticket ${code} is now ${nextStatus}`
+        : `New reply on ticket ${code}`;
+    for (const userId of [...new Set(targets)].filter((x) => x !== u.id)) {
+      await createNotification({
+        userId,
+        title,
+        message: remarks ? `${existing.title}: ${remarks.slice(0, 140)}` : existing.title,
+        type: escalated ? "ticket_escalated" : "ticket_update",
+        module: "HelpDesk",
+        actionUrl: `/help-desk/${existing.id}`,
       });
     }
 

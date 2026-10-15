@@ -54,10 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status !== "authenticated" || verified.current) return;
     verified.current = true;
-    api<AuthUser>("auth/me")
-      .then((me) => {
+    // The API answers { success, user }.
+    api<{ user?: Partial<AuthUser> }>("auth/me")
+      .then((res) => {
         const current = parseUser(readLocal(USER_KEY));
-        if (current) writeLocal(USER_KEY, JSON.stringify({ ...current, ...me }));
+        if (current && res?.user) writeLocal(USER_KEY, JSON.stringify({ ...current, ...res.user }));
       })
       .catch(() => {
         /* a 401 triggers the session-expired handler; other errors keep the cached profile */

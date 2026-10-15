@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CalendarCheck2, History, Pencil, Plus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
-import { fmtDay, workDate } from "@/lib/dates";
+import { fmtDay, today, workDate } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog, useDialogState } from "@/components/ui/confirm";
-import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/inputs";
 import { useToast } from "@/components/ui/toast";
 import { leaveState, personName, useLeaveMutations, useLeaves, type Leave, type LeaveState } from "@/components/leave/api";
 import { useLeaveLedger, useLeavePolicy, useMyBalances, type TypeBalance } from "@/components/leave/policy-api";
@@ -23,6 +23,8 @@ export default function MyLeavePage() {
   const { user } = useAuth();
   const toast = useToast();
   const [filter, setFilter] = useState<"all" | LeaveState>("all");
+  const [search, setSearch] = useState("");
+  const [type, setType] = useState("");
   const [editor, setEditor] = useState<{ entry?: Leave | null } | null>(null);
   const cancel = useDialogState<Leave>();
 
@@ -33,12 +35,31 @@ export default function MyLeavePage() {
   const m = useLeaveMutations();
 
   const mine = (leaves.data ?? []).filter((l) => l.employeeId === user?.id);
-  const rows = mine.filter((l) => filter === "all" || leaveState(l) === filter);
+  const types = [...new Set(mine.map((l) => l.type))].sort();
+  const term = search.trim().toLowerCase();
+  const rows = mine.filter(
+    (l) =>
+      (filter === "all" || leaveState(l) === filter) &&
+      (!type || l.type === type) &&
+      (!term || `${l.leaveId} ${l.type} ${l.reason ?? ""}`.toLowerCase().includes(term)),
+  );
+  const countState = (s: LeaveState) => mine.filter((l) => leaveState(l) === s).length;
+  const narrowed = filter !== "all" || !!type || !!term;
   const yearLabel = balances.data?.label;
 
   const columns: Column<Leave>[] = [
-    { key: "id", header: "Request", sortValue: (l) => l.leaveId, cell: (l) => <span className="font-medium text-ink">{l.leaveId}</span> },
-    { key: "type", header: "Type", sortValue: (l) => l.type, cell: (l) => l.type },
+    {
+      key: "id",
+      header: "Request",
+      sortValue: (l) => l.leaveId,
+      cell: (l) => <span className="font-medium text-ink">{l.leaveId}</span>,
+    },
+    {
+      key: "type",
+      header: "Type",
+      sortValue: (l) => l.type,
+      cell: (l) => l.type,
+    },
     {
       key: "dates",
       header: "Dates",
@@ -49,8 +70,19 @@ export default function MyLeavePage() {
         return <span className="whitespace-nowrap">{f === t ? fmtDay(f) : `${fmtDay(f, { day: "numeric", month: "short" })} – ${fmtDay(t)}`}</span>;
       },
     },
-    { key: "days", header: "Days", align: "right", sortValue: (l) => l.totalDays, cell: (l) => <span className="font-semibold">{l.totalDays}</span> },
-    { key: "reason", header: "Reason", hideBelow: "lg", cell: (l) => <span className="line-clamp-1 max-w-[260px] text-ink-muted">{l.reason}</span> },
+    {
+      key: "days",
+      header: "Days",
+      align: "right",
+      sortValue: (l) => l.totalDays,
+      cell: (l) => <span className="font-semibold">{l.totalDays}</span>,
+    },
+    {
+      key: "reason",
+      header: "Reason",
+      hideBelow: "lg",
+      cell: (l) => <span className="line-clamp-1 max-w-[260px] text-ink-muted">{l.reason}</span>,
+    },
     {
       key: "status",
       header: "Status",
@@ -64,18 +96,36 @@ export default function MyLeavePage() {
         </div>
       ),
     },
-    { key: "applied", header: "Applied", hideBelow: "md", sortValue: (l) => l.appliedDate, cell: (l) => <span className="text-ink-muted">{formatDate(l.appliedDate)}</span> },
+    {
+      key: "applied",
+      header: "Applied",
+      hideBelow: "md",
+      sortValue: (l) => l.appliedDate,
+      cell: (l) => <span className="text-ink-muted">{formatDate(l.appliedDate)}</span>,
+    },
     {
       key: "actions",
       header: "",
       align: "right",
       cell: (l) =>
-        leaveState(l) === "pending" ? (
+        leaveState(l) === "pending" || (leaveState(l) === "approved" && workDate(l.fromDate) > today()) ? (
           <div className="flex justify-end gap-1">
-            <button onClick={() => setEditor({ entry: l })} className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink" aria-label="Edit request" title="Edit">
-              <Pencil className="h-4 w-4" />
-            </button>
-            <button onClick={() => cancel.show(l)} className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger-soft" aria-label="Cancel request" title="Cancel request">
+            {leaveState(l) === "pending" && !l.approvals?.some((a) => a.decision === "approved") && (
+              <button
+                onClick={() => setEditor({ entry: l })}
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-muted hover:text-ink"
+                aria-label="Edit request"
+                title="Edit"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              onClick={() => cancel.show(l)}
+              className="grid h-8 w-8 place-items-center rounded-lg text-danger hover:bg-danger-soft"
+              aria-label="Cancel request"
+              title="Cancel request"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -102,27 +152,43 @@ export default function MyLeavePage() {
           ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-32" />)
           : (balances.data?.balances ?? []).map((bal) => <BalanceCard key={bal.leaveTypeId} b={bal} />)}
         {!balances.isLoading && !balances.data?.balances.length && (
-          <Card className="p-5 text-sm text-ink-muted sm:col-span-2 xl:col-span-3">Leave types haven’t been set up yet. HR can add them in Leave Tracker → Leave policy.</Card>
+          <Card className="p-5 text-sm text-ink-muted sm:col-span-2 xl:col-span-3">
+            Leave types haven’t been set up yet. HR can add them in Leave Tracker → Leave policy.
+          </Card>
         )}
       </section>
-      {policy.data && <p className="-mt-3 text-xs text-ink-subtle">Weekly offs: {policy.data.calendar.summary}. Firm holidays and weekly offs inside a leave aren’t deducted.</p>}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented
-          aria-label="Status"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "pending", label: "Pending", count: mine.filter((l) => leaveState(l) === "pending").length || undefined },
-            { value: "approved", label: "Approved" },
-            { value: "rejected", label: "Rejected" },
-            { value: "cancelled", label: "Cancelled" },
-          ]}
-        />
-      </div>
+      {policy.data && (
+        <p className="-mt-3 text-xs text-ink-subtle">
+          Weekly offs: {policy.data.calendar.summary}. Firm holidays and weekly offs inside a leave aren’t deducted.
+        </p>
+      )}
 
       <DataTable
+        exportName="leave"
+        itemsLabel="requests"
+        filterTabs={[
+          { key: "all", label: "All", count: mine.length },
+          { key: "pending", label: "Pending", count: countState("pending") },
+          { key: "approved", label: "Approved", count: countState("approved") },
+          { key: "rejected", label: "Rejected", count: countState("rejected") },
+          { key: "cancelled", label: "Cancelled", count: countState("cancelled") },
+        ]}
+        activeFilterTab={filter}
+        onFilterTabChange={(k) => setFilter(k as "all" | LeaveState)}
+        searchable
+        searchPlaceholder="Search request, type, reason…"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          types.length > 1 ? (
+            <Select aria-label="Leave type" value={type} onChange={(e) => setType(e.target.value)} className="w-40">
+              <option value="">All types</option>
+              {types.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </Select>
+          ) : undefined
+        }
         rows={rows}
         columns={columns}
         rowKey={(l) => l.id}
@@ -132,9 +198,9 @@ export default function MyLeavePage() {
         initialSort={{ key: "dates", dir: "desc" }}
         empty={{
           icon: CalendarCheck2,
-          title: filter === "all" ? "No leave requests yet" : "No requests with this status",
+          title: !narrowed ? "No leave requests yet" : term || type ? "No requests match these filters" : "No requests with this status",
           action:
-            filter === "all" ? (
+            !narrowed ? (
               <Button size="sm" onClick={() => setEditor({})}>
                 <Plus className="h-4 w-4" /> Apply for leave
               </Button>
@@ -155,7 +221,9 @@ export default function MyLeavePage() {
                   {signed(r)}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-ink">{r.leaveType.name} · {KIND[r.kind] ?? r.kind}</span>
+                  <span className="block text-ink">
+                    {r.leaveType.name} · {KIND[r.kind] ?? r.kind}
+                  </span>
                   {r.note && <span className="block truncate text-xs text-ink-subtle">{r.note}</span>}
                 </span>
                 <span className="text-xs text-ink-muted">{formatDate(r.createdAt)}</span>
@@ -172,7 +240,11 @@ export default function MyLeavePage() {
         title="Cancel this leave request?"
         confirmLabel="Cancel request"
         busy={m.cancel.isPending}
-        description={cancel.value ? `${cancel.value.leaveId} · ${cancel.value.totalDays} day(s) of ${cancel.value.type}. Your manager will no longer see it.` : undefined}
+        description={
+          cancel.value
+            ? `${cancel.value.leaveId} · ${cancel.value.totalDays} day(s) of ${cancel.value.type}. ${leaveState(cancel.value) === "approved" ? "The days go back to your balance and your approvers are told." : "Your manager will no longer see it."}`
+            : undefined
+        }
         onConfirm={() =>
           cancel.value &&
           m.cancel.mutate(cancel.value.id, {
@@ -188,7 +260,13 @@ export default function MyLeavePage() {
 /** Lapses and encashments are stored as positive days but reduce the balance. */
 const signed = (r: { kind: string; days: number }) => (r.kind === "lapse" || r.kind === "encash" ? -r.days : r.days);
 
-const KIND: Record<string, string> = { opening: "Opening balance", adjustment: "Adjustment", encash: "Encashed", carry_forward: "Carried forward", lapse: "Lapsed" };
+const KIND: Record<string, string> = {
+  opening: "Opening balance",
+  adjustment: "Adjustment",
+  encash: "Encashed",
+  carry_forward: "Carried forward",
+  lapse: "Lapsed",
+};
 
 function BalanceCard({ b }: { b: TypeBalance }) {
   const unpaid = !b.paid;
@@ -207,9 +285,13 @@ function BalanceCard({ b }: { b: TypeBalance }) {
       </div>
       <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
         {unpaid ? (
-          <div className="col-span-3 text-ink-muted">No balance needed — taken as loss of pay. Used this year: <span className="font-semibold text-ink">{b.used}</span></div>
+          <div className="col-span-3 text-ink-muted">
+            No balance needed — taken as loss of pay. Used this year: <span className="font-semibold text-ink">{b.used}</span>
+          </div>
         ) : !hasEntitlement ? (
-          <div className="col-span-3 text-ink-muted">Credited when earned (e.g. working on a weekly off). Used: <span className="font-semibold text-ink">{b.used}</span></div>
+          <div className="col-span-3 text-ink-muted">
+            Credited when earned (e.g. working on a weekly off). Used: <span className="font-semibold text-ink">{b.used}</span>
+          </div>
         ) : (
           <>
             <Stat label="Accrued" value={b.accrued + b.opening + b.adjusted} hint={b.entitled != null ? `of ${b.entitled} this year` : undefined} />

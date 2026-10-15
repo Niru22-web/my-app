@@ -13,6 +13,10 @@ import {
   Settings,
   BarChart3,
   Palmtree,
+  Megaphone,
+  Sparkles,
+  Bug,
+  MessageSquareHeart,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleInfo } from "./roles";
@@ -46,6 +50,8 @@ export function buildNav(r: RoleInfo, can: Can): NavSection[] {
         { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         ...(can("inbox") ? [{ label: "Inbox", href: "/inbox", icon: Mail, badge: "unread" as const }] : []),
         ...(can("calendar") ? [{ label: "Calendar", href: "/calendar", icon: CalendarDays }] : []),
+        { label: "Announcements", href: "/announcements", icon: Megaphone },
+        { label: "What’s new", href: "/releases", icon: Sparkles },
       ],
     },
     {
@@ -90,6 +96,14 @@ export function buildNav(r: RoleInfo, can: Can): NavSection[] {
     },
   ];
 
+  sections.push({
+    title: "Portal",
+    items: [
+      { label: "Bug Tracker", href: "/bugs", icon: Bug },
+      { label: "Feedback", href: "/feedback", icon: MessageSquareHeart },
+    ],
+  });
+
   if (r.isAdmin || r.isIT || r.isHR || can("admin_panel") || can("employees") || can("email_templates")) {
     sections.push({
       title: "Administration",
@@ -126,6 +140,10 @@ const TITLES: [string, string][] = [
   ["/inbox", "Inbox"],
   ["/calendar", "Calendar"],
   ["/compliance", "Compliance"],
+  ["/announcements", "Announcements"],
+  ["/releases", "What’s new"],
+  ["/bugs", "Bug Tracker"],
+  ["/feedback", "Feedback"],
 ];
 
 export function pageTitle(pathname: string): string {

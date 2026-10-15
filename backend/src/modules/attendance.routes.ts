@@ -3,9 +3,19 @@ import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
 import { authenticate, normRole, requireRoles, isTeamMemberOrSelf } from "../plugins/auth";
 import { isScope, scopeCodes } from "../utils/scope";
+import { statusContext } from "../utils/attendance-policy";
+
+const pickStatus = ({ computedStatus, lateMinutes, workedHours }: { computedStatus: unknown; lateMinutes: number; workedHours: number }) => ({ computedStatus, lateMinutes, workedHours });
 
 function utcDayDate(d = new Date()): Date {
   return new Date(`${d.toISOString().slice(0, 10)}T00:00:00.000Z`);
+}
+
+/** IT may correct attendance only with the Attendance edit grant (Admin/Owner/HR always can). */
+async function itWithoutEdit(u: { id: string; role: string }) {
+  if (normRole(u.role) !== "it") return false;
+  const perm = await prisma.userPermission.findUnique({ where: { userId: u.id }, select: { attendanceEdit: true } });
+  return !perm?.attendanceEdit;
 }
 
 export async function attendanceRoutes(app: FastifyInstance) {
@@ -16,7 +26,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const day = utcDayDate(now);
     const weekAgo = new Date(day.getTime() - 6 * 86_400_000);
 
-    const [record, recentRows] = await Promise.all([
+    const [record, recentRows, me] = await Promise.all([
       prisma.attendance.findFirst({
         where: {
           employee_id: u.employeeId,
@@ -30,7 +40,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
         include: { attendance_sessions: { orderBy: { check_in_time: "asc" } } },
         orderBy: { date: "desc" },
       }),
+      prisma.employee.findUnique({ where: { id: u.id }, select: { id: true, shiftId: true } }),
     ]);
+    // Late / half day / missing check-out per the attendance policy (added fields; stored status unchanged)
+    const ctx = await statusContext(new Date(Math.min(weekAgo.getTime(), record?.date.getTime() ?? weekAgo.getTime())), day, [u.id]);
+    const todayStatus = ctx.classify(me, record?.date ?? day, record);
 
     const sessions = record?.attendance_sessions ?? [];
     const activeSession = [...sessions].reverse().find((s) => !s.check_out_time) ?? null;
@@ -51,8 +65,12 @@ export async function attendanceRoutes(app: FastifyInstance) {
               checkInLocation: record.check_in_location,
               checkOutLocation: record.check_out_location,
               location_name: record.location_name,
+              ...pickStatus(todayStatus),
             }
           : null,
+        computedStatus: todayStatus.computedStatus,
+        lateMinutes: todayStatus.lateMinutes,
+        shift: { start: todayStatus.shiftStart, end: todayStatus.shiftEnd },
         checkInLocation: record?.check_in_location ?? null,
         checkOutLocation: record?.check_out_location ?? null,
         activeSession: activeSession
@@ -86,6 +104,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
           checkInTime: r.check_in_time?.toISOString() ?? null,
           checkOutTime: r.check_out_time?.toISOString() ?? null,
           totalHours: Number(r.total_hours ?? 0),
+          ...pickStatus(ctx.classify(me, r.date, r)),
         })),
       },
     });
@@ -348,7 +367,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
       orderBy: [{ date: "desc" }, { check_in_time: "desc" }],
     });
 
-    return reply.send({ success: true, data: rows });
+    if (!rows.length) return reply.send({ success: true, data: rows });
+    // Late / half day / missing check-out per the attendance policy (added fields; stored status unchanged)
+    const times = rows.map((x) => x.date.getTime());
+    const ctx = await statusContext(new Date(Math.min(...times)), new Date(Math.max(...times)), [...new Set(rows.map((x) => x.Employee.id))]);
+    return reply.send({ success: true, data: rows.map((x) => ({ ...x, ...ctx.classify(x.Employee, x.date, x) })) });
   });
 
   // GET /api/attendance/monthly — role-scoped monthly breakdown (fixes A1, A3)
@@ -382,11 +405,27 @@ export async function attendanceRoutes(app: FastifyInstance) {
       }),
     ]);
 
+    // Late / half day / absent etc. per the attendance policy, for every day of the month.
+    const lastDay = new Date(`${end.toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const ctx = await statusContext(start, lastDay, emp ? [emp.id] : []);
+    const byDate = new Map(rows.map((row) => [row.date.toISOString().slice(0, 10), row]));
+    const days: { date: string; computedStatus: unknown; lateMinutes: number; workedHours: number; holidayName: string | null; hasRecord: boolean }[] = [];
+    for (let t = start.getTime(); t <= lastDay.getTime(); t += 86_400_000) {
+      const d = new Date(t);
+      const k = d.toISOString().slice(0, 10);
+      const c = ctx.classify(emp, d, byDate.get(k) ?? null);
+      days.push({ date: k, ...pickStatus(c), holidayName: c.holidayName, hasRecord: byDate.has(k) });
+    }
+    const shift = ctx.shiftOf(emp);
+
     return reply.send({
       success: true,
       data: {
         employee: emp,
         month: ym,
+        policy: { graceMinutes: ctx.policy.graceMinutes, fullDayMinHours: ctx.policy.fullDayMinHours, halfDayMinHours: ctx.policy.halfDayMinHours },
+        shift: { start: shift.start, end: shift.end },
+        days,
         dailyStats: rows.map((row) => ({
           date: row.date.toISOString().slice(0, 10),
           status: row.status,
@@ -394,6 +433,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
           sessionCount: row.attendance_sessions.length,
           checkInTime: row.check_in_time?.toISOString() ?? null,
           checkOutTime: row.check_out_time?.toISOString() ?? null,
+          ...pickStatus(ctx.classify(emp, row.date, row)),
         })),
       },
     });
@@ -404,6 +444,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     "/api/attendance/force-checkout",
     { preHandler: [requireRoles(["admin", "owner", "hr", "it"])] },
     async (req, reply) => {
+      if (await itWithoutEdit(req.user!)) return reply.code(403).send({ success: false, message: "Attendance corrections haven’t been granted to you." });
       const { attendanceId, employeeId, date, checkOutTime } = (req.body ?? {}) as {
         attendanceId?: string;
         employeeId?: string;
@@ -447,6 +488,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     "/api/attendance/update",
     { preHandler: [requireRoles(["admin", "owner", "hr", "it"])] },
     async (req, reply) => {
+      if (await itWithoutEdit(req.user!)) return reply.code(403).send({ success: false, message: "Attendance corrections haven’t been granted to you." });
       const { employeeId, date, checkInTime, checkOutTime } = (req.body ?? {}) as {
         employeeId?: string;
         date?: string;

@@ -35,6 +35,7 @@ export default function PayablesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "PENDING" | "PAID">("all");
   const [entityFilter, setEntityFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [claimSearch, setClaimSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<PayrollEntry | null>(null);
   const [payingClaim, setPayingClaim] = useState<Claim | null>(null);
@@ -65,6 +66,13 @@ export default function PayablesPage() {
       return true;
     });
   }, [payrolls.data, statusFilter, entityFilter, search]);
+  const payrollAll = (payrolls.data ?? []).filter((p) => !entityFilter || p.entityId === entityFilter);
+  const claimRows = useMemo(() => {
+    const s = claimSearch.trim().toLowerCase();
+    return (approvedClaims.data ?? []).filter(
+      (c) => !s || `${c.claimId} ${claimant(c)} ${c.description ?? ""} ${c.category ?? ""} ${c.client?.name ?? ""} ${c.project?.name ?? ""}`.toLowerCase().includes(s),
+    );
+  }, [approvedClaims.data, claimSearch]);
 
   const payrollColumns: Column<PayrollEntry>[] = [
     {
@@ -227,36 +235,9 @@ export default function PayablesPage() {
         title="Payroll & payables"
         description="Monthly salary runs and approved employee expense claims awaiting disbursement."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> Record payroll
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!payrollRows.length}
-              onClick={() =>
-                downloadCsv(
-                  `payroll-${today()}.csv`,
-                  ["Employee Code", "Employee", "Entity", "Month", "Year", "Basic (₹)", "Allowances (₹)", "Deductions (₹)", "Net Payable (₹)", "Status", "Paid Date"],
-                  payrollRows.map((p) => [
-                    p.employee?.employeeId ?? "",
-                    fullName(p.employee),
-                    p.entity?.name ?? "",
-                    p.month,
-                    p.year,
-                    p.basicSalary.toFixed(2),
-                    p.allowances.toFixed(2),
-                    p.deductions.toFixed(2),
-                    p.netPayable.toFixed(2),
-                    p.status,
-                    p.paymentDate ? workDate(p.paymentDate) : "",
-                  ]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </div>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> Record payroll
+          </Button>
         }
       />
 
@@ -267,46 +248,71 @@ export default function PayablesPage() {
         <StatCard label="Payroll disbursed" icon={CheckCircle2} tone="success" loading={payrolls.isLoading} value={formatCurrency(stats.payrollPaid)} />
       </section>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Payables view"
-          value={section}
-          onChange={setSection}
-          options={[
-            { value: "payroll", label: "Monthly payroll", count: (payrolls.data ?? []).length || undefined },
-            { value: "claims", label: "Approved claims to pay", count: stats.claimsCount || undefined },
-          ]}
-        />
-
-        {section === "payroll" && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Segmented
-              aria-label="Payroll status"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "all", label: "All" },
-                { value: "PENDING", label: "Pending" },
-                { value: "PAID", label: "Paid" },
-              ]}
-            />
-            {(entities.data?.length ?? 0) > 1 && (
-              <Select aria-label="Billing entity" value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)} className="sm:w-48">
-                <option value="">All entities</option>
-                {entities.data!.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-            <Input placeholder="Search employee…" value={search} onChange={(e) => setSearch(e.target.value)} className="sm:w-56" />
-          </div>
-        )}
-      </div>
+      <Segmented
+        aria-label="Payables view"
+        value={section}
+        onChange={setSection}
+        options={[
+          { value: "payroll", label: "Monthly payroll", count: (payrolls.data ?? []).length || undefined },
+          { value: "claims", label: "Approved claims to pay", count: stats.claimsCount || undefined },
+        ]}
+      />
 
       {section === "payroll" ? (
         <DataTable
+          exportName={false}
+          itemsLabel="payroll entries"
+          filterTabs={[
+            { key: "all", label: "All", count: payrollAll.length },
+            { key: "PENDING", label: "Pending", count: payrollAll.filter((p) => p.status === "PENDING").length },
+            { key: "PAID", label: "Paid", count: payrollAll.filter((p) => p.status === "PAID").length },
+          ]}
+          activeFilterTab={statusFilter}
+          onFilterTabChange={(k) => setStatusFilter(k as "all" | "PENDING" | "PAID")}
+          searchable
+          searchPlaceholder="Search employee…"
+          searchValue={search}
+          onSearchChange={setSearch}
+          toolbarActions={
+            <>
+              {(entities.data?.length ?? 0) > 1 && (
+                <Select aria-label="Billing entity" value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)} className="w-44">
+                  <option value="">All entities</option>
+                  {entities.data!.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!payrollRows.length}
+                onClick={() =>
+                  downloadCsv(
+                    `payroll-${today()}.csv`,
+                    ["Employee Code", "Employee", "Entity", "Month", "Year", "Basic (₹)", "Allowances (₹)", "Deductions (₹)", "Net Payable (₹)", "Status", "Paid Date"],
+                    payrollRows.map((p) => [
+                      p.employee?.employeeId ?? "",
+                      fullName(p.employee),
+                      p.entity?.name ?? "",
+                      p.month,
+                      p.year,
+                      p.basicSalary.toFixed(2),
+                      p.allowances.toFixed(2),
+                      p.deductions.toFixed(2),
+                      p.netPayable.toFixed(2),
+                      p.status,
+                      p.paymentDate ? workDate(p.paymentDate) : "",
+                    ]),
+                  )
+                }
+              >
+                <Download className="h-4 w-4" /> Export
+              </Button>
+            </>
+          }
           rows={payrollRows}
           columns={payrollColumns}
           rowKey={(p) => p.id}
@@ -317,13 +323,21 @@ export default function PayablesPage() {
         />
       ) : (
         <DataTable
-          rows={approvedClaims.data ?? []}
+          exportName="claims-to-pay"
+          itemsLabel="claims"
+          searchable
+          searchPlaceholder="Search claim, employee, description…"
+          searchValue={claimSearch}
+          onSearchChange={setClaimSearch}
+          rows={claimRows}
           columns={claimColumns}
           rowKey={(c) => c.id}
           loading={approvedClaims.isLoading}
+          error={approvedClaims.isError}
+          onRetry={() => approvedClaims.refetch()}
           initialSort={{ key: "claim", dir: "desc" }}
           pageSize={25}
-          empty={{ icon: Receipt, title: "No approved claims waiting for payment" }}
+          empty={{ icon: Receipt, title: claimSearch.trim() ? "No claims match this search" : "No approved claims waiting for payment" }}
         />
       )}
 

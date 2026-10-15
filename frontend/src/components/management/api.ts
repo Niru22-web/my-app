@@ -20,6 +20,7 @@ export interface Client {
   gstin: string | null;
   pan: string | null;
   status: string;
+  partnerId?: string | null;
   _count?: { projects: number };
   loggedHours?: number;
 }

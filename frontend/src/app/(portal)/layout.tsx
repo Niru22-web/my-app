@@ -9,6 +9,9 @@ import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { Splash } from "@/components/shell/splash";
 import { WorkCalendarSync } from "@/components/leave/policy-api";
+import { AnnouncementBanner } from "@/components/announcements/banner";
+import { WhatsNewPrompt } from "@/components/releases/whats-new";
+import { FeedbackButton } from "@/components/feedback/feedback-button";
 
 const COLLAPSE_KEY = "asa-sidebar-collapsed";
 
@@ -30,10 +33,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-bg">
       <WorkCalendarSync />
+      <WhatsNewPrompt />
+      <FeedbackButton />
       <Sidebar collapsed={collapsed} mobileOpen={mobileOpen} onCloseMobile={() => setDrawerPath(null)} />
       <div className={cn("flex min-h-screen flex-col transition-[padding] duration-200", collapsed ? "lg:pl-[84px]" : "lg:pl-[264px]")}>
         <Topbar onToggleSidebar={() => writeLocal(COLLAPSE_KEY, collapsed ? "0" : "1")} onOpenMobile={() => setDrawerPath(pathname)} />
-        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <AnnouncementBanner />
+          {children}
+        </main>
       </div>
     </div>
   );

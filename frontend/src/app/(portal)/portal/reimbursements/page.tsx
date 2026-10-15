@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PolicyCard } from "@/components/claims/policy-card";
 import { Banknote, Clock3, Download, Pencil, Plus, ReceiptText, Trash2, Wallet } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { fmtDay, today, workDate } from "@/lib/dates";
@@ -11,7 +12,6 @@ import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog, useDialogState } from "@/components/ui/confirm";
-import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
 import { stageOf, STAGE_LABEL, STAGE_TONE, useClaimMutations, useMyClaims, type Claim } from "@/components/claims/api";
 import { ClaimDialog } from "@/components/claims/claim-dialog";
@@ -25,6 +25,7 @@ export default function MyClaimsPage() {
   const q = useMyClaims();
   const m = useClaimMutations();
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
   const [editor, setEditor] = useState<{ claim?: Claim | null } | null>(null);
   const [detail, setDetail] = useState<Claim | null>(null);
   const del = useDialogState<Claim>();
@@ -38,7 +39,11 @@ export default function MyClaimsPage() {
     if (f === "closed") return s === "rejected" || s === "returned";
     return true;
   };
-  const rows = all.filter((c) => inStage(c, filter));
+  const term = search.trim().toLowerCase();
+  const rows = all.filter(
+    (c) => inStage(c, filter) && (!term || `${c.claimId} ${c.category} ${c.client?.name ?? ""} ${c.project?.name ?? ""} ${c.description ?? ""}`.toLowerCase().includes(term)),
+  );
+  const count = (f: Filter) => all.filter((c) => inStage(c, f)).length;
   const sum = (f: Filter) => all.filter((c) => inStage(c, f)).reduce((a, c) => a + c.amount, 0);
 
   const columns: Column<Claim>[] = [
@@ -89,19 +94,6 @@ export default function MyClaimsPage() {
         actions={
           <>
             <ClaimTabs />
-            <Button
-              variant="secondary"
-              disabled={!rows.length}
-              onClick={() =>
-                downloadCsv(
-                  `my-claims-${today()}.csv`,
-                  ["Claim ID", "Date", "Expense head", "Client", "Project", "Job", "Amount (INR)", "Status", "Description"],
-                  rows.map((c) => [c.claimId, workDate(c.date), c.category, c.client?.name, c.project?.name, c.job?.name, c.amount, STAGE_LABEL[stageOf(c)], c.description]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
             <Button onClick={() => setEditor({})}>
               <Plus className="h-4 w-4" /> New claim
             </Button>
@@ -116,26 +108,46 @@ export default function MyClaimsPage() {
         <StatCard label="Total claimed" icon={ReceiptText} loading={q.isLoading} value={formatCurrency(sum("all"))} hint={plural(all.length, "claim")} />
       </section>
 
+      <PolicyCard canEdit={false} />
+
       {all.some((c) => stageOf(c) === "returned") && (
         <p className="rounded-xl border border-danger/20 bg-danger-soft px-4 py-3 text-[13px] text-ink">
           <span className="font-semibold text-danger">You have claims returned for changes.</span> Edit the returned claim to make the corrections and resubmit it for approval.
         </p>
       )}
 
-      <Segmented
-        aria-label="Status"
-        value={filter}
-        onChange={setFilter}
-        options={[
-          { value: "all", label: "All" },
-          { value: "open", label: "In approval" },
-          { value: "payment", label: "Awaiting payment" },
-          { value: "paid", label: "Paid" },
-          { value: "closed", label: "Rejected / returned" },
-        ]}
-      />
-
       <DataTable
+        exportName={false}
+        itemsLabel="claims"
+        filterTabs={[
+          { key: "all", label: "All", count: all.length },
+          { key: "open", label: "In approval", count: count("open") },
+          { key: "payment", label: "Awaiting payment", count: count("payment") },
+          { key: "paid", label: "Paid", count: count("paid") },
+          { key: "closed", label: "Rejected / returned", count: count("closed") },
+        ]}
+        activeFilterTab={filter}
+        onFilterTabChange={(k) => setFilter(k as Filter)}
+        searchable
+        searchPlaceholder="Claim, expense head, client, project…"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!rows.length}
+            onClick={() =>
+              downloadCsv(
+                `my-claims-${today()}.csv`,
+                ["Claim ID", "Date", "Expense head", "Client", "Project", "Job", "Amount (INR)", "Status", "Description"],
+                rows.map((c) => [c.claimId, workDate(c.date), c.category, c.client?.name, c.project?.name, c.job?.name, c.amount, STAGE_LABEL[stageOf(c)], c.description]),
+              )
+            }
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        }
         rows={rows}
         columns={columns}
         rowKey={(c) => c.id}
@@ -146,9 +158,9 @@ export default function MyClaimsPage() {
         initialSort={{ key: "date", dir: "desc" }}
         empty={{
           icon: ReceiptText,
-          title: filter === "all" ? "No claims yet" : "No claims in this status",
+          title: term ? "No claims match this search" : filter === "all" ? "No claims yet" : "No claims in this status",
           action:
-            filter === "all" ? (
+            filter === "all" && !term ? (
               <Button size="sm" onClick={() => setEditor({})}>
                 <Plus className="h-4 w-4" /> New claim
               </Button>

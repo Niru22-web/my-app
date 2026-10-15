@@ -21,23 +21,17 @@ import { FormRow, Input, Select, Textarea } from "@/components/ui/inputs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
-import {
-  canManageBalances,
-  leaveState,
-  personName,
-  stageLabel,
-  useLeaveMutations,
-  useLeaves,
-  useNegativeBalances,
-  type Leave,
-} from "@/components/leave/api";
+import { canManageBalances, leaveState, personName, stageLabel, useLeaveMutations, useLeaves, useNegativeBalances, type Leave } from "@/components/leave/api";
 import { LeaveBadge } from "@/components/leave/leave-badge";
+import { LeaveCalendar } from "@/components/leave/leave-calendar";
 import { useLeavePolicy, usePolicyMutations, useScopeBalances, type ScopeBalances } from "@/components/leave/policy-api";
 
 function period(l: Leave) {
   const f = workDate(l.fromDate);
   const t = workDate(l.toDate);
-  return f === t ? fmtDay(f, { weekday: "short", day: "numeric", month: "short" }) : `${fmtDay(f, { day: "numeric", month: "short" })} – ${fmtDay(t, { day: "numeric", month: "short", year: "numeric" })}`;
+  return f === t
+    ? fmtDay(f, { weekday: "short", day: "numeric", month: "short" })
+    : `${fmtDay(f, { day: "numeric", month: "short" })} – ${fmtDay(t, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
 /** Team and Organization leave — the same screen, scoped by the API. */
@@ -54,7 +48,14 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
   const now = today();
 
   const [search, setSearch] = useState("");
-  const [decision, setDecision] = useState<{ leave: Leave; status: "approved" | "rejected" } | null>(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState("all");
+  const [historyType, setHistoryType] = useState("");
+  const [decision, setDecision] = useState<{
+    leave: Leave;
+    status: "approved" | "rejected";
+  } | null>(null);
+  const [comment, setComment] = useState("");
   const [adjustOpen, setAdjustOpen] = useState(false);
 
   useEffect(() => {
@@ -67,7 +68,8 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
   const m = useLeaveMutations();
 
   const team = useMemo(() => (leaves.data ?? []).filter((l) => l.employeeId !== user?.id), [leaves.data, user?.id]);
-  const match = (l: Leave) => !search.trim() || `${personName(l.employee)} ${l.leaveId} ${l.type} ${l.reason}`.toLowerCase().includes(search.trim().toLowerCase());
+  const match = (l: Leave) =>
+    !search.trim() || `${personName(l.employee)} ${l.leaveId} ${l.type} ${l.reason}`.toLowerCase().includes(search.trim().toLowerCase());
   // Requests this person can act on come first; others (e.g. waiting for another approver) are listed for visibility.
   const pending = team.filter((l) => leaveState(l) === "pending" && match(l)).sort((a, b) => Number(!!b.canAct) - Number(!!a.canAct));
   const actionable = pending.filter((l) => l.canAct).length;
@@ -76,7 +78,16 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
   const awayToday = approved.filter((l) => overlaps(l, now, now));
   const awayWeek = approved.filter((l) => !overlaps(l, now, now) && overlaps(l, addDays(now, 1), addDays(now, 7)));
   const monthDays = approved.filter((l) => overlaps(l, startOfMonth(now), now)).reduce((a, l) => a + l.totalDays, 0);
-  const history = team.filter((l) => leaveState(l) !== "pending" && match(l));
+  const processed = team.filter((l) => leaveState(l) !== "pending");
+  const historyTypes = [...new Set(processed.map((l) => l.type))].sort();
+  const historyTerm = historySearch.trim().toLowerCase();
+  const history = processed.filter(
+    (l) =>
+      (historyStatus === "all" || leaveState(l) === historyStatus) &&
+      (!historyType || l.type === historyType) &&
+      (!historyTerm || `${personName(l.employee)} ${l.leaveId} ${l.type} ${l.reason}`.toLowerCase().includes(historyTerm)),
+  );
+  const historyCount = (s: string) => processed.filter((l) => leaveState(l) === s).length;
 
   if (!allowed) return null;
 
@@ -92,10 +103,32 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         </div>
       ),
     },
-    { key: "type", header: "Type", hideBelow: "md", sortValue: (l) => l.type, cell: (l) => l.type },
-    { key: "period", header: "Period", sortValue: (l) => workDate(l.fromDate), cell: (l) => <span className="whitespace-nowrap">{period(l)}</span> },
-    { key: "days", header: "Days", align: "right", sortValue: (l) => l.totalDays, cell: (l) => l.totalDays },
-    { key: "status", header: "Status", sortValue: (l) => l.status, cell: (l) => <LeaveBadge leave={l} /> },
+    {
+      key: "type",
+      header: "Type",
+      hideBelow: "md",
+      sortValue: (l) => l.type,
+      cell: (l) => l.type,
+    },
+    {
+      key: "period",
+      header: "Period",
+      sortValue: (l) => workDate(l.fromDate),
+      cell: (l) => <span className="whitespace-nowrap">{period(l)}</span>,
+    },
+    {
+      key: "days",
+      header: "Days",
+      align: "right",
+      sortValue: (l) => l.totalDays,
+      cell: (l) => l.totalDays,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortValue: (l) => l.status,
+      cell: (l) => <LeaveBadge leave={l} />,
+    },
     {
       key: "by",
       header: "Processed",
@@ -133,8 +166,21 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
       />
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Summary">
-        <StatCard label="On leave today" icon={Plane} tone="brand" loading={leaves.isLoading} value={new Set(awayToday.map((l) => l.employeeId)).size} hint={fmtDay(now, { day: "numeric", month: "short" })} />
-        <StatCard label="Away in the next 7 days" icon={CalendarClock} loading={leaves.isLoading} value={new Set(awayWeek.map((l) => l.employeeId)).size} hint="people" />
+        <StatCard
+          label="On leave today"
+          icon={Plane}
+          tone="brand"
+          loading={leaves.isLoading}
+          value={new Set(awayToday.map((l) => l.employeeId)).size}
+          hint={fmtDay(now, { day: "numeric", month: "short" })}
+        />
+        <StatCard
+          label="Away in the next 7 days"
+          icon={CalendarClock}
+          loading={leaves.isLoading}
+          value={new Set(awayWeek.map((l) => l.employeeId)).size}
+          hint="people"
+        />
         <StatCard
           label="Awaiting decision"
           icon={Clock3}
@@ -145,6 +191,8 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         />
         <StatCard label="Approved this month" icon={CalendarX2} loading={leaves.isLoading} value={monthDays} hint="days, requests overlapping this month" />
       </section>
+
+      <LeaveCalendar scope={scope} excludeId={user?.id} />
 
       {(awayToday.length > 0 || awayWeek.length > 0) && (
         <Card>
@@ -159,20 +207,33 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
                     {l.type} · {period(l)}
                   </span>
                 </span>
-                <span className={when === "Today" ? "rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand" : "text-xs text-ink-muted"}>{when}</span>
+                <span className={when === "Today" ? "rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand" : "text-xs text-ink-muted"}>
+                  {when}
+                </span>
               </li>
             ))}
           </ul>
         </Card>
       )}
 
-      <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-        <Input placeholder="Search name, request ID, type or reason" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-      </div>
-
       <Card>
-        <CardHeader icon={Inbox} title="Pending requests" description={leaves.isLoading ? undefined : `${actionable} waiting for you · ${pending.length} pending in total`} />
+        <CardHeader
+          icon={Inbox}
+          title="Pending requests"
+          description={leaves.isLoading ? undefined : `${actionable} waiting for you · ${pending.length} pending in total`}
+          actions={
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
+              <Input
+                placeholder="Search name, request ID, type or reason"
+                aria-label="Search pending requests"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 pl-9"
+              />
+            </div>
+          }
+        />
         {leaves.isLoading ? (
           <div className="grid gap-3 p-5 md:grid-cols-2">
             <Skeleton className="h-36" />
@@ -201,14 +262,19 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
                 {stageLabel(l) && <p className="mt-2 text-xs font-medium text-brand">{stageLabel(l)}</p>}
                 {!l.canAct && <p className="mt-2 text-xs text-ink-subtle">Waiting for another approver.</p>}
                 {l.canAct && (
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="secondary" className="flex-1 justify-center text-danger" onClick={() => setDecision({ leave: l, status: "rejected" })}>
-                    <X className="h-4 w-4" /> Reject
-                  </Button>
-                  <Button size="sm" className="flex-1 justify-center" onClick={() => setDecision({ leave: l, status: "approved" })}>
-                    <Check className="h-4 w-4" /> {l.canAct === "level1" ? "Approve step 1" : "Approve"}
-                  </Button>
-                </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="flex-1 justify-center text-danger"
+                      onClick={() => setDecision({ leave: l, status: "rejected" })}
+                    >
+                      <X className="h-4 w-4" /> Reject
+                    </Button>
+                    <Button size="sm" className="flex-1 justify-center" onClick={() => setDecision({ leave: l, status: "approved" })}>
+                      <Check className="h-4 w-4" /> {l.canAct === "level1" ? "Approve step 1" : "Approve"}
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
@@ -239,11 +305,35 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         </Card>
       )}
 
-      <BalancesTable data={balances.data} loading={balances.isLoading} error={balances.isError} onRetry={() => balances.refetch()} search={search} />
+      <BalancesTable data={balances.data} loading={balances.isLoading} error={balances.isError} onRetry={() => balances.refetch()} />
 
       <div>
         <h3 className="mb-3 font-display text-base font-bold text-ink">History</h3>
         <DataTable
+          exportName="leave"
+          itemsLabel="requests"
+          filterTabs={[
+            { key: "all", label: "All", count: processed.length },
+            { key: "approved", label: "Approved", count: historyCount("approved") },
+            { key: "rejected", label: "Rejected", count: historyCount("rejected") },
+            { key: "cancelled", label: "Cancelled", count: historyCount("cancelled") },
+          ]}
+          activeFilterTab={historyStatus}
+          onFilterTabChange={setHistoryStatus}
+          searchable
+          searchPlaceholder="Search name, request ID, type or reason"
+          searchValue={historySearch}
+          onSearchChange={setHistorySearch}
+          toolbarActions={
+            historyTypes.length > 1 ? (
+              <Select aria-label="Leave type" value={historyType} onChange={(e) => setHistoryType(e.target.value)} className="w-40">
+                <option value="">All types</option>
+                {historyTypes.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </Select>
+            ) : undefined
+          }
           rows={history}
           columns={columns}
           rowKey={(l) => l.id}
@@ -251,13 +341,13 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
           error={leaves.isError}
           onRetry={() => leaves.refetch()}
           initialSort={{ key: "period", dir: "desc" }}
-          empty={{ title: "No processed requests yet" }}
+          empty={{ title: processed.length ? "No requests match these filters" : "No processed requests yet" }}
         />
       </div>
 
       <ConfirmDialog
         open={!!decision}
-        onClose={() => setDecision(null)}
+        onClose={() => (setDecision(null), setComment(""))}
         tone={decision?.status === "rejected" ? "danger" : "primary"}
         title={decision?.status === "approved" ? (decision.leave.canAct === "level1" ? "Approve step 1?" : "Approve this leave?") : "Reject this leave?"}
         confirmLabel={decision?.status === "approved" ? "Approve" : "Reject"}
@@ -273,23 +363,33 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
               }`
             : undefined
         }
-        onConfirm={() =>
-          decision &&
+        onConfirm={() => {
+          if (!decision) return;
+          if (decision.status === "rejected" && !comment.trim()) return toast.error("Add a reason", "Tell them why the leave is rejected.");
           m.decide.mutate(
-            { id: decision.leave.id, status: decision.status },
+            {
+              id: decision.leave.id,
+              status: decision.status,
+              comment: comment.trim() || undefined,
+            },
             {
               onSuccess: () => (
                 toast.success(
                   decision.status === "rejected" ? "Leave rejected" : decision.leave.canAct === "level1" ? "Approved — sent to the partner" : "Leave approved",
                   `${personName(decision.leave.employee)} has been notified.`,
                 ),
-                setDecision(null)
+                setDecision(null),
+                setComment("")
               ),
               onError: (e) => toast.error("Couldn’t update the request", e instanceof ApiError ? e.message : undefined),
             },
-          )
-        }
-      />
+          );
+        }}
+      >
+        <FormRow label={decision?.status === "rejected" ? "Reason (they will see this)" : "Comment (optional)"} htmlFor="leave-comment">
+          <Textarea id="leave-comment" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} maxLength={300} />
+        </FormRow>
+      </ConfirmDialog>
 
       {adjustOpen && <CreditDialog scope={scope} full={balancesAdmin} onClose={() => setAdjustOpen(false)} />}
     </div>
@@ -319,11 +419,18 @@ function CreditDialog({ scope, full, onClose }: { scope: "team" | "org"; full: b
     const n = Number(amount);
     if (!employeeId) return setError("Choose an employee.");
     if (!leaveTypeId) return setError("Choose a leave type.");
-    if (!amount || Number.isNaN(n) || n === 0 || Math.abs(n) > 366 || Math.round(n * 4) !== n * 4) return setError("Enter a non-zero number of days, e.g. 1, 0.5 or -1.");
+    if (!amount || Number.isNaN(n) || n === 0 || Math.abs(n) > 366 || Math.round(n * 4) !== n * 4)
+      return setError("Enter a non-zero number of days, e.g. 1, 0.5 or -1.");
     if (!full && n < 0) return setError("Team leads can only add days.");
     if (note.trim().length < 3) return setError("Add a note for the record, e.g. the date worked.");
     credit.mutate(
-      { employeeId, leaveTypeId, days: n, note: note.trim(), kind: full ? kind : "adjustment" },
+      {
+        employeeId,
+        leaveTypeId,
+        days: n,
+        note: note.trim(),
+        kind: full ? kind : "adjustment",
+      },
       {
         onSuccess: () => (toast.success("Balance updated", `${n > 0 ? "+" : ""}${n} day(s) · ${type?.name ?? ""}`), onClose()),
         onError: (e) => setError(e instanceof ApiError ? e.message : "Couldn’t update the balance."),
@@ -371,7 +478,18 @@ function CreditDialog({ scope, full, onClose }: { scope: "team" | "org"; full: b
           </Select>
         </FormRow>
         {full && (
-          <FormRow label="What is this?" htmlFor="cr-kind" required hint={kind === "opening" ? "Sets the balance brought in (e.g. from Zoho) — replaces any earlier opening balance." : kind === "encash" ? "Days paid out instead of taken." : "Adds or removes days, e.g. comp-off or a correction."}>
+          <FormRow
+            label="What is this?"
+            htmlFor="cr-kind"
+            required
+            hint={
+              kind === "opening"
+                ? "Sets the balance brought in (e.g. from Zoho) — replaces any earlier opening balance."
+                : kind === "encash"
+                  ? "Days paid out instead of taken."
+                  : "Adds or removes days, e.g. comp-off or a correction."
+            }
+          >
             <Select id="cr-kind" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
               <option value="adjustment">Credit / adjustment</option>
               <option value="opening">Opening balance</option>
@@ -383,9 +501,20 @@ function CreditDialog({ scope, full, onClose }: { scope: "team" | "org"; full: b
           <Input id="cr-amt" inputMode="decimal" placeholder="e.g. 1 or 0.5" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </FormRow>
         <FormRow label="Note" htmlFor="cr-note" required>
-          <Textarea id="cr-note" rows={2} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} placeholder={full ? "Reason for the record" : "e.g. Worked on Saturday 10 Oct for audit closing"} />
+          <Textarea
+            id="cr-note"
+            rows={2}
+            maxLength={300}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={full ? "Reason for the record" : "e.g. Worked on Saturday 10 Oct for audit closing"}
+          />
         </FormRow>
-        {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger">
+            {error}
+          </p>
+        )}
       </div>
     </Dialog>
   );
@@ -393,7 +522,18 @@ function CreditDialog({ scope, full, onClose }: { scope: "team" | "org"; full: b
 
 type BalanceRow = ScopeBalances["people"][number];
 
-function BalancesTable({ data, loading, error, onRetry, search }: { data?: ScopeBalances; loading: boolean; error: boolean; onRetry: () => void; search: string }) {
+function BalancesTable({
+  data,
+  loading,
+  error,
+  onRetry,
+}: {
+  data?: ScopeBalances;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  const [search, setSearch] = useState("");
   const q = search.trim().toLowerCase();
   const types = (data?.types ?? []).filter((t) => t.paid);
   const list = (data?.people ?? []).filter((p) => !q || `${p.firstName} ${p.lastName} ${p.employeeId}`.toLowerCase().includes(q));
@@ -429,7 +569,14 @@ function BalancesTable({ data, loading, error, onRetry, search }: { data?: Scope
           return <span className={b.available < 0 ? "font-semibold text-danger" : "font-semibold text-ink"}>{b.available}</span>;
         },
       },
-      { key: `${t.code}-used`, header: `${t.code} used`, align: "right", hideBelow: "md", sortValue: (p) => of(p, t.id)?.used ?? -1, cell: (p) => of(p, t.id)?.used ?? "—" },
+      {
+        key: `${t.code}-used`,
+        header: `${t.code} used`,
+        align: "right",
+        hideBelow: "md",
+        sortValue: (p) => of(p, t.id)?.used ?? -1,
+        cell: (p) => of(p, t.id)?.used ?? "—",
+      },
     ]),
   ];
   return (
@@ -440,7 +587,25 @@ function BalancesTable({ data, loading, error, onRetry, search }: { data?: Scope
         </h3>
         <p className="text-xs text-ink-muted">Available = opening + accrued to date + credits − approved leave.</p>
       </div>
-      <DataTable rows={list} columns={columns} rowKey={(p) => p.id} loading={loading} error={error} onRetry={onRetry} pageSize={10} initialSort={{ key: "emp", dir: "asc" }} empty={{ title: types.length ? "Nobody in this view" : "No paid leave types set up yet" }} />
+      <DataTable
+        exportName="leave-balances"
+        itemsLabel="people"
+        searchable
+        searchPlaceholder="Search name or employee ID"
+        searchValue={search}
+        onSearchChange={setSearch}
+        rows={list}
+        columns={columns}
+        rowKey={(p) => p.id}
+        loading={loading}
+        error={error}
+        onRetry={onRetry}
+        pageSize={10}
+        initialSort={{ key: "emp", dir: "asc" }}
+        empty={{
+          title: !types.length ? "No paid leave types set up yet" : q ? "Nobody matches this search" : "Nobody in this view",
+        }}
+      />
     </div>
   );
 }

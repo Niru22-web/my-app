@@ -1776,3 +1776,400 @@ model AuthState {
 
   @@map("auth_state")
 }
+
+// ── 15 Oct 2026 additive tables (accounts, timesheet lock, attendance, expenses, exit, HR documents) ──
+// Ids of existing records are stored as plain text (no foreign keys), so no existing table is altered.
+
+/// Gap-free document numbers: one counter per entity, document type and financial year.
+model DocSeries {
+  id         String   @id @default(uuid())
+  entityId   String
+  /// INVOICE | CREDIT_NOTE | RECEIPT
+  docType    String
+  /// Financial year, e.g. "2026-27"
+  fy         String
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([entityId, docType, fy])
+  @@map("doc_series")
+}
+
+/// Facts fixed when an invoice is issued (and cancelled).
+model InvoiceMeta {
+  invoiceId     String    @id
+  /// GST state code of the place of supply; "96" = outside India
+  placeOfSupply String?
+  /// INTRA | INTER | EXPORT | NO_GST
+  supplyType    String
+  draftNumber   String?
+  issuedAt      DateTime
+  issuedById    String
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  @@map("invoice_meta")
+}
+
+model CreditNote {
+  id          String   @id @default(uuid())
+  number      String   @unique
+  entityId    String
+  clientId    String
+  invoiceId   String
+  date        DateTime @db.Date
+  reason      String
+  subTotal    Float
+  cgst        Float    @default(0)
+  sgst        Float    @default(0)
+  igst        Float    @default(0)
+  taxAmount   Float    @default(0)
+  total       Float
+  /// ISSUED | CANCELLED
+  status      String   @default("ISSUED")
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@map("credit_notes")
+}
+
+/// TDS deducted by the client and reversal details for a receipt.
+model ReceiptExtra {
+  receiptId     String    @id
+  tdsAmount     Float     @default(0)
+  tdsSection    String?
+  reversedAt    DateTime?
+  reversedById  String?
+  reverseReason String?
+
+  @@map("receipt_extra")
+}
+
+/// What a reconciled bank line was matched to, so un-matching can undo exactly that.
+model BankMatch {
+  transactionId String   @id
+  /// RECEIPT | PAYROLL | CLAIM | OTHER
+  kind          String
+  receiptId     String?
+  payrollId     String?
+  claimId       String?
+  matchedById   String
+  matchedAt     DateTime @default(now())
+
+  @@map("bank_match")
+}
+
+/// Timesheets on or before lockedThrough can't be added, changed or deleted. Latest row wins; older rows are history.
+model TimesheetLock {
+  id            String   @id @default(uuid())
+  lockedThrough DateTime @db.Date
+  note          String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@map("timesheet_lock")
+}
+
+model AttendancePolicy {
+  id                     String   @id @default("default")
+  /// Minutes after shift start before a check-in counts as late
+  graceMinutes           Int      @default(15)
+  /// Worked hours below this = half day; below halfDayMinHours = absent
+  fullDayMinHours        Float    @default(8)
+  halfDayMinHours        Float    @default(4)
+  /// Missed-punch requests allowed up to this many days after the date
+  regularizeWithinDays   Int      @default(7)
+  /// Requests per employee per month; 0 = no limit
+  regularizeMonthlyLimit Int      @default(0)
+  updatedAt              DateTime @updatedAt
+  updatedBy              String?
+
+  @@map("attendance_policy")
+}
+
+model AttendanceRegularization {
+  id          String    @id @default(uuid())
+  employeeId  String
+  date        DateTime  @db.Date
+  checkIn     DateTime?
+  checkOut    DateTime?
+  reason      String
+  /// PENDING | APPROVED | REJECTED | CANCELLED
+  status      String    @default("PENDING")
+  decidedById String?
+  decidedAt   DateTime?
+  remarks     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId, date])
+  @@index([status])
+  @@map("attendance_regularizations")
+}
+
+model ExpensePolicy {
+  id                   String   @id @default(uuid())
+  /// Matches Reimbursement.category (case-insensitive)
+  category             String   @unique
+  perClaimLimit        Float?
+  monthlyLimit         Float?
+  receiptRequiredAbove Float?
+  /// Claims must be filed within this many days of the expense
+  submitWithinDays     Int?
+  isActive             Boolean  @default(true)
+  notes                String?
+  updatedAt            DateTime @updatedAt
+  updatedBy            String?
+
+  @@map("expense_policies")
+}
+
+model EmployeeExit {
+  id              String     @id @default(uuid())
+  employeeId      String     @unique
+  /// Resignation | Termination | Retirement | Contract end | Absconding
+  exitType        String     @default("Resignation")
+  resignationDate DateTime   @db.Date
+  lastWorkingDay  DateTime   @db.Date
+  reason          String?
+  /// INITIATED | IN_PROGRESS | COMPLETED | CANCELLED
+  status          String     @default("INITIATED")
+  initiatedById   String
+  completedAt     DateTime?
+  completedById   String?
+  remarks         String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  tasks           ExitTask[]
+
+  @@map("employee_exits")
+}
+
+model ExitTask {
+  id        String       @id @default(uuid())
+  exitId    String
+  title     String
+  /// HR | IT | Accounts | Manager
+  team      String
+  done      Boolean      @default(false)
+  doneById  String?
+  doneAt    DateTime?
+  note      String?
+  sortOrder Int          @default(0)
+  exit      EmployeeExit @relation(fields: [exitId], references: [id], onDelete: Cascade)
+
+  @@index([exitId])
+  @@map("exit_tasks")
+}
+
+/// Documents HR needs from every employee (the onboarding checklist).
+model DocumentRequirement {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  /// Matches EmployeeDocument.category for auto-detection
+  category    String
+  description String?
+  mandatory   Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("document_requirements")
+}
+
+model EmployeeDocumentCheck {
+  id            String   @id @default(uuid())
+  employeeId    String
+  requirementId String
+  /// VERIFIED | WAIVED | REJECTED
+  status        String
+  documentId    String?
+  note          String?
+  checkedById   String
+  checkedAt     DateTime @default(now())
+
+  @@unique([employeeId, requirementId])
+  @@map("employee_document_checks")
+}
+
+// ── 16 Oct 2026 additive tables: bug tracker, announcements, wishes, releases, feedback ──
+// Ids of existing records are plain text (no foreign keys to existing tables).
+
+/// Portal bug / feature / enhancement reports (the product's own issue tracker).
+model BugReport {
+  id          String    @id @default(uuid())
+  /// BUG-YYYYMMDD-NNNNN
+  code        String    @unique
+  title       String
+  description String
+  /// Bug | Feature | Enhancement
+  type        String    @default("Bug")
+  /// Portal module it concerns (Timesheet, Leave, Accounts…)
+  module      String?
+  /// Low | Medium | High | Critical
+  priority    String    @default("Medium")
+  /// Open | In Progress | Pending Discussion | Ready to Test | Resolved | Reopened | Not a Bug
+  status      String    @default("Open")
+  /// UAT | Live
+  environment String    @default("UAT")
+  pageUrl     String?
+  externalRef String?
+  reporterId  String
+  assigneeId  String?
+  dueDate     DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([assigneeId])
+  @@map("bug_reports")
+}
+
+/// Comments and every change on a bug (status, assignee, priority…), oldest first.
+model BugEvent {
+  id        String   @id @default(uuid())
+  bugId     String
+  actorId   String
+  /// comment | created | status | assign | priority | edit
+  kind      String
+  body      String?
+  fromValue String?
+  toValue   String?
+  /// Attachments: [{ path, name, size, mimeType }]
+  files     Json?
+  createdAt DateTime @default(now())
+
+  @@index([bugId])
+  @@index([createdAt])
+  @@map("bug_events")
+}
+
+model Announcement {
+  id           String    @id @default(uuid())
+  title        String
+  message      String
+  /// Announcement | Festival | Birthday | Anniversary | Policy | Event
+  category     String    @default("Announcement")
+  /// { departments?: string[], designations?: string[], roles?: string[], locations?: string[], employeeIds?: string[] } — empty = everyone active
+  audience     Json?
+  pinned       Boolean   @default(false)
+  /// DRAFT | SCHEDULED | SENT | CANCELLED
+  status       String    @default("DRAFT")
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  expiresAt    DateTime?
+  recipientIds String[]  @default([])
+  templateId   String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@map("announcements")
+}
+
+model AnnouncementRead {
+  announcementId String
+  employeeId     String
+  readAt         DateTime @default(now())
+
+  @@id([announcementId, employeeId])
+  @@map("announcement_reads")
+}
+
+/// Wish templates: {name}, {firstName}, {years}, {festival}, {firm} are filled in when sent.
+model WishTemplate {
+  id          String    @id @default(uuid())
+  /// BIRTHDAY | ANNIVERSARY | FESTIVAL
+  kind        String
+  name        String
+  title       String
+  message     String
+  /// Festival date (festivals only)
+  festivalOn  DateTime? @db.Date
+  /// Send automatically on the day
+  autoSend    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  /// Card style key used by the screen (colour / emoji theme)
+  theme       String    @default("classic")
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([kind])
+  @@map("wish_templates")
+}
+
+/// One row per wish actually sent, so nothing is sent twice.
+model WishLog {
+  id             String   @id @default(uuid())
+  kind           String
+  templateId     String?
+  /// Person wished (birthday / anniversary); null for firm-wide festival wishes
+  employeeId     String?
+  /// IST date the wish was for (YYYY-MM-DD)
+  forDate        String
+  announcementId String?
+  sentById       String?
+  createdAt      DateTime @default(now())
+
+  @@unique([kind, employeeId, forDate])
+  @@map("wish_log")
+}
+
+model Release {
+  id          String    @id @default(uuid())
+  version     String    @unique
+  title       String
+  summary     String?
+  /// feature | fix | improvement | security
+  tags        String[]  @default([])
+  /// [{ module: string, items: [{ type: "New"|"Improved"|"Changed"|"Fixed", text: string }] }]
+  sections    Json
+  /// DRAFT | PUBLISHED
+  status      String    @default("DRAFT")
+  publishedAt DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("releases")
+}
+
+/// Last release each person has seen (for the "What's new" prompt).
+model ReleaseSeen {
+  employeeId String   @id
+  releaseId  String
+  seenAt     DateTime @default(now())
+
+  @@map("release_seen")
+}
+
+model Feedback {
+  id            String    @id @default(uuid())
+  employeeId    String
+  /// Idea | Problem | Praise | Question | Other
+  category      String    @default("Idea")
+  /// 1–5, optional
+  rating        Int?
+  message       String
+  module        String?
+  pageUrl       String?
+  anonymous     Boolean   @default(false)
+  /// NEW | REVIEWED | PLANNED | DONE | CLOSED
+  status        String    @default("NEW")
+  response      String?
+  respondedById String?
+  respondedAt   DateTime?
+  bugId         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@map("feedback")
+}

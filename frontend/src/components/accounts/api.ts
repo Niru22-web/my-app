@@ -5,10 +5,17 @@ import { api } from "@/lib/api";
 import { ACCOUNTS_ROLES, normRole } from "@/lib/roles";
 import { workDate, type YMD } from "@/lib/dates";
 import type { Envelope } from "@/lib/types";
+import type { Claim } from "@/components/claims/api";
 
-/** Roles allowed by the Accounts API guard. */
-export const canUseAccounts = (role?: string | null) =>
-  ["admin", "owner"].includes(normRole(role)) || (ACCOUNTS_ROLES as readonly string[]).includes(normRole(role));
+type AccountsUser = { role?: string | null; hasAccountsAccess?: boolean | null };
+
+/** Who may open Accounts & Finance: admin/owner, accounts roles, or anyone given accounts access. Accepts a user or just a role. */
+export const canUseAccounts = (who?: AccountsUser | string | null) => {
+  const role = typeof who === "string" || who == null ? who : who.role;
+  if (typeof who === "object" && who?.hasAccountsAccess) return true;
+  const r = normRole(role);
+  return ["admin", "owner"].includes(r) || (ACCOUNTS_ROLES as readonly string[]).includes(r);
+};
 
 // ── Shapes ─────────────────────────────────────────────────────────────────
 
@@ -19,7 +26,6 @@ export interface BankDetails {
   ifsc?: string;
   swift?: string;
   invoicePrefix?: string;
-  customFormat?: string;
   [k: string]: unknown;
 }
 export interface Entity {
@@ -46,6 +52,29 @@ export interface InvoiceItem {
   igst: number | null;
   gstAmount: number | null;
 }
+export type SupplyType = "INTRA" | "INTER" | "EXPORT" | "NO_GST";
+export interface PlaceOfSupply {
+  supplyType: SupplyType;
+  code: string | null;
+  label: string;
+  problem: string | null;
+}
+export interface CreditNote {
+  id: string;
+  number: string;
+  date: string;
+  reason: string;
+  subTotal: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  taxAmount: number;
+  total: number;
+  status: string;
+  invoiceId?: string;
+  invoiceNumber?: string | null;
+  clientName?: string | null;
+}
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -58,11 +87,21 @@ export interface Invoice {
   subTotal: number;
   taxAmount: number;
   totalAmount: number;
+  /** Shown status: OVERDUE when open and past its due date. */
   status: string;
+  /** Status as saved (never OVERDUE). */
+  storedStatus?: string;
+  paidAmount?: number;
+  creditedAmount?: number;
+  balanceDue?: number;
+  creditNotes?: CreditNote[];
+  placeOfSupply?: PlaceOfSupply | null;
+  issuedAt?: string | null;
+  cancelReason?: string | null;
   currency: string;
   exchangeRate: number;
   entity?: Entity;
-  client?: { id: string; name: string; gstin: string | null; address: string | null; state?: string | null; pan?: string | null };
+  client?: { id: string; name: string; gstin: string | null; address: string | null; state?: string | null; pan?: string | null; country?: string | null };
   project?: { id: string; name: string } | null;
   items: InvoiceItem[];
   receiptAllocations?: { id: string; amountAllocated: number; receiptId: string; receipt?: { receiptNumber: string; receiptDate: string } }[];
@@ -73,7 +112,16 @@ export interface Receipt {
   receiptNumber: string;
   clientId: string;
   entityId: string;
+  /** Cash actually received. */
   amount: number;
+  tdsAmount?: number;
+  tdsSection?: string | null;
+  /** Cash + TDS. */
+  grossAmount?: number;
+  /** Advance not yet applied to any invoice. */
+  unapplied?: number;
+  reversedAt?: string | null;
+  reverseReason?: string | null;
   currency: string;
   exchangeRate: number;
   receiptDate: string;
@@ -82,9 +130,15 @@ export interface Receipt {
   notes: string | null;
   client?: { id: string; name: string };
   entity?: { id: string; name: string };
-  allocations?: { id: string; invoiceId: string; amountAllocated: number }[];
+  allocations?: { id: string; invoiceId: string; amountAllocated: number; invoice?: { id?: string; invoiceNumber: string } | null }[];
 }
 
+export interface BankMatch {
+  kind: "RECEIPT" | "PAYROLL" | "CLAIM" | "OTHER" | string;
+  receipt: { id?: string; receiptNumber: string } | null;
+  claim: { id?: string; claimId: string; category: string; amount: number } | null;
+  matchedAt: string;
+}
 export interface BankTransaction {
   id: string;
   entityId: string;
@@ -104,7 +158,17 @@ export interface BankTransaction {
   employee?: { id: string; employeeId: string; firstName: string; lastName: string | null; department?: string | null } | null;
   invoice?: { id: string; invoiceNumber: string; totalAmount: number; currency: string; status: string } | null;
   payroll?: { id: string; month: number; year: number; netPayable: number; status: string } | null;
+  match?: BankMatch | null;
   createdAt: string;
+}
+
+export interface MatchSuggestion {
+  transactionId: string;
+  kind: "INVOICE" | "PAYROLL" | "CLAIM";
+  targetId: string;
+  label: string;
+  reason: string;
+  confidence: "high" | "medium";
 }
 
 export interface PayrollEntry {
@@ -134,12 +198,30 @@ export interface LedgerEntry {
   debit: number;
   credit: number;
   balance: number;
+  /** Running balance, already starting from the opening balance. */
   runningBalance?: number;
   referenceId: string | null;
   referenceType: string | null;
   entity?: { id: string; name: string } | null;
   client?: { id: string; name: string } | null;
   employee?: { id: string; employeeId: string; firstName: string; lastName: string | null } | null;
+}
+export interface LedgerView {
+  rows: LedgerEntry[];
+  opening: number;
+  closing: number;
+  totals: { debit: number; credit: number };
+}
+
+export interface SeriesInfo {
+  entityId: string;
+  entityName: string;
+  prefix: string;
+  fy: string;
+  nextInvoice: string;
+  nextCreditNote: string;
+  nextReceipt: string;
+  issuedThisYear: number;
 }
 
 export interface TaxConfig {
@@ -176,7 +258,8 @@ export interface AuditLogEntry {
   recordId: string;
   performedBy: string;
   performerName: string;
-  description?: string;
+  oldValue?: unknown;
+  newValue?: unknown;
   timestamp: string;
 }
 
@@ -202,18 +285,32 @@ export const STATUS_TONE: Record<string, "neutral" | "brand" | "warning" | "succ
 };
 /** Invoices that are real receivables (not drafts, not cancelled). */
 export const isIssued = (i: Pick<Invoice, "status">) => !["DRAFT", "CANCELLED"].includes(i.status);
+/** Issued and still open for payment. */
+export const PAYABLE_STATUSES = ["SENT", "PARTIALLY_PAID", "OVERDUE"];
+export const isPayable = (i: Pick<Invoice, "status">) => PAYABLE_STATUSES.includes(i.status);
 const OPEN = new Set(["SENT", "PARTIALLY_PAID", "OVERDUE", "PENDING_APPROVAL"]);
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 export const toInr = (amount: number, rate: number | null | undefined) => amount * (rate && rate > 0 ? rate : 1);
-export const allocated = (i: Invoice) => (i.receiptAllocations ?? []).reduce((s, a) => s + a.amountAllocated, 0);
-/** Still owed, in the invoice currency. Auto-matched invoices are PAID without allocations — treat PAID as settled. */
-export const outstanding = (i: Invoice) => (i.status === "PAID" || !OPEN.has(i.status) ? 0 : Math.max(0, round2(i.totalAmount - allocated(i))));
+export const allocated = (i: Invoice) => i.paidAmount ?? (i.receiptAllocations ?? []).reduce((s, a) => s + a.amountAllocated, 0);
+/** Still owed, in the invoice currency (after receipts and credit notes). */
+export const outstanding = (i: Invoice) => {
+  if (typeof i.balanceDue === "number") return Math.max(0, i.balanceDue);
+  return i.status === "PAID" || !OPEN.has(i.status) ? 0 : Math.max(0, round2(i.totalAmount - allocated(i) - (i.creditedAmount ?? 0)));
+};
 export const daysOverdue = (i: Invoice, today: YMD) => {
   if (!i.dueDate) return 0;
   const due = workDate(i.dueDate);
   return due < today ? Math.round((Date.parse(today) - Date.parse(due)) / 864e5) : 0;
 };
+export const isReversed = (r: Pick<Receipt, "reversedAt">) => !!r.reversedAt;
+
+/** Start of the Indian financial year (1 April) that contains the date. */
+export function fyStart(d: YMD): YMD {
+  const y = Number(d.slice(0, 4));
+  const m = Number(d.slice(5, 7));
+  return `${m >= 4 ? y : y - 1}-04-01`;
+}
 
 export interface Summary {
   receivable: number;
@@ -248,7 +345,9 @@ export function summarise(invoices: Invoice[], receipts: Receipt[], today: YMD):
     else if (d <= 90) b.d90 += o;
     else b.older += o;
   }
-  const collectedMonth = receipts.filter((r) => workDate(r.receiptDate).slice(0, 7) === month).reduce((s, r) => s + toInr(r.amount, r.exchangeRate), 0);
+  const collectedMonth = receipts
+    .filter((r) => !isReversed(r) && workDate(r.receiptDate).slice(0, 7) === month)
+    .reduce((s, r) => s + toInr(r.amount, r.exchangeRate), 0);
   return {
     receivable,
     overdue: b.d30 + b.d60 + b.d90 + b.older,
@@ -268,20 +367,20 @@ export function summarise(invoices: Invoice[], receipts: Receipt[], today: YMD):
 }
 
 /**
- * Preview FIFO receipt allocation against the client's open invoices.
+ * Preview of how a receipt (cash + TDS) will be applied: the client's issued invoices of the same
+ * entity and currency — the chosen invoice first, then the oldest. Anything left is kept as an advance.
  */
-export function simulateReceipt(invoices: Invoice[], clientId: string, amount: number) {
+export function simulateReceipt(invoices: Invoice[], o: { clientId: string; entityId: string; currency: string; amount: number; invoiceId?: string }) {
   const targets = invoices
-    .filter((i) => i.clientId === clientId && ["DRAFT", "SENT", "PARTIALLY_PAID", "OVERDUE"].includes(i.status))
-    .sort((a, b) => a.issueDate.localeCompare(b.issueDate));
-  let left = amount;
+    .filter((i) => i.clientId === o.clientId && i.entityId === o.entityId && i.currency === o.currency && isPayable(i) && outstanding(i) > 0)
+    .sort((a, b) => (a.id === o.invoiceId ? -1 : b.id === o.invoiceId ? 1 : a.issueDate.localeCompare(b.issueDate)));
+  let left = round2(o.amount);
   const plan: { invoice: Invoice; applied: number; settles: boolean }[] = [];
   for (const inv of targets) {
     if (left <= 0) break;
-    const due = round2(inv.totalAmount - allocated(inv));
-    if (due <= 0) continue;
-    const applied = Math.min(left, due);
-    plan.push({ invoice: inv, applied: round2(applied), settles: applied >= due - 0.005 });
+    const due = outstanding(inv);
+    const applied = round2(Math.min(left, due));
+    plan.push({ invoice: inv, applied, settles: applied >= due - 0.005 });
     left = round2(left - applied);
   }
   return { plan, advance: Math.max(0, left) };
@@ -289,10 +388,20 @@ export function simulateReceipt(invoices: Invoice[], clientId: string, amount: n
 
 // ── Queries ────────────────────────────────────────────────────────────────
 
-const list = async <T,>(p: string, query?: Record<string, string | undefined>) => (await api<Envelope<T[]>>(p, { query })).data ?? [];
+type Filters = Record<string, string | undefined>;
+const list = async <T,>(p: string, query?: Filters) => (await api<Envelope<T[]>>(p, { query })).data ?? [];
 export const useInvoices = (on = true) => useQuery({ queryKey: ["accounts", "invoices"], queryFn: () => list<Invoice>("accounts/invoices"), enabled: on });
 export const useInvoice = (id: string) => useQuery({ queryKey: ["accounts", "invoice", id], queryFn: async () => (await api<Envelope<Invoice>>(`accounts/invoices/${id}`)).data });
 export const useReceipts = (on = true) => useQuery({ queryKey: ["accounts", "receipts"], queryFn: () => list<Receipt>("accounts/receipts"), enabled: on });
+export const useCreditNotes = (on = true) => useQuery({ queryKey: ["accounts", "credit-notes"], queryFn: () => list<CreditNote>("accounts/credit-notes"), enabled: on });
+export const useSeries = (on = true) => useQuery({ queryKey: ["accounts", "series"], queryFn: () => list<SeriesInfo>("accounts/series"), enabled: on });
+export const usePlaceOfSupply = (entityId: string, clientId: string) =>
+  useQuery({
+    queryKey: ["accounts", "place-of-supply", entityId, clientId],
+    queryFn: async () => (await api<Envelope<PlaceOfSupply>>("accounts/place-of-supply", { query: { entityId, clientId } })).data,
+    enabled: !!entityId && !!clientId,
+    staleTime: 60_000,
+  });
 export const useEntities = (on = true) =>
   useQuery({
     queryKey: ["accounts", "entities"],
@@ -306,10 +415,30 @@ export const useTransactions = (on = true) =>
 export const usePayrolls = (on = true) =>
   useQuery({ queryKey: ["accounts", "payroll"], queryFn: () => list<PayrollEntry>("accounts/payroll"), enabled: on });
 
+const ledger = async (path: string, query: Filters): Promise<LedgerView> => {
+  const r = await api<{ data?: LedgerEntry[]; opening?: number; closing?: number; totals?: { debit: number; credit: number } }>(path, { query });
+  const rows = r.data ?? [];
+  const opening = r.opening ?? 0;
+  return {
+    rows,
+    opening,
+    closing: r.closing ?? (rows.length ? rows[rows.length - 1].runningBalance ?? opening : opening),
+    totals: r.totals ?? { debit: rows.reduce((s, x) => s + x.debit, 0), credit: rows.reduce((s, x) => s + x.credit, 0) },
+  };
+};
 export const useLedgers = (filters?: { entityId?: string; type?: string; clientId?: string; employeeId?: string; from?: string; to?: string }, on = true) =>
+  useQuery({ queryKey: ["accounts", "ledgers", filters ?? {}], queryFn: () => ledger("accounts/ledgers", filters ?? {}), enabled: on });
+export const useClientLedger = (clientId: string, range: { from?: string; to?: string }) =>
+  useQuery({ queryKey: ["accounts", "ledgers", "client", clientId, range], queryFn: () => ledger(`accounts/ledgers/client/${clientId}`, range), enabled: !!clientId });
+export const useEmployeeLedger = (employeeId: string, range: { from?: string; to?: string }) =>
+  useQuery({ queryKey: ["accounts", "ledgers", "employee", employeeId, range], queryFn: () => ledger(`accounts/ledgers/employee/${employeeId}`, range), enabled: !!employeeId });
+
+/** Expense claims approved and waiting to be paid (APPROVED or PENDING_PAYMENT), organisation-wide. */
+export const usePayableClaims = (on = true) =>
   useQuery({
-    queryKey: ["accounts", "ledgers", filters ?? {}],
-    queryFn: () => list<LedgerEntry>("accounts/ledgers", filters),
+    queryKey: ["claims", "payable"],
+    queryFn: async () =>
+      (await list<Claim>("reimbursements/team-approvals", { status: "all", orgView: "true" })).filter((c) => c.status === "APPROVED" || c.status === "PENDING_PAYMENT"),
     enabled: on,
   });
 
@@ -319,31 +448,41 @@ export const useTaxConfigs = (on = true) =>
 export const useCurrencies = (on = true) =>
   useQuery({ queryKey: ["accounts", "currencies"], queryFn: () => list<CurrencyItem>("accounts/currencies"), enabled: on });
 
-export const useAccountsAuditLog = (
-  params: { page?: number; limit?: number; action?: string; portal?: string; search?: string; dateFrom?: string; dateTo?: string },
-  on = true,
-) =>
-  useQuery({
-    queryKey: ["accounts", "audit-log", params],
-    queryFn: () =>
-      api<{
-        success: boolean;
-        data: AuditLogEntry[];
-        pagination?: { page: number; limit: number; total: number; pages: number };
-      }>("accounts/audit-log", {
-        query: {
-          page: String(params.page ?? 1),
-          limit: String(params.limit ?? 50),
-          action: params.action || undefined,
-          portal: params.portal || undefined,
-          search: params.search?.trim() || undefined,
-          dateFrom: params.dateFrom || undefined,
-          dateTo: params.dateTo || undefined,
-        },
-      }),
-    enabled: on,
-    placeholderData: (p) => p,
+export interface AuditParams {
+  page?: number;
+  limit?: number;
+  action?: string;
+  portal?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+type AuditPage = { success: boolean; data: AuditLogEntry[]; pagination?: { page: number; limit: number; total: number; pages: number } };
+const auditPage = (params: AuditParams) =>
+  api<AuditPage>("accounts/audit-log", {
+    query: {
+      page: String(params.page ?? 1),
+      limit: String(params.limit ?? 50),
+      action: params.action || undefined,
+      portal: params.portal || undefined,
+      search: params.search?.trim() || undefined,
+      dateFrom: params.dateFrom || undefined,
+      dateTo: params.dateTo || undefined,
+    },
   });
+export const useAccountsAuditLog = (params: AuditParams, on = true) =>
+  useQuery({ queryKey: ["accounts", "audit-log", params], queryFn: () => auditPage(params), enabled: on, placeholderData: (p) => p });
+/** Every audit entry for the filters (all pages), for export. */
+export async function fetchAllAuditLog(params: Omit<AuditParams, "page" | "limit">): Promise<AuditLogEntry[]> {
+  const out: AuditLogEntry[] = [];
+  let pages = 1;
+  for (let page = 1; page <= pages && page <= 500; page++) {
+    const r = await auditPage({ ...params, page, limit: 200 });
+    out.push(...(r.data ?? []));
+    pages = r.pagination?.pages ?? 1;
+  }
+  return out;
+}
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -365,6 +504,27 @@ export interface InvoiceInput {
   exchangeRate: number;
   items: ItemInput[];
 }
+export interface ReceiptInput {
+  clientId: string;
+  entityId: string;
+  amount: number;
+  tdsAmount?: number;
+  tdsSection?: string;
+  currency: string;
+  exchangeRate: number;
+  receiptDate: string;
+  paymentMode: string;
+  referenceNumber?: string;
+  notes?: string;
+  invoiceId?: string;
+}
+export type ReconcileBody =
+  | { invoiceId: string }
+  | { payrollId: string }
+  | { claimId: string }
+  | { clientId: string }
+  | { employeeId?: string }
+  | { mappedStatus: "UNMAPPED"; reason: string };
 
 function useAccMutation<V, R>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
@@ -373,30 +533,38 @@ function useAccMutation<V, R>(fn: (v: V) => Promise<R>) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["accounts"] });
       void qc.invalidateQueries({ queryKey: ["dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["claims"] });
     },
   });
 }
 
 export function useAccountsMutations() {
   return {
-    createInvoice: useAccMutation((b: InvoiceInput) => api<Envelope<Invoice>>("accounts/invoices", { method: "POST", body: { ...b, status: "DRAFT" } })),
-    updateDraft: useAccMutation(({ id, body }: { id: string; body: Omit<InvoiceInput, "entityId"> }) => api<Envelope<Invoice>>(`accounts/invoices/${id}`, { method: "PUT", body: { ...body, status: "DRAFT" } })),
-    setIssueDate: useAccMutation(({ id, issueDate }: { id: string; issueDate: string }) => api(`accounts/invoices/${id}`, { method: "PUT", body: { issueDate, status: "DRAFT" } })),
-    setStatus: useAccMutation(({ id, status }: { id: string; status: "SENT" | "CANCELLED" }) => api(`accounts/invoices/${id}`, { method: "PUT", body: { status } })),
+    createInvoice: useAccMutation((b: InvoiceInput) => api<Envelope<Invoice>>("accounts/invoices", { method: "POST", body: b })),
+    updateDraft: useAccMutation(({ id, body }: { id: string; body: Omit<InvoiceInput, "entityId"> }) => api<Envelope<Invoice>>(`accounts/invoices/${id}`, { method: "PUT", body })),
+    setUdin: useAccMutation(({ id, udin }: { id: string; udin: string }) => api<Envelope<Invoice>>(`accounts/invoices/${id}`, { method: "PUT", body: { udin } })),
+    issueInvoice: useAccMutation(({ id, issueDate }: { id: string; issueDate?: string }) => api<Envelope<Invoice>>(`accounts/invoices/${id}/issue`, { method: "POST", body: { issueDate } })),
+    cancelInvoice: useAccMutation(({ id, reason }: { id: string; reason: string }) => api(`accounts/invoices/${id}/cancel`, { method: "POST", body: { reason } })),
     deleteDraft: useAccMutation((id: string) => api(`accounts/invoices/${id}`, { method: "DELETE" })),
-    recordReceipt: useAccMutation(
-      (b: { clientId: string; entityId: string; amount: number; currency: string; exchangeRate: number; receiptDate: string; paymentMode: string; referenceNumber?: string; notes?: string }) =>
-        api<Envelope<Receipt>>("accounts/receipts", { method: "POST", body: b }),
+    createCreditNote: useAccMutation(({ id, ...body }: { id: string; amount: number; reason: string; date?: string }) =>
+      api<Envelope<CreditNote>>(`accounts/invoices/${id}/credit-notes`, { method: "POST", body }),
     ),
+    recordReceipt: useAccMutation((b: ReceiptInput) => api<Envelope<Receipt & { advance?: number }>>("accounts/receipts", { method: "POST", body: b })),
+    reverseReceipt: useAccMutation(({ id, reason }: { id: string; reason: string }) => api(`accounts/receipts/${id}/reverse`, { method: "POST", body: { reason } })),
     saveEntity: useAccMutation(({ id, ...body }: Partial<Entity> & { name: string }) => (id ? api(`accounts/entities/${id}`, { method: "PUT", body }) : api("accounts/entities", { method: "POST", body }))),
     importBankStatements: useAccMutation(
       (b: { entityId: string; statements: { bankReference?: string; date: string; description: string; type: "CREDIT" | "DEBIT"; amount: number; balance?: number | null }[] }) =>
-        api<{ success: boolean; count: number; skipped?: number; data: BankTransaction[] }>("accounts/bank-statements/import", { method: "POST", body: b }),
+        api<{ success: boolean; count: number; skipped?: number; duplicates?: number; invalid?: { line: number; reason: string }[] }>("accounts/bank-statements/import", { method: "POST", body: b }),
     ),
-    autoMatchTransactions: useAccMutation(() => api<{ success: boolean; matchedCount: number }>("accounts/bank-statements/auto-match", { method: "POST" })),
-    reconcileTransaction: useAccMutation(
-      ({ id, ...body }: { id: string; mappedStatus?: "RECONCILED" | "UNMAPPED"; invoiceId?: string | null; payrollId?: string | null; clientId?: string | null; employeeId?: string | null }) =>
-        api<Envelope<BankTransaction>>(`accounts/transactions/${id}/reconcile`, { method: "PUT", body }),
+    /** Suggests matches only — nothing changes until confirmMatches. */
+    suggestMatches: useMutation({
+      mutationFn: (entityId?: string) => api<{ success: boolean; suggestions: MatchSuggestion[]; scanned: number }>("accounts/bank-statements/auto-match", { method: "POST", body: { entityId: entityId || undefined } }),
+    }),
+    confirmMatches: useAccMutation((matches: { transactionId: string; kind: string; targetId: string }[]) =>
+      api<{ success: boolean; matchedCount: number; results: { transactionId: string; ok: boolean; message?: string }[] }>("accounts/bank-statements/confirm", { method: "POST", body: { matches } }),
+    ),
+    reconcileTransaction: useAccMutation(({ id, body }: { id: string; body: ReconcileBody }) =>
+      api<Envelope<BankTransaction>>(`accounts/transactions/${id}/reconcile`, { method: "PUT", body }),
     ),
     deleteTransaction: useAccMutation((id: string) => api(`accounts/transactions/${id}`, { method: "DELETE" })),
     createPayroll: useAccMutation(

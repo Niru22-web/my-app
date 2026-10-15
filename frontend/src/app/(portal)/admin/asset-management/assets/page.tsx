@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Archive, Download, Laptop, Pencil, Plus, RotateCcw, Search, UserPlus, Wrench, XCircle } from "lucide-react";
+import { ImportButton } from "@/components/ui/import-dialog";
+import { Archive, Download, Laptop, Pencil, Plus, RotateCcw, UserPlus, Wrench, XCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, downloadFile } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/inputs";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { ErrorState } from "@/components/ui/empty-state";
@@ -114,9 +114,7 @@ export default function InventoryPage() {
         description="Every asset the firm owns, where it is and who has it"
         actions={
           <>
-            <Button variant="secondary" disabled={!all.length} onClick={() => downloadFile("assets/export", `asset-inventory-${new Date().toISOString().slice(0, 10)}.xlsx`).catch(() => toast.error("Export failed"))}>
-              <Download className="h-4 w-4" /> Export
-            </Button>
+            {manage && <ImportButton kind="assets" label="Assets" invalidate={[["assets"]]} />}
             {manage && (
               <Button onClick={() => setEditing(null)}>
                 <Plus className="h-4 w-4" /> Add asset
@@ -126,37 +124,38 @@ export default function InventoryPage() {
         }
       />
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Status"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All", count: all.length || undefined },
-            { value: "Available", label: "Available", count: counts.Available },
-            { value: "Allocated", label: "Assigned", count: counts.Allocated },
-            { value: "Maintenance", label: "Maintenance", count: counts.Maintenance },
-            { value: "Retired", label: "Retired", count: counts.Retired },
-            { value: "Lost", label: "Lost", count: counts.Lost },
-          ]}
-        />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {cats.length > 1 && (
-            <Select aria-label="Category" value={cat} onChange={(e) => setCat(e.target.value)} className="sm:w-44">
-              <option value="">All categories</option>
-              {cats.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </Select>
-          )}
-          <div className="relative sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input placeholder="Name, serial, tag…" aria-label="Search assets" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </div>
-      </div>
-
       <DataTable
+        exportName={false}
+        itemsLabel="assets"
+        filterTabs={[
+          { key: "all", label: "All", count: all.length },
+          { key: "Available", label: "Available", count: counts.Available ?? 0 },
+          { key: "Allocated", label: "Assigned", count: counts.Allocated ?? 0 },
+          { key: "Maintenance", label: "Maintenance", count: counts.Maintenance ?? 0 },
+          { key: "Retired", label: "Retired", count: counts.Retired ?? 0 },
+          { key: "Lost", label: "Lost", count: counts.Lost ?? 0 },
+        ]}
+        activeFilterTab={filter}
+        onFilterTabChange={(k) => setFilter(k as Filter)}
+        searchable
+        searchPlaceholder="Search name, serial or tag"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <>
+            {cats.length > 1 && (
+              <Select aria-label="Category" value={cat} onChange={(e) => setCat(e.target.value)} className="w-44">
+                <option value="">All categories</option>
+                {cats.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </Select>
+            )}
+            <Button variant="secondary" size="sm" disabled={!all.length} onClick={() => downloadFile("assets/export", `asset-inventory-${new Date().toISOString().slice(0, 10)}.xlsx`).catch(() => toast.error("Export failed"))}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </>
+        }
         rows={rows}
         columns={columns}
         rowKey={(a) => a.id}

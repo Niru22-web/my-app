@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
-import { authenticate, requireRoles } from "../plugins/auth";
+import { authenticate, normRole, requireRoles } from "../plugins/auth";
 
 async function nextCode(prefix: string, existingCodes: string[]): Promise<string> {
   let max = 0;
@@ -16,7 +16,39 @@ async function nextCode(prefix: string, existingCodes: string[]): Promise<string
 
 const WORK_WRITE_ROLES = ["admin", "owner", "partner", "manager", "it"];
 
+/**
+ * The team picked in the project/job dialog. undefined = not sent (leave the team as it is).
+ * Unknown or inactive ids are dropped, so a stale selection can't break the save.
+ */
+async function teamFrom(raw: unknown): Promise<string[] | undefined> {
+  if (raw === undefined) return undefined;
+  const ids = Array.isArray(raw) ? [...new Set(raw.map(String).filter(Boolean))] : [];
+  if (!ids.length) return [];
+  const found = await prisma.employee.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  return found.map((e) => e.id);
+}
+
+const PARTNER_ROLES = ["partner", "owner"];
+
+/** A client's engagement partner must be an active Partner/Owner. Returns an error message or null. */
+async function checkPartner(id: string): Promise<string | null> {
+  const p = await prisma.employee.findUnique({ where: { id }, select: { role: true, status: true } });
+  if (!p || !PARTNER_ROLES.includes(normRole(p.role))) return "Choose a partner from the list.";
+  if ((p.status ?? "").toLowerCase() !== "active") return "That partner is no longer active.";
+  return null;
+}
+
 export async function managementRoutes(app: FastifyInstance) {
+  // Partners, for the client's engagement-partner picker.
+  app.get("/api/employees/partners", { preHandler: [authenticate] }, async (_req, reply) => {
+    const data = await prisma.employee.findMany({
+      where: { status: { equals: "active", mode: "insensitive" }, OR: PARTNER_ROLES.map((r) => ({ role: { equals: r, mode: "insensitive" as const } })) },
+      select: { id: true, firstName: true, lastName: true, employeeId: true },
+      orderBy: { firstName: "asc" },
+    });
+    return reply.send({ success: true, data });
+  });
+
   // ── Clients ────────────────────────────────────────────────────────────────
   app.get("/api/clients", { preHandler: [authenticate] }, async (req, reply) => {
     const { status } = (req.query ?? {}) as { status?: string };
@@ -49,6 +81,17 @@ export async function managementRoutes(app: FastifyInstance) {
     const name = String(b.name ?? "").trim();
     if (!name) return reply.code(400).send({ success: false, message: "Client name is required." });
 
+    // Engagement partner: the one chosen, else the creator's own partner (or the creator, if a partner).
+    let partnerId: string | null = b.partnerId ? String(b.partnerId) : null;
+    if (partnerId) {
+      const problem = await checkPartner(partnerId);
+      if (problem) return reply.code(400).send({ success: false, message: problem });
+    } else if (PARTNER_ROLES.includes(normRole(req.user!.role))) {
+      partnerId = req.user!.id;
+    } else {
+      const me = await prisma.employee.findUnique({ where: { id: req.user!.id }, select: { partnerId: true, reportingPartnerIds: true } });
+      partnerId = me?.partnerId ?? me?.reportingPartnerIds?.[0] ?? null;
+    }
     const existing = await prisma.client.findMany({ select: { clientId: true } });
     const clientId = b.clientId ? String(b.clientId).trim() : await nextCode("CLI", existing.map((x) => x.clientId));
 
@@ -65,6 +108,7 @@ export async function managementRoutes(app: FastifyInstance) {
         state: b.state ? String(b.state) : null,
         country: b.country ? String(b.country) : "India",
         status: String(b.status ?? "Active"),
+        partnerId,
         createdBy: req.user!.id,
       },
     });
@@ -77,6 +121,13 @@ export async function managementRoutes(app: FastifyInstance) {
     const data: Record<string, any> = {};
     for (const k of ["name", "alias", "gstStatus", "gstin", "pan", "address", "pin", "state", "country", "status"] as const) {
       if (b[k] !== undefined) data[k] = b[k];
+    }
+    if (b.partnerId !== undefined) {
+      if (b.partnerId) {
+        const problem = await checkPartner(String(b.partnerId));
+        if (problem) return reply.code(400).send({ success: false, message: problem });
+      }
+      data.partnerId = b.partnerId ? String(b.partnerId) : null;
     }
     const updated = await prisma.client.update({ where: { id }, data });
     return reply.send({ success: true, data: updated });
@@ -137,6 +188,7 @@ export async function managementRoutes(app: FastifyInstance) {
       return reply.code(400).send({ success: false, message: "Project name and client are required." });
     }
 
+    const team = await teamFrom(b.assignedEmployees);
     const existing = await prisma.project.findMany({ select: { projectId: true } });
     const projectId = b.projectId ? String(b.projectId).trim() : await nextCode("PRJ", existing.map((x) => x.projectId));
 
@@ -152,8 +204,9 @@ export async function managementRoutes(app: FastifyInstance) {
         contactPerson: b.contactPerson ? String(b.contactPerson) : null,
         createdBy: req.user!.id,
         createdByEmail: req.user!.email,
+        ...(team?.length ? { users: { create: team.map((employeeId) => ({ employeeId })) } } : {}),
       },
-      include: { client: true },
+      include: { client: true, users: { include: { employee: { select: { id: true, firstName: true, lastName: true } } } } },
     });
     return reply.code(201).send({ success: true, data: created });
   });
@@ -170,11 +223,13 @@ export async function managementRoutes(app: FastifyInstance) {
     if (b.endDate !== undefined) data.endDate = b.endDate ? new Date(b.endDate) : null;
     if (b.billable !== undefined) data.billable = Boolean(b.billable);
     if (b.contactPerson !== undefined) data.contactPerson = b.contactPerson ? String(b.contactPerson) : null;
+    const team = await teamFrom(b.assignedEmployees);
+    if (team) data.users = { deleteMany: {}, create: team.map((employeeId) => ({ employeeId })) };
 
     const updated = await prisma.project.update({
       where: { id },
       data,
-      include: { client: true },
+      include: { client: true, users: { include: { employee: { select: { id: true, firstName: true, lastName: true } } } } },
     });
     return reply.send({ success: true, data: updated });
   });
@@ -240,6 +295,7 @@ export async function managementRoutes(app: FastifyInstance) {
     });
     if (!project) return reply.code(404).send({ success: false, message: "Project not found." });
 
+    const team = await teamFrom(b.assignedEmployees);
     const existing = await prisma.job.findMany({ select: { jobId: true } });
     const jobId = b.jobId ? String(b.jobId).trim() : await nextCode("JOB", existing.map((x) => x.jobId));
     const combinedId = `${project.client.clientId}-${project.projectId}-${jobId}`;
@@ -257,8 +313,9 @@ export async function managementRoutes(app: FastifyInstance) {
         endDate: b.endDate ? new Date(b.endDate) : null,
         createdBy: req.user!.id,
         createdByEmail: req.user!.email,
+        ...(team?.length ? { users: { create: team.map((employeeId) => ({ employeeId })) } } : {}),
       },
-      include: { project: { include: { client: true } } },
+      include: { project: { include: { client: true } }, users: { include: { employee: { select: { id: true, firstName: true, lastName: true } } } } },
     });
     return reply.code(201).send({ success: true, data: created });
   });
@@ -275,11 +332,13 @@ export async function managementRoutes(app: FastifyInstance) {
     if (b.billable !== undefined) data.billable = Boolean(b.billable);
     if (b.startDate !== undefined) data.startDate = b.startDate ? new Date(b.startDate) : null;
     if (b.endDate !== undefined) data.endDate = b.endDate ? new Date(b.endDate) : null;
+    const team = await teamFrom(b.assignedEmployees);
+    if (team) data.users = { deleteMany: {}, create: team.map((employeeId) => ({ employeeId })) };
 
     const updated = await prisma.job.update({
       where: { id },
       data,
-      include: { project: { include: { client: true } } },
+      include: { project: { include: { client: true } }, users: { include: { employee: { select: { id: true, firstName: true, lastName: true } } } } },
     });
     return reply.send({ success: true, data: updated });
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ImportButton } from "@/components/ui/import-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cake, CalendarDays, ChevronLeft, ChevronRight, Clock, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -40,7 +41,7 @@ const TONE: Record<string, "danger" | "brand" | "success" | "warning" | "neutral
 /** Matches the backend's role check for creating/deleting events. */
 function canManageEvents(role?: string) {
   const r = normRole(role);
-  return ["admin", "hr", "partner", "manager", "owner"].some((k) => r.includes(k));
+  return ["admin", "hr", "partner", "manager", "owner"].includes(r);
 }
 
 export default function CalendarPage() {
@@ -118,9 +119,12 @@ export default function CalendarPage() {
         description="Firm holidays, meetings and events"
         actions={
           manage && (
-            <Button onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" /> Add event
-            </Button>
+            <>
+              {["admin", "owner", "hr"].includes(normRole(user?.role)) && <ImportButton kind="holidays" label="Holidays" invalidate={[["events"], ["dashboard"]]} />}
+              <Button onClick={() => setAdding(true)}>
+                <Plus className="h-4 w-4" /> Add event
+              </Button>
+            </>
           )
         }
       />

@@ -53,7 +53,7 @@ export function ExcelMenu({ exportQuery }: { exportQuery: Record<string, string 
               <FileSpreadsheet className="mt-0.5 h-4 w-4 text-brand" />
               <span>
                 <span className="block text-sm font-medium text-ink">Download import template</span>
-                <span className="block text-xs text-ink-subtle">Pre-filled with the projects and jobs you can use</span>
+                <span className="block text-xs text-ink-subtle">Excel sheet with the columns and a how-to tab (job codes are on the Jobs page)</span>
               </span>
             </button>
             <button className={item} onClick={() => (close(), setImportOpen(true))}>
@@ -129,10 +129,10 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-line-strong bg-surface-muted px-6 py-10 text-center hover:border-brand/50">
             <Upload className="h-6 w-6 text-brand" aria-hidden />
             <span className="mt-2 text-sm font-semibold text-ink">{file ? file.name : "Choose a file"}</span>
-            <span className="mt-1 text-xs text-ink-subtle">.xlsx, .xls or .csv · up to 5 MB</span>
+            <span className="mt-1 text-xs text-ink-subtle">.xlsx or .csv · up to 5 MB · a file with mistakes imports nothing, so fix and re-upload</span>
             <input
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.csv"
               className="sr-only"
               onChange={(e) => {
                 setError(null);

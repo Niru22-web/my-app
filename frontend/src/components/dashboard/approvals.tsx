@@ -22,16 +22,16 @@ export function ApprovalsPanel({ data, loading, r }: { data?: CombinedDashboard;
   const p = data?.pendingApprovals;
   const tiles: Tile[] = [];
 
-  if (r.isApprover) {
-    tiles.push({ label: "Leave requests", value: p?.leaves ?? 0, href: "/leave/team", icon: CalendarCheck, hint: "awaiting approval" });
-    tiles.push({ label: "Reimbursements", value: p?.reimbursements ?? 0, href: "/portal/reimbursements", icon: ReceiptText, hint: "awaiting action" });
+  if (r.isApprover || (p?.leaves ?? 0) > 0 || (p?.reimbursements ?? 0) > 0) {
+    tiles.push({ label: "Leave requests", value: p?.leaves ?? 0, href: "/leave/team", icon: CalendarCheck, hint: "waiting for you" });
+    tiles.push({ label: "Reimbursements", value: p?.reimbursements ?? 0, href: "/portal/reimbursements/team", icon: ReceiptText, hint: "waiting for you" });
   }
   if ((r.isAdmin || r.isOwner || r.isHR || r.isIT) && !r.isPartner) {
     tiles.push({ label: "Asset approvals", value: p?.assets ?? 0, href: "/admin/asset-management/dashboard", icon: Laptop, hint: "pending review" });
   } else {
     tiles.push({ label: "My asset requests", value: data?.myAssetRequests ?? 0, href: "/admin/asset-management/dashboard", icon: Laptop, hint: "in progress" });
   }
-  if (r.isAdmin || r.isOwner || r.isIT || r.isPartner) {
+  if (r.isAdmin || r.isOwner || r.isIT) {
     tiles.push({ label: "Open tickets", value: p?.tickets ?? 0, href: "/help-desk", icon: Headset, hint: "in the support queue" });
   } else {
     tiles.push({ label: "My tickets", value: data?.myTickets ?? 0, href: "/help-desk", icon: Headset, hint: "not yet resolved" });

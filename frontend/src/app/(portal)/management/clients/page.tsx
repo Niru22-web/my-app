@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ImportButton } from "@/components/ui/import-dialog";
 import { useRouter } from "next/navigation";
-import { Building2, Download, Pencil, Plus, Power, Receipt, Search, Timer, Trash2 } from "lucide-react";
+import { Building2, Download, Pencil, Plus, Power, Receipt, Timer, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { today } from "@/lib/dates";
@@ -11,8 +12,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
@@ -116,19 +115,7 @@ export default function ClientsPage() {
         description="Organisations you work for. Projects and jobs sit under a client."
         actions={
           <>
-            <Button
-              variant="secondary"
-              disabled={!rows.length}
-              onClick={() =>
-                downloadCsv(
-                  `clients-${today()}.csv`,
-                  ["Client code", "Name", "Alias", "Status", "GST registered", "GSTIN", "PAN", "Country", "State", "PIN", "Address", "Projects", "Logged hours"],
-                  rows.map((c) => [c.clientId, c.name, c.alias, c.status, c.gstStatus, c.gstin, c.pan, c.country, c.state, c.pin, c.address, c._count?.projects ?? 0, c.loggedHours ?? 0]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
+            {manage && <ImportButton kind="clients" label="Clients" invalidate={[["mgmt"], ["lookup"]]} />}
             {manage && (
               <Button onClick={() => setEditor({})}>
                 <Plus className="h-4 w-4" /> Add client
@@ -145,25 +132,38 @@ export default function ClientsPage() {
         <StatCard label="Hours logged" icon={Timer} loading={q.isLoading} value={formatHours(all.reduce((a, c) => a + (c.loggedHours ?? 0), 0))} hint="all time" />
       </section>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Segmented
-          aria-label="Status"
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: "active", label: "Active" },
-            { value: "inactive", label: "Inactive" },
-            { value: "all", label: "All" },
-          ]}
-        />
-        <div className="relative w-full sm:w-80">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-          <Input placeholder="Search name, code, alias, PAN or GSTIN" aria-label="Search clients" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-      </div>
-
       <DataTable
+        exportName={false}
+        itemsLabel="clients"
+        filterTabs={[
+          { key: "active", label: "Active", count: active.length },
+          { key: "inactive", label: "Inactive", count: all.length - active.length },
+          { key: "all", label: "All", count: all.length },
+        ]}
+        activeFilterTab={status}
+        onFilterTabChange={(k) => setStatus(k as StatusF)}
+        searchable
+        searchPlaceholder="Search name, code, alias, PAN or GSTIN"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!rows.length}
+            onClick={() =>
+              downloadCsv(
+                `clients-${today()}.csv`,
+                ["Client code", "Name", "Alias", "Status", "GST registered", "GSTIN", "PAN", "Country", "State", "PIN", "Address", "Projects", "Logged hours"],
+                rows.map((c) => [c.clientId, c.name, c.alias, c.status, c.gstStatus, c.gstin, c.pan, c.country, c.state, c.pin, c.address, c._count?.projects ?? 0, c.loggedHours ?? 0]),
+              )
+            }
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        }
         rows={rows}
+        rowLabel={manage ? (c) => `Edit ${c.name}` : undefined}
         columns={columns}
         rowKey={(c) => c.id}
         loading={q.isLoading}

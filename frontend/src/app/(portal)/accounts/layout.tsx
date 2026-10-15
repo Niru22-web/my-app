@@ -23,10 +23,10 @@ const TABS = [
 
 export default function AccountsLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  if (!canUseAccounts(user?.role))
+  if (!canUseAccounts(user))
     return (
       <Card>
-        <EmptyState icon={Lock} title="Accounts & Finance is for the accounts team" description="Admin, Owner, and accounts roles can open it. Ask an administrator if you need access." />
+        <EmptyState icon={Lock} title="Accounts & Finance is for the accounts team" description="Admins, owners, the accounts team and people given accounts access can open it. Ask an administrator if you need access." />
       </Card>
     );
   return (

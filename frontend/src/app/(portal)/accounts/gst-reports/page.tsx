@@ -13,10 +13,10 @@ import { StatCard } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { FormRow, Input, Select } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { downloadCsv } from "@/components/claims/claim-tabs";
 import {
@@ -78,11 +78,12 @@ export default function GstReport() {
   const [period, setPeriod] = useState(currentMonth);
   const [entity, setEntity] = useState("");
   const [kind, setKind] = useState<"all" | "b2b" | "b2c">("all");
+  const [search, setSearch] = useState("");
   const [editingTax, setEditingTax] = useState<TaxConfig | null | undefined>(undefined);
   const [deletingTax, setDeletingTax] = useState<TaxConfig | null>(null);
   const p = options.find((o) => o.value === period) ?? options[0];
 
-  const rows: Row[] = useMemo(
+  const inPeriod: Row[] = useMemo(
     () =>
       (q.data ?? [])
         .filter((i) => isIssued(i) && (!entity || i.entityId === entity))
@@ -101,9 +102,12 @@ export default function GstReport() {
             total: toInr(i.totalAmount, r),
           };
         })
-        .filter((x) => x.date >= p.from && x.date <= p.to && (kind === "all" || (kind === "b2b") === x.b2b)),
-    [q.data, entity, p, kind],
+        .filter((x) => x.date >= p.from && x.date <= p.to),
+    [q.data, entity, p],
   );
+  const rows = inPeriod.filter((x) => kind === "all" || (kind === "b2b") === x.b2b);
+  const s = search.trim().toLowerCase();
+  const visible = rows.filter((x) => !s || `${x.inv.invoiceNumber} ${x.inv.client?.name ?? ""} ${x.inv.client?.gstin ?? ""}`.toLowerCase().includes(s));
   const sum = rows.reduce((a, x) => ({ taxable: a.taxable + x.taxable, cgst: a.cgst + x.cgst, sgst: a.sgst + x.sgst, igst: a.igst + x.igst }), { taxable: 0, cgst: 0, sgst: 0, igst: 0 });
 
   const columns: Column<Row>[] = [
@@ -129,65 +133,75 @@ export default function GstReport() {
         title="GST & tax"
         description="Output tax on issued invoices, in ₹, plus configured GST & TDS tax slabs."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => setEditingTax(null)}>
-              <Plus className="h-4 w-4" /> Add tax rate
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!rows.length}
-              onClick={() =>
-                downloadCsv(
-                  `gst-${p.value}${entity ? `-${entities.data?.find((e) => e.id === entity)?.name ?? ""}` : ""}.csv`,
-                  ["Invoice", "Date", "Billed by (GSTIN)", "Client", "Client GSTIN", "Supply", "Taxable (₹)", "CGST (₹)", "SGST (₹)", "IGST (₹)", "Invoice value (₹)", "Currency", "Rate"],
-                  rows.map((x) => [x.inv.invoiceNumber, x.date, x.inv.entity?.gstin ?? x.inv.entity?.name, x.inv.client?.name, x.inv.client?.gstin ?? "", x.exportSupply ? "Export" : x.b2b ? "B2B" : "B2C", x.taxable.toFixed(2), x.cgst.toFixed(2), x.sgst.toFixed(2), x.igst.toFixed(2), x.total.toFixed(2), x.inv.currency, x.inv.exchangeRate]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </div>
+          <Button variant="secondary" onClick={() => setEditingTax(null)}>
+            <Plus className="h-4 w-4" /> Add tax rate
+          </Button>
         }
       />
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)} className="sm:w-64">
-            {options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-          {(entities.data?.length ?? 0) > 1 && (
-            <Select aria-label="Billing entity" value={entity} onChange={(e) => setEntity(e.target.value)} className="sm:w-56">
-              <option value="">All entities</option>
-              {entities.data!.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                  {x.gstin ? ` · ${x.gstin}` : ""}
-                </option>
-              ))}
-            </Select>
-          )}
-        </div>
-        <Segmented
-          aria-label="Supply type"
-          value={kind}
-          onChange={setKind}
-          options={[
-            { value: "all", label: "All" },
-            { value: "b2b", label: "B2B" },
-            { value: "b2c", label: "B2C / export" },
-          ]}
-        />
-      </div>
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard label="Taxable value" icon={Receipt} tone="brand" loading={q.isLoading} value={formatCurrency(sum.taxable)} />
         <StatCard label="CGST" icon={Landmark} loading={q.isLoading} value={formatCurrency(sum.cgst)} />
         <StatCard label="SGST" icon={Landmark} loading={q.isLoading} value={formatCurrency(sum.sgst)} />
         <StatCard label="IGST" icon={Landmark} loading={q.isLoading} value={formatCurrency(sum.igst)} />
       </section>
-      <DataTable rows={rows} columns={columns} rowKey={(x) => x.inv.id} loading={q.isLoading} initialSort={{ key: "no", dir: "asc" }} pageSize={25} empty={{ icon: Receipt, title: "No issued invoices in this period" }} />
+      <DataTable
+        exportName={false}
+        itemsLabel="invoices"
+        filterTabs={[
+          { key: "all", label: "All", count: inPeriod.length },
+          { key: "b2b", label: "B2B", count: inPeriod.filter((x) => x.b2b).length },
+          { key: "b2c", label: "B2C / export", count: inPeriod.filter((x) => !x.b2b).length },
+        ]}
+        activeFilterTab={kind}
+        onFilterTabChange={(k) => setKind(k as "all" | "b2b" | "b2c")}
+        searchable
+        searchPlaceholder="Invoice, client, GSTIN"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <>
+            <Select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)} className="w-52">
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            {(entities.data?.length ?? 0) > 1 && (
+              <Select aria-label="Billing entity" value={entity} onChange={(e) => setEntity(e.target.value)} className="w-48">
+                <option value="">All entities</option>
+                {entities.data!.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                    {x.gstin ? ` · ${x.gstin}` : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!visible.length}
+              onClick={() =>
+                downloadCsv(
+                  `gst-${p.value}${entity ? `-${entities.data?.find((e) => e.id === entity)?.name ?? ""}` : ""}.csv`,
+                  ["Invoice", "Date", "Billed by (GSTIN)", "Client", "Client GSTIN", "Supply", "Taxable (₹)", "CGST (₹)", "SGST (₹)", "IGST (₹)", "Invoice value (₹)", "Currency", "Rate"],
+                  visible.map((x) => [x.inv.invoiceNumber, x.date, x.inv.entity?.gstin ?? x.inv.entity?.name, x.inv.client?.name, x.inv.client?.gstin ?? "", x.exportSupply ? "Export" : x.b2b ? "B2B" : "B2C", x.taxable.toFixed(2), x.cgst.toFixed(2), x.sgst.toFixed(2), x.igst.toFixed(2), x.total.toFixed(2), x.inv.currency, x.inv.exchangeRate]),
+                )
+              }
+            >
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </>
+        }
+        rows={visible}
+        columns={columns}
+        rowKey={(x) => x.inv.id}
+        loading={q.isLoading}
+        initialSort={{ key: "no", dir: "asc" }}
+        pageSize={25}
+        empty={{ icon: Receipt, title: s ? "No invoices match this search" : "No issued invoices in this period" }}
+      />
       <p className="text-xs text-ink-subtle">CGST/SGST vs IGST is as stored on each invoice when it was raised. Input tax credit isn’t tracked in the portal.</p>
 
       <Card>
@@ -201,7 +215,15 @@ export default function GstReport() {
             </Button>
           }
         />
-        {!taxes.data?.length ? (
+        {taxes.isLoading ? (
+          <div className="space-y-2 border-t border-line p-5">
+            <Skeleton className="h-6" />
+            <Skeleton className="h-6" />
+            <Skeleton className="h-6" />
+          </div>
+        ) : taxes.isError ? (
+          <ErrorState message="Tax rates couldn’t be loaded." onRetry={() => taxes.refetch()} />
+        ) : !taxes.data?.length ? (
           <EmptyState icon={Percent} title="No custom tax slabs configured yet" description="Add GST slabs (e.g. GST 18%) or TDS sections (e.g. TDS 194J — 10%)." className="py-8" />
         ) : (
           <ul className="divide-y divide-line border-t border-line">

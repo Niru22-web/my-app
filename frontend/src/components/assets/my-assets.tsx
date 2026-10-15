@@ -117,6 +117,7 @@ export function MyAssets() {
           </Card>
         ) : (
           <DataTable
+        exportName="my-assets"
             rows={(reqs.data ?? []).filter(isRealRequest)}
             columns={columns}
             rowKey={(r) => r.id}

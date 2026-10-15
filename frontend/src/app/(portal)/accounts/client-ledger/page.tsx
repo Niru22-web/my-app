@@ -1,15 +1,12 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { BookOpen, Download, Plus } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { today, workDate } from "@/lib/dates";
-import { formatCurrency, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { FormRow, Input, Select } from "@/components/ui/inputs";
 import { Segmented } from "@/components/ui/segmented";
@@ -18,26 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { downloadCsv } from "@/components/claims/claim-tabs";
 import { fullName, useClientOptions, usePeople } from "@/components/management/api";
-import {
-  isIssued,
-  toInr,
-  useAccountsMutations,
-  useEntities,
-  useInvoices,
-  useLedgers,
-  useReceipts,
-} from "@/components/accounts/api";
-
-interface Line {
-  date: string;
-  kind: string;
-  ref: string;
-  href?: string;
-  detail: string;
-  debit: number;
-  credit: number;
-  balance: number;
-}
+import { fyStart, useAccountsMutations, useClientLedger, useEmployeeLedger, useEntities, useInvoices, useLedgers, type LedgerView } from "@/components/accounts/api";
+import { LedgerTable } from "@/components/accounts/ledger-table";
 
 export default function StatementsAndLedgersPage() {
   const [mode, setMode] = useState<"client" | "employee" | "general">("client");
@@ -71,84 +50,57 @@ export default function StatementsAndLedgersPage() {
   );
 }
 
-/** Client statement in ₹, built from issued invoices and receipts. */
+/** CSV rows for a ledger: opening, entries, closing. */
+function ledgerCsv(view: LedgerView, from: string, to: string, row: (r: LedgerView["rows"][number]) => (string | number)[], blanks: number) {
+  const pad = Array<string>(blanks).fill("");
+  return [
+    [from || "", "Opening balance", ...pad, "", "", view.opening.toFixed(2)],
+    ...view.rows.map((r) => [workDate(r.date), ...row(r), r.debit ? r.debit.toFixed(2) : "", r.credit ? r.credit.toFixed(2) : "", (r.runningBalance ?? r.balance).toFixed(2)]),
+    [to || "", "Closing balance", ...pad, view.totals.debit.toFixed(2), view.totals.credit.toFixed(2), view.closing.toFixed(2)],
+  ];
+}
+
+function DateRange({ id, from, to, setFrom, setTo, fromHint }: { id: string; from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void; fromHint?: string }) {
+  return (
+    <>
+      <FormRow label="From" htmlFor={`${id}-from`} hint={fromHint}>
+        <Input id={`${id}-from`} type="date" max={to || undefined} value={from} onChange={(e) => setFrom(e.target.value)} />
+      </FormRow>
+      <FormRow label="To" htmlFor={`${id}-to`}>
+        <Input id={`${id}-to`} type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
+      </FormRow>
+    </>
+  );
+}
+
+/** Client statement in ₹ from the client's ledger: invoices, credit notes, receipts (with TDS), cancellations and reversals. */
 function ClientStatements() {
+  const clientsQ = useClientOptions();
   const inv = useInvoices();
-  const rec = useReceipts();
   const [clientId, setClient] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState(today());
+  const q = useClientLedger(clientId, { from: from || undefined, to: to || undefined });
 
   const clients = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const i of inv.data ?? []) if (isIssued(i)) m.set(i.clientId, i.client?.name ?? "—");
-    for (const r of rec.data ?? []) m.set(r.clientId, r.client?.name ?? m.get(r.clientId) ?? "—");
+    const m = new Map<string, string>((clientsQ.data ?? []).map((c) => [c.id, c.name]));
+    for (const i of inv.data ?? []) if (!m.has(i.clientId)) m.set(i.clientId, i.client?.name ?? "—");
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [inv.data, rec.data]);
-
-  const { opening, lines, closing } = useMemo(() => {
-    const all: Omit<Line, "balance">[] = [
-      ...(inv.data ?? [])
-        .filter((i) => i.clientId === clientId && isIssued(i))
-        .map((i) => ({
-          date: workDate(i.issueDate),
-          kind: "Invoice" as const,
-          ref: i.invoiceNumber,
-          href: `/accounts/invoices/${i.id}`,
-          detail: i.currency !== "INR" ? `${formatCurrency(i.totalAmount, i.currency)} @ ${i.exchangeRate}` : i.entity?.name ?? "",
-          debit: toInr(i.totalAmount, i.exchangeRate),
-          credit: 0,
-        })),
-      ...(rec.data ?? [])
-        .filter((r) => r.clientId === clientId)
-        .map((r) => ({
-          date: workDate(r.receiptDate),
-          kind: "Receipt" as const,
-          ref: r.receiptNumber,
-          detail: [r.paymentMode, r.referenceNumber, r.currency !== "INR" ? `${formatCurrency(r.amount, r.currency)} @ ${r.exchangeRate}` : ""].filter(Boolean).join(" · "),
-          debit: 0,
-          credit: toInr(r.amount, r.exchangeRate),
-        })),
-    ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "Invoice" ? -1 : 1));
-    let bal = 0;
-    let opening = 0;
-    const out: Line[] = [];
-    for (const l of all) {
-      bal += l.debit - l.credit;
-      if (from && l.date < from) {
-        opening = bal;
-        continue;
-      }
-      if (to && l.date > to) continue;
-      out.push({ ...l, balance: bal });
-    }
-    return { opening, lines: out, closing: out.length ? out[out.length - 1].balance : opening };
-  }, [inv.data, rec.data, clientId, from, to]);
-
+  }, [clientsQ.data, inv.data]);
   const name = clients.find(([id]) => id === clientId)?.[1] ?? "";
-  const totals = lines.reduce((t, l) => ({ d: t.d + l.debit, c: t.c + l.credit }), { d: 0, c: 0 });
-
-  if (inv.isError || rec.isError)
-    return (
-      <Card>
-        <ErrorState message="Statement data couldn’t be loaded." onRetry={() => (inv.refetch(), rec.refetch())} />
-      </Card>
-    );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Client statements"
-        description="Issued invoices and receipts for a client, with the running balance in ₹"
+        description="Invoices, credit notes, receipts (including TDS), cancellations and reversals for a client, with the running balance in ₹"
         actions={
           <Button
             variant="secondary"
-            disabled={!lines.length}
+            disabled={!q.data}
             onClick={() =>
-              downloadCsv(`statement-${name.replace(/\W+/g, "-")}-${to}.csv`, ["Date", "Type", "Reference", "Detail", "Debit (₹)", "Credit (₹)", "Balance (₹)"], [
-                ...(from ? [[from, "Opening balance", "", "", "", "", opening.toFixed(2)]] : []),
-                ...lines.map((l) => [l.date, l.kind, l.ref, l.detail, l.debit ? l.debit.toFixed(2) : "", l.credit ? l.credit.toFixed(2) : "", l.balance.toFixed(2)]),
-              ])
+              q.data &&
+              downloadCsv(`statement-${name.replace(/\W+/g, "-")}-${to}.csv`, ["Date", "Description", "Debit (₹)", "Credit (₹)", "Balance (₹)"], ledgerCsv(q.data, from, to, (r) => [r.description], 0))
             }
           >
             <Download className="h-4 w-4" /> Export
@@ -166,74 +118,24 @@ function ClientStatements() {
             ))}
           </Select>
         </FormRow>
-        <FormRow label="From" htmlFor="st-from" hint="Optional">
-          <Input id="st-from" type="date" max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
-        </FormRow>
-        <FormRow label="To" htmlFor="st-to">
-          <Input id="st-to" type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
-        </FormRow>
+        <DateRange id="st" from={from} to={to} setFrom={setFrom} setTo={setTo} fromHint="Optional — leave empty for the full history" />
       </div>
 
       <Card>
-        {inv.isLoading || rec.isLoading ? (
+        {!clientId ? (
+          <EmptyState icon={BookOpen} title="Choose a client" description="The statement shows everything posted to the client’s account." />
+        ) : q.isLoading ? (
           <Skeleton className="m-5 h-48" />
-        ) : !clientId ? (
-          <EmptyState icon={BookOpen} title="Choose a client" description={clients.length ? undefined : "No client has an issued invoice or a receipt yet."} />
+        ) : q.isError ? (
+          <ErrorState message="The statement couldn’t be loaded." onRetry={() => q.refetch()} />
         ) : (
-          <div className="overflow-x-auto p-5">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-ink-subtle">
-                  <th className="py-2 font-medium">Date</th>
-                  <th className="py-2 font-medium">Reference</th>
-                  <th className="py-2 font-medium">Detail</th>
-                  <th className="py-2 text-right font-medium">Debit</th>
-                  <th className="py-2 text-right font-medium">Credit</th>
-                  <th className="py-2 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {from && (
-                  <tr className="border-b border-line bg-surface-muted/60">
-                    <td className="py-2">{formatDate(from)}</td>
-                    <td className="py-2 font-medium" colSpan={4}>
-                      Opening balance
-                    </td>
-                    <td className="py-2 text-right font-semibold tabular">{formatCurrency(opening)}</td>
-                  </tr>
-                )}
-                {lines.map((l, k) => (
-                  <tr key={k} className="border-b border-line last:border-0">
-                    <td className="py-2 text-ink-muted">{formatDate(l.date)}</td>
-                    <td className="py-2">{l.href ? <Link href={l.href} className="font-medium text-ink hover:text-brand">{l.ref}</Link> : <span className="font-medium text-ink">{l.ref}</span>}</td>
-                    <td className="max-w-[16rem] truncate py-2 text-ink-muted">{l.detail}</td>
-                    <td className="py-2 text-right tabular">{l.debit ? formatCurrency(l.debit) : ""}</td>
-                    <td className="py-2 text-right tabular text-success">{l.credit ? formatCurrency(l.credit) : ""}</td>
-                    <td className="py-2 text-right font-medium tabular">{formatCurrency(l.balance)}</td>
-                  </tr>
-                ))}
-                {!lines.length && (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-ink-subtle">
-                      Nothing in this period
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {lines.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 border-line font-semibold">
-                    <td className="pt-2" colSpan={3}>
-                      Closing balance {closing > 0 ? "(client owes)" : closing < 0 ? "(advance held)" : ""}
-                    </td>
-                    <td className="pt-2 text-right tabular">{formatCurrency(totals.d)}</td>
-                    <td className="pt-2 text-right tabular">{formatCurrency(totals.c)}</td>
-                    <td className="pt-2 text-right tabular">{formatCurrency(Math.abs(closing))}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
+          <LedgerTable
+            key={`${clientId}-${from}-${to}`}
+            view={q.data!}
+            from={from}
+            mode="client"
+            closingNote={(c) => (c > 0 ? "(client owes)" : c < 0 ? "(advance held)" : "(settled)")}
+          />
         )}
       </Card>
     </div>
@@ -245,26 +147,23 @@ function EmployeeLedgerView() {
   const [employeeId, setEmployeeId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState(today());
-  const q = useLedgers({ type: "EMPLOYEE", employeeId: employeeId || undefined, from: from || undefined, to: to || undefined }, !!employeeId);
-
-  const rows = q.data ?? [];
-  const totals = rows.reduce((t, r) => ({ d: t.d + r.debit, c: t.c + r.credit }), { d: 0, c: 0 });
-  const closing = rows.length ? (rows[rows.length - 1].runningBalance ?? 0) : 0;
+  const q = useEmployeeLedger(employeeId, { from: from || undefined, to: to || undefined });
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Employee ledger"
-        description="Salary accruals, disbursements, and approved expense claims for an employee"
+        description="Salary due and paid, and reversals of salary payments, for an employee"
         actions={
           <Button
             variant="secondary"
-            disabled={!rows.length}
+            disabled={!q.data}
             onClick={() =>
+              q.data &&
               downloadCsv(
                 `employee-ledger-${to}.csv`,
-                ["Date", "Entity", "Description", "Reference Type", "Debit (₹)", "Credit (₹)", "Running Balance (₹)"],
-                rows.map((r) => [workDate(r.date), r.entity?.name ?? "", r.description, r.referenceType ?? "", r.debit.toFixed(2), r.credit.toFixed(2), (r.runningBalance ?? r.balance).toFixed(2)]),
+                ["Date", "Description", "Entity", "Due (₹)", "Paid (₹)", "Balance (₹)"],
+                ledgerCsv(q.data, from, to, (r) => [r.description, r.entity?.name ?? ""], 1),
               )
             }
           >
@@ -283,60 +182,26 @@ function EmployeeLedgerView() {
             ))}
           </Select>
         </FormRow>
-        <FormRow label="From" htmlFor="el-from" hint="Optional">
-          <Input id="el-from" type="date" max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
-        </FormRow>
-        <FormRow label="To" htmlFor="el-to">
-          <Input id="el-to" type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
-        </FormRow>
+        <DateRange id="el" from={from} to={to} setFrom={setFrom} setTo={setTo} fromHint="Optional" />
       </div>
 
       <Card>
         {!employeeId ? (
-          <EmptyState icon={BookOpen} title="Choose an employee" description="Select an employee to view their salary and reimbursement ledger." />
+          <EmptyState icon={BookOpen} title="Choose an employee" description="Select an employee to see their salary ledger." />
         ) : q.isLoading ? (
           <Skeleton className="m-5 h-48" />
         ) : q.isError ? (
           <ErrorState message="Employee ledger couldn’t be loaded." onRetry={() => q.refetch()} />
-        ) : !rows.length ? (
-          <EmptyState icon={BookOpen} title="No ledger entries for this employee in this period" />
         ) : (
-          <div className="overflow-x-auto p-5">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-ink-subtle">
-                  <th className="py-2 font-medium">Date</th>
-                  <th className="py-2 font-medium">Description</th>
-                  <th className="py-2 font-medium">Entity</th>
-                  <th className="py-2 text-right font-medium">Accrued (Dr)</th>
-                  <th className="py-2 text-right font-medium">Paid (Cr)</th>
-                  <th className="py-2 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-line last:border-0">
-                    <td className="py-2 text-ink-muted">{formatDate(r.date)}</td>
-                    <td className="py-2 font-medium text-ink">{r.description}</td>
-                    <td className="py-2 text-ink-muted">{r.entity?.name ?? "—"}</td>
-                    <td className="py-2 text-right tabular">{r.debit ? formatCurrency(r.debit) : ""}</td>
-                    <td className="py-2 text-right tabular text-success">{r.credit ? formatCurrency(r.credit) : ""}</td>
-                    <td className="py-2 text-right font-medium tabular">{formatCurrency(r.runningBalance ?? r.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-line font-semibold">
-                  <td className="pt-2" colSpan={3}>
-                    Net balance {closing > 0 ? "(payable to employee)" : closing < 0 ? "(advance)" : "(settled)"}
-                  </td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(totals.d)}</td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(totals.c)}</td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(Math.abs(closing))}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <LedgerTable
+            key={`${employeeId}-${from}-${to}`}
+            view={q.data!}
+            from={from}
+            mode="employee"
+            debitLabel="Due (Dr)"
+            creditLabel="Paid (Cr)"
+            closingNote={(c) => (c > 0 ? "(payable to employee)" : c < 0 ? "(paid in advance)" : "(settled)")}
+          />
         )}
       </Card>
     </div>
@@ -347,43 +212,26 @@ function GeneralLedgerView() {
   const entities = useEntities();
   const [entityId, setEntityId] = useState("");
   const [type, setType] = useState("all");
-  const [from, setFrom] = useState("");
+  const [from, setFrom] = useState(() => fyStart(today()));
   const [to, setTo] = useState(today());
 
-  const q = useLedgers({
-    entityId: entityId || undefined,
-    type: type !== "all" ? type : undefined,
-    from: from || undefined,
-    to: to || undefined,
-  });
-
-  const rows = q.data ?? [];
-  const totals = rows.reduce((t, r) => ({ d: t.d + r.debit, c: t.c + r.credit }), { d: 0, c: 0 });
-  const closing = rows.length ? (rows[rows.length - 1].runningBalance ?? 0) : 0;
+  const q = useLedgers({ entityId: entityId || undefined, type: type !== "all" ? type : undefined, from: from || undefined, to: to || undefined });
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="General ledger"
-        description="Double-entry ledger postings across client invoices, receipts, payroll, claims, and manual journal entries"
+        description="Every posting: invoices, credit notes, receipts and TDS, cancellations, reversals, payroll and manual journal entries"
         actions={
           <Button
             variant="secondary"
-            disabled={!rows.length}
+            disabled={!q.data}
             onClick={() =>
+              q.data &&
               downloadCsv(
-                `general-ledger-${to}.csv`,
-                ["Date", "Entity", "Type", "Counterparty", "Description", "Debit (₹)", "Credit (₹)", "Running Balance (₹)"],
-                rows.map((r) => [
-                  workDate(r.date),
-                  r.entity?.name ?? "",
-                  r.type,
-                  r.client?.name ?? (r.employee ? fullName(r.employee) : ""),
-                  r.description,
-                  r.debit.toFixed(2),
-                  r.credit.toFixed(2),
-                  (r.runningBalance ?? r.balance).toFixed(2),
-                ]),
+                `general-ledger-${from || "start"}-to-${to}.csv`,
+                ["Date", "Entity", "Account", "Party", "Description", "Debit (₹)", "Credit (₹)", "Balance (₹)"],
+                ledgerCsv(q.data, from, to, (r) => [r.entity?.name ?? "", r.type, r.client?.name ?? (r.employee ? fullName(r.employee) : ""), r.description], 3),
               )
             }
           >
@@ -412,12 +260,7 @@ function GeneralLedgerView() {
             <option value="GENERAL">General journal</option>
           </Select>
         </FormRow>
-        <FormRow label="From" htmlFor="gl-from">
-          <Input id="gl-from" type="date" max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
-        </FormRow>
-        <FormRow label="To" htmlFor="gl-to">
-          <Input id="gl-to" type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} />
-        </FormRow>
+        <DateRange id="gl" from={from} to={to} setFrom={setFrom} setTo={setTo} fromHint="Starts at 1 April (this financial year)" />
       </div>
 
       <Card>
@@ -425,49 +268,10 @@ function GeneralLedgerView() {
           <Skeleton className="m-5 h-48" />
         ) : q.isError ? (
           <ErrorState message="General ledger couldn’t be loaded." onRetry={() => q.refetch()} />
-        ) : !rows.length ? (
-          <EmptyState icon={BookOpen} title="No ledger postings match these filters" />
+        ) : !q.data?.rows.length && !q.data?.opening ? (
+          <EmptyState icon={BookOpen} title={entityId || type !== "all" ? "No ledger postings match these filters" : "No ledger postings in this period"} />
         ) : (
-          <div className="overflow-x-auto p-5">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-ink-subtle">
-                  <th className="py-2 font-medium">Date</th>
-                  <th className="py-2 font-medium">Account</th>
-                  <th className="py-2 font-medium">Counterparty</th>
-                  <th className="py-2 font-medium">Description</th>
-                  <th className="py-2 text-right font-medium">Debit</th>
-                  <th className="py-2 text-right font-medium">Credit</th>
-                  <th className="py-2 text-right font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-line last:border-0">
-                    <td className="py-2 text-ink-muted">{formatDate(r.date)}</td>
-                    <td className="py-2">
-                      <Badge>{r.type}</Badge>
-                    </td>
-                    <td className="py-2 text-ink-muted">{r.client?.name ?? (r.employee ? fullName(r.employee) : r.entity?.name ?? "—")}</td>
-                    <td className="max-w-xs truncate py-2 font-medium text-ink">{r.description}</td>
-                    <td className="py-2 text-right tabular">{r.debit ? formatCurrency(r.debit) : ""}</td>
-                    <td className="py-2 text-right tabular text-success">{r.credit ? formatCurrency(r.credit) : ""}</td>
-                    <td className="py-2 text-right font-medium tabular">{formatCurrency(r.runningBalance ?? r.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-line font-semibold">
-                  <td className="pt-2" colSpan={4}>
-                    Totals
-                  </td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(totals.d)}</td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(totals.c)}</td>
-                  <td className="pt-2 text-right tabular">{formatCurrency(closing)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <LedgerTable key={`${entityId}-${type}-${from}-${to}`} view={q.data!} from={from} mode="general" />
         )}
       </Card>
     </div>

@@ -9,7 +9,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { FormRow, Select, Textarea } from "@/components/ui/inputs";
@@ -29,10 +28,15 @@ export default function RequestsPage() {
   const [view, setView] = useState<View>("Pending");
   const [deciding, setDeciding] = useState<{ r: AssetRequest; to: "Approved" | "Rejected" } | null>(null);
   const [fulfilling, setFulfilling] = useState<AssetRequest | null>(null);
+  const [search, setSearch] = useState("");
 
   const all = useMemo(() => (q.data ?? []).filter(isRealRequest), [q.data]);
   const count = (s: string) => all.filter((r) => r.status === s).length;
-  const rows = all.filter((r) => (view === "done" ? !["Pending", "Approved"].includes(r.status) : r.status === view));
+  const rows = all.filter((r) => {
+    if (view === "done" ? ["Pending", "Approved"].includes(r.status) : r.status !== view) return false;
+    const s = search.trim().toLowerCase();
+    return !s || `${r.title} ${r.requestId} ${r.assetType} ${r.description ?? ""} ${personName(r.employee)} ${r.employee?.employeeId ?? ""} ${r.employee?.department ?? ""}`.toLowerCase().includes(s);
+  });
 
   if (!allowed)
     return (
@@ -102,24 +106,27 @@ export default function RequestsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Asset requests" description="Approve what people ask for, then hand over an available asset" />
-      <Segmented
-        aria-label="Show"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: "Pending", label: "To review", count: count("Pending") || undefined },
-          { value: "Approved", label: "Approved, to hand over", count: count("Approved") || undefined },
-          { value: "done", label: "Closed" },
-        ]}
-      />
       <DataTable
+        exportName="asset-requests"
+        itemsLabel="requests"
+        filterTabs={[
+          { key: "Pending", label: "To review", count: count("Pending") },
+          { key: "Approved", label: "Approved, to hand over", count: count("Approved") },
+          { key: "done", label: "Closed", count: all.filter((r) => !["Pending", "Approved"].includes(r.status)).length },
+        ]}
+        activeFilterTab={view}
+        onFilterTabChange={(k) => setView(k as View)}
+        searchable
+        searchPlaceholder="Search request, asset type or person"
+        searchValue={search}
+        onSearchChange={setSearch}
         rows={rows}
         columns={columns}
         rowKey={(r) => r.id}
         loading={q.isLoading}
         initialSort={{ key: "raised", dir: view === "done" ? "desc" : "asc" }}
         pageSize={20}
-        empty={{ icon: PackagePlus, title: view === "Pending" ? "Nothing waiting for review" : view === "Approved" ? "Nothing waiting to be handed over" : "No closed requests yet" }}
+        empty={{ icon: PackagePlus, title: search.trim() ? "No requests match your search" : view === "Pending" ? "Nothing waiting for review" : view === "Approved" ? "Nothing waiting to be handed over" : "No closed requests yet" }}
       />
 
       {deciding && (

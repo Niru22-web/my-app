@@ -15,6 +15,10 @@ interface Person {
 }
 
 export interface Claim {
+  /** From the team list: what the signed-in reviewer may do (decided by the server) */
+  canApprove?: boolean;
+  approveLevel?: "level1" | "final" | null;
+  canPay?: boolean;
   id: string;
   claimId: string;
   category: string;
@@ -120,8 +124,17 @@ export const isFinanceWide = (role?: string | null) => ["admin", "partner", "own
 const finalApprover = (role?: string | null) => ["partner", "admin", "owner"].includes(r(role));
 const canPayRole = (role?: string | null) => ["admin", "owner", "accountant", "finance manager", "accounts"].includes(r(role));
 
-/** What the signed-in reviewer may do with someone else's claim, following the API's stage rules. */
+/** What the signed-in reviewer may do with someone else's claim. Uses the server's answer when the claim came from the team list. */
 export function reviewerActions(c: Claim, role: string | null | undefined, userId: string | undefined) {
+  if (c.canApprove !== undefined) {
+    return {
+      approve: c.canApprove,
+      approveLabel: c.approveLevel === "level1" ? "Approve (manager)" : "Final approve",
+      reject: c.canApprove,
+      sendBack: c.canApprove,
+      pay: !!c.canPay,
+    };
+  }
   const st = stageOf(c);
   const own = c.employeeId === userId;
   const approve = !own && ((st === "manager" && (r(role) === "manager" || finalApprover(role))) || (st === "final" && finalApprover(role)));
@@ -135,6 +148,16 @@ export function reviewerActions(c: Claim, role: string | null | undefined, userI
 }
 
 // ---- Queries & mutations -------------------------------------------------------------
+
+/** Whether the signed-in person has a team (or firm-wide) claims view, and can pay claims. Decided by the server. */
+export function useClaimAccess(enabled = true) {
+  return useQuery({
+    queryKey: ["claims", "access"],
+    queryFn: async () => (await api<Envelope<{ team: boolean; org: boolean; pay: boolean }>>("reimbursements/access")).data,
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
 
 export function useMyClaims(enabled = true) {
   return useQuery({

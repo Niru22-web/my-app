@@ -1,15 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeftRight, Download, Search, Undo2, Users } from "lucide-react";
+import { ArrowLeftRight, Download, Undo2, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, downloadFile } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ErrorState } from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
@@ -103,28 +101,25 @@ export default function AssignmentsPage() {
       <PageHeader
         title="Assignments"
         description={q.isLoading ? "Who has which asset" : `${current} asset${current === 1 ? "" : "s"} currently with people`}
-        actions={
-          <Button variant="secondary" disabled={!all.length} onClick={() => downloadFile("assets/allocations/export", `asset-assignments-${new Date().toISOString().slice(0, 10)}.xlsx`).catch(() => toast.error("Export failed"))}>
+      />
+      <DataTable
+        exportName={false}
+        itemsLabel="assignments"
+        filterTabs={[
+          { key: "current", label: "With people now", count: current },
+          { key: "returned", label: "History", count: all.length - current },
+        ]}
+        activeFilterTab={view}
+        onFilterTabChange={(k) => setView(k as "current" | "returned")}
+        searchable
+        searchPlaceholder="Search person, asset or serial"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <Button variant="secondary" size="sm" disabled={!all.length} onClick={() => downloadFile("assets/allocations/export", `asset-assignments-${new Date().toISOString().slice(0, 10)}.xlsx`).catch(() => toast.error("Export failed"))}>
             <Download className="h-4 w-4" /> Export
           </Button>
         }
-      />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Segmented
-          aria-label="Show"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "current", label: "With people now" },
-            { value: "returned", label: "History" },
-          ]}
-        />
-        <div className="relative sm:w-72">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-          <Input placeholder="Person, asset or serial" aria-label="Search assignments" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-      </div>
-      <DataTable
         rows={rows}
         columns={columns}
         rowKey={(a) => a.id}

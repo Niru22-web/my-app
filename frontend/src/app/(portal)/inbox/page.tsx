@@ -45,7 +45,8 @@ export default function InboxPage() {
   const { user } = useAuth();
   const toast = useToast();
   const qc = useQueryClient();
-  const canApprove = ["admin", "manager", "partner", "owner"].includes(normRole(user?.role));
+  // Same people the approval route allows: Admin, Owner, HR.
+  const canApprove = ["admin", "owner", "hr"].includes(normRole(user?.role));
 
   const [filter, setFilter] = useState<Filter>("all");
   const [mod, setMod] = useState("");

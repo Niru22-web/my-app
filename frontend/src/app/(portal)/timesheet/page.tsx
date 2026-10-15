@@ -22,8 +22,9 @@ import { EntryRow } from "@/components/timesheet/entry-row";
 import { WeekSummary } from "@/components/timesheet/week-summary";
 import { MonthCalendar } from "@/components/timesheet/month-calendar";
 import { ExcelMenu } from "@/components/timesheet/excel-menu";
+import { WeekGrid } from "@/components/timesheet/week-grid";
 
-type Mode = "week" | "month" | "range";
+type Mode = "grid" | "week" | "month" | "range";
 type StatusFilter = "all" | "draft" | "submitted" | "approved" | "rejected";
 
 export default function MyTimesheetPage() {
@@ -45,7 +46,7 @@ export default function MyTimesheetPage() {
 
   const days = useMemo(() => weekDays(anchor), [anchor]);
   const filters =
-    mode === "week" ? { dateFrom: days[0], dateTo: days[6] } : mode === "month" ? { dateFrom: monthAnchor, dateTo: endOfMonth(monthAnchor) } : { dateFrom: rangeFrom, dateTo: rangeTo };
+    mode === "week" || mode === "grid" ? { dateFrom: days[0], dateTo: days[6] } : mode === "month" ? { dateFrom: monthAnchor, dateTo: endOfMonth(monthAnchor) } : { dateFrom: rangeFrom, dateTo: rangeTo };
   const q = useMyTimelogs(filters);
   const m = useTimelogMutations();
 
@@ -106,12 +107,13 @@ export default function MyTimesheetPage() {
               setSelectedDay(null);
             }}
             options={[
+              { value: "grid", label: "Week grid" },
               { value: "week", label: "Week" },
               { value: "month", label: "Month" },
               { value: "range", label: "Date range" },
             ]}
           />
-          {mode === "week" ? (
+          {mode === "week" || mode === "grid" ? (
             <div className="flex items-center gap-1">
               <button onClick={() => (setAnchor(addDays(anchor, -7)), setSelectedDay(null))} className="grid h-9 w-9 place-items-center rounded-xl border border-line bg-surface hover:bg-surface-muted" aria-label="Previous week">
                 <ChevronLeft className="h-4 w-4" />
@@ -174,6 +176,7 @@ export default function MyTimesheetPage() {
         />
       </div>
 
+      {mode === "grid" && <WeekGrid key={days[0]} days={days} entries={all} loading={q.isLoading} />}
       {mode === "week" && <WeekSummary days={days} entries={all} loading={q.isLoading} selected={selectedDay} onSelect={setSelectedDay} />}
       {mode === "month" && (
         <MonthCalendar month={monthAnchor} entries={all} loading={q.isLoading} selected={selectedDay} onSelect={setSelectedDay} onLog={(d) => setEditor({ date: d })} />
@@ -202,7 +205,7 @@ export default function MyTimesheetPage() {
       )}
 
       {/* Entries */}
-      {q.isLoading ? (
+      {mode === "grid" ? null : q.isLoading ? (
         <Card className="space-y-3 p-5">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-16" />

@@ -30,7 +30,7 @@ function ClientForm({ onClose, client }: { onClose: () => void; client?: Client 
     gstStatus: client?.gstStatus === "Yes" ? "Yes" : "No",
     gstin: client?.gstin ?? "",
     pan: client?.pan ?? "",
-    partnerId: "",
+    partnerId: client?.partnerId ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -39,7 +39,6 @@ function ClientForm({ onClose, client }: { onClose: () => void; client?: Client 
   const partners = useQuery({
     queryKey: ["lookup", "partners"],
     queryFn: async () => (await api<Envelope<{ id: string; firstName: string; lastName: string; employeeId: string }[]>>("employees/partners")).data ?? [],
-    enabled: !client,
     staleTime: 5 * 60_000,
   });
 
@@ -69,7 +68,8 @@ function ClientForm({ onClose, client }: { onClose: () => void; client?: Client 
       gstStatus: f.gstStatus,
       gstin: f.gstStatus === "Yes" ? gstin : null,
       pan,
-      ...(client ? {} : { status: "Active", ...(f.partnerId ? { partnerId: f.partnerId } : {}) }),
+      partnerId: f.partnerId || null,
+      ...(client ? {} : { status: "Active" }),
     };
     try {
       await saveClient.mutateAsync({ id: client?.id, body });
@@ -105,20 +105,16 @@ function ClientForm({ onClose, client }: { onClose: () => void; client?: Client 
         <FormRow label="Alias / short name" htmlFor="c-alias">
           <Input id="c-alias" value={f.alias} onChange={(e) => set("alias", e.target.value)} maxLength={60} />
         </FormRow>
-        {!client ? (
-          <FormRow label="Engagement partner" htmlFor="c-partner" hint="Leave empty to use your own partner.">
-            <Select id="c-partner" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)}>
-              <option value="">{partners.isLoading ? "Loading…" : "Default"}</option>
-              {(partners.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {fullName(p)}
-                </option>
-              ))}
-            </Select>
-          </FormRow>
-        ) : (
-          <div />
-        )}
+        <FormRow label="Engagement partner" htmlFor="c-partner" hint={client ? undefined : "Leave empty to use your own partner."}>
+          <Select id="c-partner" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)}>
+            <option value="">{partners.isLoading ? "Loading…" : client ? "Not set" : "Default"}</option>
+            {(partners.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {fullName(p)}
+              </option>
+            ))}
+          </Select>
+        </FormRow>
         <FormRow label="Registered address" htmlFor="c-addr" className="sm:col-span-2">
           <Textarea id="c-addr" rows={2} value={f.address} onChange={(e) => set("address", e.target.value)} maxLength={400} />
         </FormRow>

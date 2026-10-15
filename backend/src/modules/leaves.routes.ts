@@ -75,12 +75,9 @@ export async function leaveRoutes(app: FastifyInstance) {
     if (status && status !== "all") {
       where.status = { equals: status, mode: "insensitive" };
     }
-    if (dateFrom || dateTo) {
-      where.fromDate = {
-        ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-        ...(dateTo ? { lte: new Date(`${dateTo.slice(0, 10)}T23:59:59.999Z`) } : {}),
-      };
-    }
+    // Any leave that overlaps the range (starts before it ends and ends after it starts).
+    if (dateTo) where.fromDate = { lte: new Date(`${dateTo.slice(0, 10)}T23:59:59.999Z`) };
+    if (dateFrom) where.toDate = { gte: new Date(`${dateFrom.slice(0, 10)}T00:00:00.000Z`) };
 
     const leaves = await prisma.leave.findMany({
       where,

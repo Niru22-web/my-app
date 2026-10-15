@@ -258,10 +258,13 @@ export async function systemRoutes(app: FastifyInstance) {
       let removed = 0;
       if (fs.existsSync(targetDir)) {
         for (const entry of fs.readdirSync(targetDir, { withFileTypes: true })) {
-          if (entry.isFile()) {
-            fs.unlinkSync(path.join(targetDir, entry.name));
-            removed++;
-          }
+          if (!entry.isFile()) continue;
+          const full = path.join(targetDir, entry.name);
+          // Logs: only files older than 30 days (what the screen promises). Temp: anything older than a day.
+          const maxAgeMs = (action === "clean_logs" ? 30 : 1) * 86_400_000;
+          if (Date.now() - fs.statSync(full).mtimeMs < maxAgeMs) continue;
+          fs.unlinkSync(full);
+          removed++;
         }
       }
 

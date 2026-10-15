@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
-import { ACCOUNTS_ROLES, authenticate, normRole, reportingTreeIds, type JwtUser } from "../plugins/auth";
-import { approversFor, powerOver } from "../utils/leave-approval";
+import { ACCOUNTS_ROLES, authenticate, leadsATeam, normRole, reportingTreeIds, requireRoles, type JwtUser } from "../plugins/auth";
+import { approversFor, notifyTargets, powerOver } from "../utils/leave-approval";
 import { parseBodyOrMultipart } from "../utils/uploads";
 import { createNotification } from "../utils/notify";
 
@@ -58,7 +58,112 @@ async function claimPower(u: JwtUser, claim: { employeeId: string; status: strin
   return powerOver(asLead, claim.employeeId, 2, a.get(claim.employeeId), claim.status !== "PENDING_MANAGER", new Set(tree));
 }
 
+/** Finance: sees every claim and records payments. */
+function paysClaims(u: JwtUser) {
+  const r = normRole(u.role);
+  return ["admin", "owner", "finance manager"].includes(r) || ACCOUNTS_ROLES.has(r) || !!u.hasAccountsAccess;
+}
+
+const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+
+/** Tell the people who must act next. Falls back to Admins/Owners when the claimant has no reporting line. */
+async function notifyApprovers(claim: { id: string; claimId: string; employeeId: string; amount: number; category: string }, step: "level1" | "level2", who: string) {
+  const a = (await approversFor([claim.employeeId])).get(claim.employeeId);
+  let targets = notifyTargets(step, a);
+  if (step === "level1" && !targets.length) targets = notifyTargets("level2", a);
+  if (!targets.length) {
+    const admins = await prisma.employee.findMany({ where: { status: { equals: "active", mode: "insensitive" }, role: { in: ["Admin", "admin", "Owner", "owner"] } }, select: { id: true } });
+    targets = admins.map((x) => x.id);
+  }
+  for (const userId of targets.filter((x) => x !== claim.employeeId)) {
+    await createNotification({
+      userId,
+      title: step === "level1" ? "Expense claim to approve" : "Expense claim needs final approval",
+      message: `${who} — ${claim.category} ${inr(claim.amount)} (${claim.claimId})`,
+      type: "reimbursement_approval",
+      module: "Finance",
+      actionUrl: "/portal/reimbursements/team",
+    });
+  }
+}
+
+/**
+ * Expense policy check for a claim (new or edited). Returns the problem in plain words, or null.
+ * Policies are per category (case-insensitive); categories without an active policy are unrestricted.
+ */
+async function policyProblem(employeeId: string, category: string, amount: number, date: Date, hasReceipt: boolean, excludeId?: string) {
+  const policy = await prisma.expensePolicy.findFirst({ where: { category: { equals: category, mode: "insensitive" }, isActive: true } });
+  if (!policy) return null;
+  if (policy.perClaimLimit != null && amount > policy.perClaimLimit) return `${category} claims are limited to ${inr(policy.perClaimLimit)} each.`;
+  if (policy.receiptRequiredAbove != null && amount > policy.receiptRequiredAbove && !hasReceipt) return `Attach the bill — it's required for ${category} claims above ${inr(policy.receiptRequiredAbove)}.`;
+  if (policy.submitWithinDays != null) {
+    const ageDays = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+    if (ageDays > policy.submitWithinDays) return `${category} expenses must be claimed within ${policy.submitWithinDays} days.`;
+  }
+  if (policy.monthlyLimit != null) {
+    const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+    const used = await prisma.reimbursement.aggregate({
+      where: { employeeId, category: { equals: category, mode: "insensitive" }, date: { gte: start, lt: end }, status: { notIn: ["REJECTED"] }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      _sum: { amount: true },
+    });
+    const total = (used._sum.amount ?? 0) + amount;
+    if (total > policy.monthlyLimit) return `This takes your ${category} claims for the month to ${inr(total)}; the monthly limit is ${inr(policy.monthlyLimit)}.`;
+  }
+  return null;
+}
+
 export async function reimbursementRoutes(app: FastifyInstance) {
+  // GET /api/reimbursements/access — what the caller can see/do (drives the Team claims tab)
+  app.get("/api/reimbursements/access", { preHandler: [authenticate] }, async (req, reply) => {
+    const u = req.user!;
+    const r = normRole(u.role);
+    const org = paysClaims(u) || ["admin", "owner"].includes(r);
+    return reply.send({ success: true, data: { team: org || (await leadsATeam(u.id)), org, pay: paysClaims(u) } });
+  });
+
+  // ── Expense policies (HR / Admin / Owner / Finance edit; everyone can read) ──
+  app.get("/api/expense-policies", { preHandler: [authenticate] }, async (_req, reply) => {
+    const data = await prisma.expensePolicy.findMany({ orderBy: { category: "asc" } });
+    return reply.send({ success: true, data });
+  });
+  app.put("/api/expense-policies", { preHandler: [authenticate] }, async (req, reply) => {
+    const u = req.user!;
+    if (!["admin", "owner", "hr"].includes(normRole(u.role)) && !paysClaims(u)) return reply.code(403).send({ success: false, message: "Only HR, Finance or an Admin can change expense policies." });
+    const b = (req.body ?? {}) as Record<string, any>;
+    const category = String(b.category ?? "").trim();
+    if (!category) return reply.code(400).send({ success: false, message: "Choose a category." });
+    const num = (v: unknown, label: string) => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`${label} must be a positive number.`);
+      return n;
+    };
+    let data;
+    try {
+      data = {
+        perClaimLimit: num(b.perClaimLimit, "Per-claim limit"),
+        monthlyLimit: num(b.monthlyLimit, "Monthly limit"),
+        receiptRequiredAbove: num(b.receiptRequiredAbove, "Bill-required amount"),
+        submitWithinDays: b.submitWithinDays === null || b.submitWithinDays === undefined || b.submitWithinDays === "" ? null : Math.round(num(b.submitWithinDays, "Days")!),
+        isActive: b.isActive === undefined ? true : Boolean(b.isActive),
+        notes: b.notes ? String(b.notes).slice(0, 300) : null,
+        updatedBy: u.id,
+      };
+    } catch (e) {
+      return reply.code(400).send({ success: false, message: (e as Error).message });
+    }
+    const existing = await prisma.expensePolicy.findFirst({ where: { category: { equals: category, mode: "insensitive" } } });
+    const saved = existing
+      ? await prisma.expensePolicy.update({ where: { id: existing.id }, data })
+      : await prisma.expensePolicy.create({ data: { category, ...data } });
+    return reply.send({ success: true, data: saved });
+  });
+  app.delete("/api/expense-policies/:id", { preHandler: [requireRoles(["admin", "owner", "hr"])] }, async (req, reply) => {
+    await prisma.expensePolicy.delete({ where: { id: (req.params as { id: string }).id } });
+    return reply.send({ success: true });
+  });
+
   // GET /api/reimbursements — current user's claims with attachments & logs (fixes U3)
   app.get("/api/reimbursements", { preHandler: [authenticate] }, async (req, reply) => {
     const claims = await prisma.reimbursement.findMany({
@@ -75,7 +180,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const r = normRole(u.role);
     const { status } = (req.query ?? {}) as { status?: string };
 
-    const isOrgWide = ["admin", "owner", "finance manager"].includes(r) || ACCOUNTS_ROLES.has(r);
+    const isOrgWide = ["admin", "owner"].includes(r) || paysClaims(u);
 
     const where: Record<string, any> = {};
     if (!isOrgWide) {
@@ -85,6 +190,9 @@ export async function reimbursementRoutes(app: FastifyInstance) {
 
     if (status === "pending") {
       where.status = { in: ["PENDING_MANAGER", "MANAGER_APPROVED", "PENDING_PARTNER"] };
+    } else if (status === "APPROVED") {
+      // "Awaiting payment" covers both approved states.
+      where.status = { in: ["APPROVED", "PENDING_PAYMENT"] };
     } else if (status && status !== "all") {
       where.status = status;
     }
@@ -94,7 +202,26 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       include: CLAIM_INCLUDE,
       orderBy: { submittedAt: "desc" },
     });
-    return reply.send({ success: true, data: claims });
+    // What the caller may do on each claim (same rules the approve / pay routes enforce).
+    const [approvers, tree] = await Promise.all([approversFor([...new Set(claims.map((c) => c.employeeId))]), reportingTreeIds(u.id)]);
+    const treeSet = new Set(tree);
+    const asLead = { ...u, role: r === "hr" ? "employee" : u.role };
+    const pay = paysClaims(u);
+    const data = claims.map((c) => {
+      const power =
+        c.employeeId === u.id || !OPEN.includes(c.status)
+          ? null
+          : r === "admin" || r === "owner"
+            ? "final"
+            : powerOver(asLead, c.employeeId, 2, approvers.get(c.employeeId), c.status !== "PENDING_MANAGER", treeSet);
+      return {
+        ...c,
+        canApprove: !!power,
+        approveLevel: power,
+        canPay: pay && ["APPROVED", "PENDING_PAYMENT"].includes(c.status) && (c.employeeId !== u.id || ["admin", "owner"].includes(r)),
+      };
+    });
+    return reply.send({ success: true, data });
   });
 
   // POST /api/reimbursements — supports multipart receipt uploads & saves ReimbursementAttachment (fixes U3)
@@ -119,6 +246,10 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       });
     }
 
+    const claimDate = fields.date ? new Date(`${fields.date.slice(0, 10)}T00:00:00.000Z`) : new Date();
+    if (claimDate.getTime() > Date.now() + 86_400_000) return reply.code(400).send({ success: false, message: "The expense date can't be in the future." });
+    const problem = await policyProblem(u.id, fields.category, amount, claimDate, files.length > 0);
+    if (problem) return reply.code(400).send({ success: false, message: problem });
     const claimId = await nextClaimCode();
     const emp = await prisma.employee.findUnique({
       where: { id: u.id },
@@ -160,6 +291,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       },
       include: CLAIM_INCLUDE,
     });
+    await notifyApprovers(created, "level1", `${created.employee.firstName} ${created.employee.lastName ?? ""}`.trim());
 
     return reply.code(201).send({ success: true, data: created });
   });
@@ -196,6 +328,10 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     }
 
     const wasReturned = existing.status === "SENT_BACK";
+    const newDate = fields.date ? new Date(`${fields.date.slice(0, 10)}T00:00:00.000Z`) : existing.date;
+    const hasReceipt = files.length > 0 || (await prisma.reimbursementAttachment.count({ where: { reimbursementId: id } })) > 0;
+    const problem = await policyProblem(u.id, fields.category ?? existing.category, amount, newDate, hasReceipt, id);
+    if (problem) return reply.code(400).send({ success: false, message: problem });
     const updated = await prisma.reimbursement.update({
       where: { id },
       data: {
@@ -232,6 +368,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       },
       include: CLAIM_INCLUDE,
     });
+    if (wasReturned) await notifyApprovers(updated, "level1", `${updated.employee.firstName} ${updated.employee.lastName ?? ""}`.trim());
 
     return reply.send({ success: true, data: updated });
   };
@@ -249,7 +386,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     if (!["PENDING_MANAGER", "SENT_BACK"].includes(existing.status)) {
       return reply.code(400).send({
         success: false,
-        message: "Approved or paid claims cannot be deleted.",
+        message: "Only claims that are still waiting for your manager, or were returned to you, can be withdrawn.",
       });
     }
     await prisma.reimbursement.delete({ where: { id } });
@@ -309,6 +446,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       module: "Finance",
       actionUrl: "/portal/reimbursements",
     });
+    if (nextStatus === "MANAGER_APPROVED") await notifyApprovers(updated, "level2", `${updated.employee.firstName} ${updated.employee.lastName ?? ""}`.trim());
 
     return reply.send({ success: true, data: updated });
   });
@@ -345,6 +483,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       },
       include: CLAIM_INCLUDE,
     });
+    await createNotification({ userId: claim.employeeId, title: "Expense claim rejected", message: `Claim ${claim.claimId} (${inr(claim.amount)}): ${remarks?.trim() || "Rejected"}`, type: "reimbursement_update", module: "Finance", actionUrl: "/portal/reimbursements" });
     return reply.send({ success: true, data: updated });
   });
 
@@ -379,6 +518,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
       },
       include: CLAIM_INCLUDE,
     });
+    await createNotification({ userId: claim.employeeId, title: "Expense claim returned to you", message: `Claim ${claim.claimId}: ${remarks?.trim() || "Please add more details"}`, type: "reimbursement_update", module: "Finance", actionUrl: "/portal/reimbursements" });
     return reply.send({ success: true, data: updated });
   });
 
@@ -394,7 +534,7 @@ export async function reimbursementRoutes(app: FastifyInstance) {
     const u = req.user!;
     const role = normRole(u.role);
 
-    if (!["admin", "owner", "finance manager"].includes(role) && !ACCOUNTS_ROLES.has(role)) {
+    if (!paysClaims(u)) {
       return reply.code(403).send({ success: false, message: "Only Finance / Accounts or Admin can mark claims as paid." });
     }
 

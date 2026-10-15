@@ -58,6 +58,11 @@ export interface Ticket {
   attachments?: TicketAttachment[];
   history?: TicketEvent[];
   assigneeName?: string | null;
+  /** From the API: response target and outcome */
+  slaHours?: number;
+  slaDueAt?: string;
+  resolvedAt?: string | null;
+  slaMet?: boolean | null;
 }
 
 export interface Category {
@@ -124,12 +129,14 @@ export function categoryLabel(t: Ticket) {
 }
 /** Response target in hours: subcategory, then category, then the API default of 24. */
 export function slaHours(t: Ticket) {
-  return t.subcategoryRel?.sla_hours ?? t.categoryRel?.sla_hours ?? 24;
+  return t.slaHours ?? t.subcategoryRel?.sla_hours ?? t.categoryRel?.sla_hours ?? 24;
 }
+/** overdue = still open past the target; met/missed = how a resolved ticket did against it. */
 export function slaState(t: Ticket, now = Date.now()) {
-  const due = new Date(t.createdAt).getTime() + slaHours(t) * 3_600_000;
+  const due = t.slaDueAt ? new Date(t.slaDueAt).getTime() : new Date(t.createdAt).getTime() + slaHours(t) * 3_600_000;
   const done = ["resolved", "closed"].includes(statusKey(t.status));
-  return { due: new Date(due), overdue: !done && now > due, remainingMs: due - now, done };
+  const met = done ? (t.slaMet ?? null) : null;
+  return { due: new Date(due), overdue: !done && now > due, remainingMs: due - now, done, met, missed: met === false };
 }
 
 // ---- Queries -----------------------------------------------------------------------------

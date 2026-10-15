@@ -204,7 +204,8 @@ function TypesCard({ data }: { data: LeavePolicy }) {
           <Plus className="h-4 w-4" /> Add leave type
         </Button>
       </div>
-      <DataTable rows={data.types} columns={columns} rowKey={(t) => t.id} initialSort={{ key: "name", dir: "asc" }} empty={{ title: "No leave types yet", description: "Add the firm’s leave types to start calculating balances." }} />
+      <DataTable
+        exportName="leave-types" rows={data.types} columns={columns} rowKey={(t) => t.id} initialSort={{ key: "name", dir: "asc" }} empty={{ title: "No leave types yet", description: "Add the firm’s leave types to start calculating balances." }} />
       {editing && <TypeDialog entry={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
     </div>
   );

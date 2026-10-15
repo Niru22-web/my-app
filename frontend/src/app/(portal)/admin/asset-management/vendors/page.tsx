@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { Pencil, Plus, Search, Store, Trash2 } from "lucide-react";
+import { ImportButton } from "@/components/ui/import-dialog";
+import { Pencil, Plus, Store, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { PageHeader } from "@/components/ui/page-header";
@@ -77,17 +78,29 @@ export default function VendorsPage() {
         description="Suppliers the firm buys equipment and services from"
         actions={
           ops && (
-            <Button onClick={() => setEditing(null)}>
-              <Plus className="h-4 w-4" /> Add vendor
-            </Button>
+            <>
+              <ImportButton kind="vendors" label="Vendors" invalidate={[["assets"]]} />
+              <Button onClick={() => setEditing(null)}>
+                <Plus className="h-4 w-4" /> Add vendor
+              </Button>
+            </>
           )
         }
       />
-      <div className="relative sm:w-72">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-        <Input placeholder="Search vendors" aria-label="Search vendors" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-      </div>
-      <DataTable rows={rows} columns={columns} rowKey={(v) => v.id} loading={q.isLoading} initialSort={{ key: "name", dir: "asc" }} empty={{ icon: Store, title: q.data?.length ? "No vendors match" : "No vendors yet" }} />
+      <DataTable
+        exportName="vendors"
+        itemsLabel="vendors"
+        searchable
+        searchPlaceholder="Search name, company, contact, email or GSTIN"
+        searchValue={search}
+        onSearchChange={setSearch}
+        rows={rows}
+        columns={columns}
+        rowKey={(v) => v.id}
+        loading={q.isLoading}
+        initialSort={{ key: "name", dir: "asc" }}
+        empty={{ icon: Store, title: q.data?.length ? "No vendors match" : "No vendors yet" }}
+      />
 
       {editing !== undefined && <VendorDialog vendor={editing} onClose={() => setEditing(undefined)} />}
       <ConfirmDialog

@@ -29,7 +29,10 @@ export default function SetupPage() {
 
   const inUse = (field: "category" | "type" | "location", name: string) => (assets.data ?? []).some((a) => a[field] === name);
   const err = (t: string) => (e: unknown) => toast.error(t, e instanceof ApiError ? e.message : undefined);
-  const add = (kind: Kind, body: Record<string, string>, label: string) => m.addMaster.mutateAsync({ kind, body }).then(() => toast.success(`${label} added`), err(`Couldn’t add the ${label.toLowerCase()}`));
+  const add = (kind: Kind, body: Record<string, string>, label: string) => m.addMaster.mutateAsync({ kind, body }).then(
+      () => (toast.success(`${label} added`), true),
+      (e: unknown) => (err(`Couldn’t add the ${label.toLowerCase()}`)(e), false),
+    );
 
   if (!ops)
     return (
@@ -147,11 +150,11 @@ export default function SetupPage() {
   );
 }
 
-function AddRow({ placeholder, onAdd, busy }: { placeholder: string; onAdd: (name: string) => Promise<unknown>; busy: boolean }) {
+function AddRow({ placeholder, onAdd, busy }: { placeholder: string; onAdd: (name: string) => Promise<boolean>; busy: boolean }) {
   const [name, setName] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (name.trim()) void onAdd(name.trim()).then(() => setName(""));
+    if (name.trim()) void onAdd(name.trim()).then((ok) => ok && setName(""));
   };
   return (
     <form onSubmit={submit} className="flex gap-2">
@@ -163,7 +166,7 @@ function AddRow({ placeholder, onAdd, busy }: { placeholder: string; onAdd: (nam
   );
 }
 
-function AddType({ categoryId, onAdd, busy }: { categoryId: string; onAdd: (name: string) => Promise<unknown>; busy: boolean }) {
+function AddType({ categoryId, onAdd, busy }: { categoryId: string; onAdd: (name: string) => Promise<boolean>; busy: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   if (!open)
@@ -176,7 +179,7 @@ function AddType({ categoryId, onAdd, busy }: { categoryId: string; onAdd: (name
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (name.trim()) void onAdd(name.trim()).then(() => (setName(""), setOpen(false)));
+        if (name.trim()) void onAdd(name.trim()).then((ok) => ok && (setName(""), setOpen(false)));
       }}
       className="flex items-center gap-1.5"
       data-category={categoryId}

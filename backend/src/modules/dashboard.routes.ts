@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../config/db";
-import { authenticate, isTeamMemberOrSelf, normRole, requireRoles } from "../plugins/auth";
+import { authenticate, isTeamMemberOrSelf, normRole, reportingTreeIds, requireRoles } from "../plugins/auth";
+import { myQueue } from "./insights.routes";
 import { getIO } from "../plugins/socket";
 import { computeBalances, leaveYearOf } from "../utils/leave-policy";
 import { getWorkCalendar } from "../utils/work-calendar";
@@ -41,9 +42,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       profilesWithDob,
       events,
       activities,
-      pendingLeaves,
       pendingAssets,
-      pendingClaims,
       openTickets,
       myAssetRequests,
       myTickets,
@@ -89,21 +88,18 @@ export async function dashboardRoutes(app: FastifyInstance) {
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
-      ["admin", "owner", "hr", "manager", "partner"].includes(r)
-        ? prisma.leave.count({ where: { status: "pending" } })
-        : Promise.resolve(0),
       ["admin", "owner", "hr", "it"].includes(r)
         ? prisma.assetRequest.count({ where: { status: "Pending" } })
-        : Promise.resolve(0),
-      ["admin", "owner", "manager", "partner"].includes(r)
-        ? prisma.reimbursement.count({ where: { status: { in: ["PENDING_MANAGER", "MANAGER_APPROVED"] } } })
         : Promise.resolve(0),
       ["admin", "owner", "it"].includes(r)
         ? prisma.ticket.count({ where: { status: { in: ["Open", "In Progress"] } } })
         : Promise.resolve(0),
-      prisma.assetRequest.count({ where: { employeeId: u.id } }),
-      prisma.ticket.count({ where: { createdById: u.id } }),
+      prisma.assetRequest.count({ where: { employeeId: u.id, status: { in: ["Pending", "Approved"] } } }),
+      prisma.ticket.count({ where: { createdById: u.id, status: { notIn: ["Resolved", "Closed"] } } }),
     ]);
+
+    // Leave and claims the caller can actually act on (their reporting line, the approval step they hold).
+    const queue = await myQueue(u, await reportingTreeIds(u.id));
 
     const expByCat = new Map<string, number>();
     let expTotal = 0;
@@ -168,9 +164,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
           createdAt: act.createdAt.toISOString(),
         })),
         pendingApprovals: {
-          leaves: pendingLeaves,
+          leaves: queue.leaves,
           assets: pendingAssets,
-          reimbursements: pendingClaims,
+          reimbursements: queue.claims,
           tickets: openTickets,
         },
         myAssetRequests,
@@ -250,9 +246,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
       include: {
         user: { select: { id: true, firstName: true, lastName: true, role: true, profileImage: true } },
       },
-      orderBy: { createdAt: "asc" },
+      // The latest 100, shown oldest first.
+      orderBy: { createdAt: "desc" },
       take: 100,
     });
+    rows.reverse();
 
     const data = rows.map((r) => ({
       id: r.id,
@@ -451,29 +449,16 @@ export async function dashboardRoutes(app: FastifyInstance) {
     return reply.send({ success: true });
   });
 
-  // POST /api/notifications/approve-employee — scoped to Admin/Owner/HR or the employee's reporting Manager/Partner (fixes E7)
-  app.post(
-    "/api/notifications/approve-employee",
-    { preHandler: [requireRoles(["admin", "owner", "hr", "manager", "partner"])] },
-    async (req, reply) => {
-      const { employeeId } = (req.body ?? {}) as { employeeId?: string };
-      if (!employeeId) {
-        return reply.code(400).send({ success: false, message: "employeeId is required." });
-      }
-      if (!(await isTeamMemberOrSelf(req.user!, employeeId))) {
-        return reply.code(403).send({ success: false, message: "This employee does not report to you." });
-      }
-      await prisma.employee.update({
-        where: { id: employeeId },
-        data: {
-          status: "Active",
-          approvalStatus: "APPROVED",
-          isApproved: true,
-          approvedAt: new Date(),
-          approvedBy: req.user!.id,
-        },
-      });
-      return reply.send({ success: true, message: "Employee approved." });
-    },
-  );
+  // POST /api/notifications/approve-employee — the inbox shortcut. Goes through the real approval route, so the same
+  // checks apply (registered, pending, who may approve whom) and the joiner is notified.
+  app.post("/api/notifications/approve-employee", { preHandler: [authenticate] }, async (req, reply) => {
+    const { employeeId } = (req.body ?? {}) as { employeeId?: string };
+    if (!employeeId) return reply.code(400).send({ success: false, message: "employeeId is required." });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/employees/approve-employee/${encodeURIComponent(employeeId)}`,
+      headers: { authorization: req.headers.authorization ?? "" },
+    });
+    return reply.code(res.statusCode).header("content-type", "application/json").send(res.body);
+  });
 }

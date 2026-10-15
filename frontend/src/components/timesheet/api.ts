@@ -226,6 +226,11 @@ export function useTimelogMutations() {
         api<Envelope<{ count: number }>>("timelogs/bulk-reject", { method: "POST", body: { ids, reason } }),
       onSuccess: refresh,
     }),
+    saveWeek: useMutation({
+      mutationFn: (b: { weekStart: string; rows: { jobId: string; billable?: boolean; hours: Record<string, number> }[] }) =>
+        api<Envelope<{ changed: number }>>("timelogs/week", { method: "PUT", body: b }),
+      onSuccess: refresh,
+    }),
     importFile: useMutation({
       mutationFn: (file: File) => {
         const fd = new FormData();
@@ -239,4 +244,119 @@ export function useTimelogMutations() {
 
 export function employeeName(t: Timelog): string {
   return t.employee ? `${t.employee.firstName} ${t.employee.lastName}`.trim() : "—";
+}
+
+// ---- Monthly Defaulter / Pivot Tracker -------------------------------------------
+
+export interface MonthlyTrackerWeek {
+  weekIndex: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  expectedHours: number;
+}
+
+export interface MonthlyTrackerEmployeeWeek {
+  weekIndex: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  loggedHours: number;
+  billableHours: number;
+  targetHours: number;
+  status: "not_filled" | "partial" | "compliant" | "on_leave" | "upcoming";
+  hasSubmitted: boolean;
+}
+
+export interface MonthlyTrackerEmployee {
+  id: string;
+  employeeId: string;
+  name: string;
+  email: string;
+  department: string;
+  designation: string;
+  managerName: string | null;
+  weeks: MonthlyTrackerEmployeeWeek[];
+  totalLoggedHours: number;
+  totalBillableHours: number;
+  totalTargetHours: number;
+  compliancePct: number;
+  notFilledWeeks: number;
+  partialWeeks: number;
+  monthStatus: "not_filled" | "incomplete" | "compliant";
+}
+
+export interface MonthlyTrackerResponse {
+  success: boolean;
+  year: number;
+  month: number;
+  monthName: string;
+  weeks: MonthlyTrackerWeek[];
+  kpis: {
+    totalEmployees: number;
+    notFilledCount: number;
+    incompleteCount: number;
+    compliantCount: number;
+    defaultersCount: number;
+    compliancePercentage: number;
+  };
+  employees: MonthlyTrackerEmployee[];
+}
+
+export function useMonthlyTracker(
+  params: { year: number; month: number; department?: string; defaultersOnly?: boolean },
+  enabled = true,
+) {
+  const sp = new URLSearchParams();
+  sp.set("year", String(params.year));
+  sp.set("month", String(params.month));
+  if (params.department) sp.set("department", params.department);
+  if (params.defaultersOnly) sp.set("defaultersOnly", "true");
+
+  return useQuery({
+    queryKey: ["monthly-tracker", params],
+    queryFn: () => api<MonthlyTrackerResponse>(`timelogs/monthly-tracker?${sp.toString()}`),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+// ---- Timesheet Period Lock -----------------------------------------------------
+
+export interface TimesheetLockInfo {
+  lockedThrough: string | null;
+  history: {
+    id: string;
+    lockedThrough: string;
+    note: string | null;
+    by: string;
+    at: string;
+  }[];
+}
+
+export function useTimesheetLock() {
+  return useQuery({
+    queryKey: ["timesheet-lock"],
+    queryFn: async () => {
+      try {
+        const res = await api<Envelope<TimesheetLockInfo>>("timelogs/lock");
+        return res.data ?? { lockedThrough: null, history: [] };
+      } catch {
+        return { lockedThrough: null, history: [] };
+      }
+    },
+    staleTime: 60_000,
+  });
+}
+
+export function useSetTimesheetLock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { lockedThrough: string | null; note?: string }) =>
+      api("timelogs/lock", { method: "POST", body }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["timesheet-lock"] });
+      void qc.invalidateQueries({ queryKey: ["timelogs"] });
+    },
+  });
 }

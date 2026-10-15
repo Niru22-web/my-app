@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ImportButton } from "@/components/ui/import-dialog";
 import { useRouter } from "next/navigation";
-import { Download, Eye, Mail, MailCheck, Power, Search, UserCheck, UserPlus, Users, UserX } from "lucide-react";
+import { Download, Eye, Mail, MailCheck, Power, UserCheck, UserPlus, Users, UserX } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, assetUrl } from "@/lib/api";
 import { today } from "@/lib/dates";
@@ -13,8 +14,7 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { Input, Select } from "@/components/ui/inputs";
-import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/inputs";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
@@ -140,24 +140,12 @@ export default function EmployeesPage() {
         actions={
           employee ? undefined : (
             <>
+              {manage && <ImportButton kind="employees" label="Employees" invalidate={[["mgmt"], ["lookup"]]} />}
               {approver && (
                 <Button variant="secondary" onClick={() => setPendingOpen(true)}>
                   <UserCheck className="h-4 w-4" /> Pending approvals
                 </Button>
               )}
-              <Button
-                variant="secondary"
-                disabled={!rows.length}
-                onClick={() =>
-                  downloadCsv(
-                    `employees-${today()}.csv`,
-                    ["Employee code", "First name", "Last name", "Office email", "Role", "Designation", "Department", "Status", "Added"],
-                    rows.map((p) => [p.employeeId, p.firstName, p.lastName, p.officeEmail, p.role, p.designation, p.department, p.status, p.createdAt?.slice(0, 10)]),
-                  )
-                }
-              >
-                <Download className="h-4 w-4" /> Export
-              </Button>
               {manage && (
                 <Button onClick={() => setAddOpen(true)}>
                   <UserPlus className="h-4 w-4" /> Invite employee
@@ -177,21 +165,29 @@ export default function EmployeesPage() {
         </section>
       )}
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Status"
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: "active", label: "Active" },
-            ...(employee ? [] : [{ value: "pending" as const, label: "Pending", count: pending || undefined }, { value: "inactive" as const, label: "Inactive" }]),
-            { value: "all", label: "All" },
-          ]}
-        />
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {!employee && (
+      <DataTable
+        exportName={false}
+        itemsLabel={employee ? "team members" : "employees"}
+        filterTabs={[
+          { key: "active", label: "Active", count: all.filter((p) => st(p) === "active").length },
+          ...(employee
+            ? []
+            : [
+                { key: "pending", label: "Pending", count: pending },
+                { key: "inactive", label: "Inactive", count: all.filter((p) => st(p) === "inactive").length },
+              ]),
+          { key: "all", label: "All", count: all.length },
+        ]}
+        activeFilterTab={status}
+        onFilterTabChange={(k) => setStatus(k as StatusF)}
+        searchable
+        searchPlaceholder="Search name, email or code"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          employee ? undefined : (
             <>
-              <Select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)} className="sm:w-44">
+              <Select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)} className="w-44">
                 <option value="">All roles</option>
                 {roles.map((r) => (
                   <option key={r} value={r}>
@@ -199,23 +195,31 @@ export default function EmployeesPage() {
                   </option>
                 ))}
               </Select>
-              <Select aria-label="Department" value={dept} onChange={(e) => setDept(e.target.value)} className="sm:w-48">
+              <Select aria-label="Department" value={dept} onChange={(e) => setDept(e.target.value)} className="w-48">
                 <option value="">All departments</option>
                 {depts.map((d) => (
                   <option key={d}>{d}</option>
                 ))}
               </Select>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!rows.length}
+                onClick={() =>
+                  downloadCsv(
+                    `employees-${today()}.csv`,
+                    ["Employee code", "First name", "Last name", "Office email", "Role", "Designation", "Department", "Status", "Added"],
+                    rows.map((p) => [p.employeeId, p.firstName, p.lastName, p.officeEmail, p.role, p.designation, p.department, p.status, p.createdAt?.slice(0, 10)]),
+                  )
+                }
+              >
+                <Download className="h-4 w-4" /> Export
+              </Button>
             </>
-          )}
-          <div className="relative sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-            <Input placeholder="Search name, email or code" aria-label="Search employees" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-          </div>
-        </div>
-      </div>
-
-      <DataTable
+          )
+        }
         rows={rows}
+        rowLabel={employee ? undefined : (p) => `Open ${fullName(p)}`}
         columns={columns}
         rowKey={(p) => p.id}
         loading={q.isLoading}

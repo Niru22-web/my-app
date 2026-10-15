@@ -181,7 +181,8 @@ export default function EsslPage() {
             <ErrorState message="Mappings couldn’t be loaded." onRetry={() => maps.refetch()} />
           </Card>
         ) : (
-          <DataTable rows={mapRows} columns={mapColumns} rowKey={(x) => x.id} loading={maps.isLoading} initialSort={{ key: "bio", dir: "asc" }} pageSize={20} empty={{ icon: Link2, title: mapView === "todo" ? "Everyone on the devices is linked" : "No device IDs recorded yet" }} />
+          <DataTable
+        exportName="essl" rows={mapRows} columns={mapColumns} rowKey={(x) => x.id} loading={maps.isLoading} initialSort={{ key: "bio", dir: "asc" }} pageSize={20} empty={{ icon: Link2, title: mapView === "todo" ? "Everyone on the devices is linked" : "No device IDs recorded yet" }} />
         )}
       </div>
 

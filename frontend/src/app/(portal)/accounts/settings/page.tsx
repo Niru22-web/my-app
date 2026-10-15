@@ -13,19 +13,19 @@ import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { RowMenu } from "@/components/management/row-menu";
-import { useAccountsMutations, useEntities, type Entity } from "@/components/accounts/api";
+import { useAccountsMutations, useEntities, useSeries, type Entity, type SeriesInfo } from "@/components/accounts/api";
 
 const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const PAN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-const FORMATS = [
-  { value: "{PREFIX}-{FY}-{NNNN}", label: "Prefix-FY-0001 (e.g. ASA-2026-27-0001)" },
-  { value: "{PREFIX}/{FY_SHORT}/{NNN}", label: "Prefix/FY/001 (e.g. ASA/26-27/001)" },
-  { value: "{PREFIX}-{YYYY}-{NNNN}", label: "Prefix-Year-0001 (e.g. ASA-2026-0001)" },
-];
+const PREFIX = /^[A-Z0-9-]{1,8}$/;
+/** Same default the server uses when no prefix is set: the entity name’s initials. */
+const initials = (name: string) =>
+  (name.split(/s+/).map((w) => w[0] ?? "").join("").toUpperCase().replace(/[^A-Z0-9]/g, "") || "INV").slice(0, 4);
 
 export default function EntitiesPage() {
   const q = useEntities();
+  const series = useSeries();
   const toast = useToast();
   const m = useAccountsMutations();
   const [editing, setEditing] = useState<Entity | null | undefined>(undefined);
@@ -88,8 +88,17 @@ export default function EntitiesPage() {
                   <dd className="font-mono text-ink">{e.pan || "—"}</dd>
                   <dt className="text-ink-subtle">Bank</dt>
                   <dd className="text-ink">{e.bankDetails?.bankName ? `${e.bankDetails.bankName}${e.bankDetails.accountNo ? ` · ••${String(e.bankDetails.accountNo).slice(-4)}` : ""}` : "—"}</dd>
-                  <dt className="text-ink-subtle">Numbering</dt>
-                  <dd className={e.bankDetails?.invoicePrefix ? "text-ink" : "text-warning"}>{e.bankDetails?.invoicePrefix ? `${e.bankDetails.invoicePrefix} · ${e.bankDetails.customFormat ?? "{PREFIX}-{YYYY}-{NNNN}"}` : "No prefix set — numbers would start with “-”"}</dd>
+                  <dt className="text-ink-subtle">Prefix</dt>
+                  <dd className="text-ink">
+                    {e.bankDetails?.invoicePrefix ? (
+                      <span className="font-mono">{String(e.bankDetails.invoicePrefix)}</span>
+                    ) : (
+                      <span className="text-ink-muted">
+                        Not set — using <span className="font-mono">{series.data?.find((x) => x.entityId === e.id)?.prefix ?? initials(e.name)}</span> (initials)
+                      </span>
+                    )}
+                  </dd>
+                  <NextNumbers info={series.data?.find((x) => x.entityId === e.id)} loading={series.isLoading} failed={series.isError} />
                 </dl>
               </Card>
             </li>
@@ -98,6 +107,37 @@ export default function EntitiesPage() {
       )}
       {editing !== undefined && <EntityDialog entity={editing} onClose={() => setEditing(undefined)} />}
     </div>
+  );
+}
+
+function NextNumbers({ info, loading, failed }: { info?: SeriesInfo; loading: boolean; failed: boolean }) {
+  if (loading)
+    return (
+      <>
+        <dt className="text-ink-subtle">Next numbers</dt>
+        <dd>
+          <Skeleton className="h-4 w-40" />
+        </dd>
+      </>
+    );
+  if (failed || !info)
+    return (
+      <>
+        <dt className="text-ink-subtle">Next numbers</dt>
+        <dd className="text-ink-subtle">Couldn’t be loaded</dd>
+      </>
+    );
+  return (
+    <>
+      <dt className="text-ink-subtle">Next invoice</dt>
+      <dd className="font-mono text-ink">
+        {info.nextInvoice} <span className="font-sans text-xs text-ink-subtle">· {info.issuedThisYear} issued in FY {info.fy}</span>
+      </dd>
+      <dt className="text-ink-subtle">Next credit note</dt>
+      <dd className="font-mono text-ink">{info.nextCreditNote}</dd>
+      <dt className="text-ink-subtle">Next receipt</dt>
+      <dd className="font-mono text-ink">{info.nextReceipt}</dd>
+    </>
   );
 }
 
@@ -118,7 +158,6 @@ function EntityDialog({ entity, onClose }: { entity: Entity | null; onClose: () 
     ifsc: String(b.ifsc ?? ""),
     swift: String(b.swift ?? ""),
     invoicePrefix: String(b.invoicePrefix ?? ""),
-    customFormat: String(b.customFormat ?? FORMATS[0].value),
   });
   const [tried, setTried] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
@@ -130,7 +169,7 @@ function EntityDialog({ entity, onClose }: { entity: Entity | null; onClose: () 
     gstinPan: f.gstin.trim() && f.pan.trim() && GSTIN.test(up(f.gstin)) && up(f.gstin).slice(2, 12) !== up(f.pan) ? "PAN doesn’t match the GSTIN." : "",
     ifsc: f.ifsc.trim() && !IFSC.test(up(f.ifsc)) ? "Format: HDFC0001234." : "",
     accountNo: f.accountNo.trim() && !/^[A-Za-z0-9]{6,34}$/.test(f.accountNo.trim()) ? "6–34 letters or digits." : "",
-    invoicePrefix: !/^[A-Za-z0-9]{1,10}$/.test(f.invoicePrefix.trim()) ? "1–10 letters or digits, e.g. ASA." : "",
+    invoicePrefix: f.invoicePrefix.trim() && !PREFIX.test(up(f.invoicePrefix)) ? "Up to 8 letters, digits or hyphens, e.g. ASA or ASA-MUM." : "",
   };
 
   async function submit(e: FormEvent) {
@@ -148,7 +187,7 @@ function EntityDialog({ entity, onClose }: { entity: Entity | null; onClose: () 
         address: f.address.trim() || null,
         status: entity?.status ?? "ACTIVE",
         // The API replaces bankDetails wholesale — keep keys this form doesn't edit (invoice template styling).
-        bankDetails: { ...b, bankName: f.bankName.trim(), accountName: f.accountName.trim(), accountNo: f.accountNo.trim(), ifsc: up(f.ifsc), swift: up(f.swift), invoicePrefix: up(f.invoicePrefix), customFormat: f.customFormat, invoiceFormat: "custom" },
+        bankDetails: { ...b, bankName: f.bankName.trim(), accountName: f.accountName.trim(), accountNo: f.accountNo.trim(), ifsc: up(f.ifsc), swift: up(f.swift), invoicePrefix: up(f.invoicePrefix) },
       });
       toast.success(entity ? "Entity saved" : "Entity added");
       onClose();
@@ -213,19 +252,16 @@ function EntityDialog({ entity, onClose }: { entity: Entity | null; onClose: () 
         </FormRow>
         <span />
         <p className="pt-2 text-sm font-semibold text-ink sm:col-span-2">Invoice numbering</p>
-        <FormRow label="Prefix" htmlFor="en-prefix" required error={show("invoicePrefix")}>
-          <Input id="en-prefix" value={f.invoicePrefix} maxLength={10} onChange={set("invoicePrefix")} className="uppercase" placeholder="ASA" invalid={!!show("invoicePrefix")} />
+        <FormRow label="Prefix" htmlFor="en-prefix" error={show("invoicePrefix")} hint={`Optional — if empty, the initials “${initials(f.name || "Invoice")}” are used.`}>
+          <Input id="en-prefix" value={f.invoicePrefix} maxLength={8} onChange={set("invoicePrefix")} className="uppercase font-mono" placeholder="ASA" invalid={!!show("invoicePrefix")} />
         </FormRow>
-        <FormRow label="Format" htmlFor="en-format" hint="The counter continues across years (current server behaviour)">
-          <Select id="en-format" value={f.customFormat} onChange={set("customFormat")}>
-            {FORMATS.map((x) => (
-              <option key={x.value} value={x.value}>
-                {x.label}
-              </option>
-            ))}
-            {!FORMATS.some((x) => x.value === f.customFormat) && <option value={f.customFormat}>{f.customFormat}</option>}
-          </Select>
-        </FormRow>
+        <div className="text-[13px] text-ink-muted">
+          <p className="mb-1.5 font-medium text-ink">Number format</p>
+          <p>
+            Fixed by GST rules (at most 16 characters, restarting each financial year): <span className="font-mono text-ink">{(up(f.invoicePrefix) || initials(f.name || "Invoice"))}/2026-27/0001</span>
+          </p>
+          <p className="mt-1">Credit notes and receipts use -CN and -RC after the prefix. The year is shortened automatically when the number would be too long.</p>
+        </div>
       </form>
     </Dialog>
   );

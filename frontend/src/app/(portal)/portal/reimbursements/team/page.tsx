@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { normRole } from "@/lib/roles";
+import { PolicyCard } from "@/components/claims/policy-card";
 import { useRouter } from "next/navigation";
-import { CheckCheck, Download, Inbox, Search } from "lucide-react";
+import { CheckCheck, Download, Inbox } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { ApiError, api } from "@/lib/api";
 import { fmtDay, today, workDate } from "@/lib/dates";
@@ -13,34 +15,40 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { StatCard } from "@/components/ui/stat";
-import { Segmented } from "@/components/ui/segmented";
-import { Input } from "@/components/ui/inputs";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { useToast } from "@/components/ui/toast";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  canSeeTeamClaims,
   claimant,
-  isFinanceWide,
   reviewerActions,
   stageOf,
   STAGE_LABEL,
   STAGE_TONE,
   useTeamClaims,
+  useClaimAccess,
   type Claim,
   type TeamTab,
 } from "@/components/claims/api";
 import { ClaimDetail } from "@/components/claims/claim-detail";
 import { ClaimTabs, downloadCsv } from "@/components/claims/claim-tabs";
 
+const STAGES: { key: TeamTab; label: string }[] = [
+  { key: "pending", label: "Needs approval" },
+  { key: "APPROVED", label: "Awaiting payment" },
+  { key: "PAID", label: "Paid" },
+  { key: "REJECTED", label: "Rejected" },
+  { key: "SENT_BACK", label: "Returned" },
+];
+
 export default function TeamClaimsPage() {
   const { user } = useAuth();
   const router = useRouter();
   const toast = useToast();
   const qc = useQueryClient();
-  const allowed = canSeeTeamClaims(user?.role);
-  const orgView = isFinanceWide(user?.role);
+  const access = useClaimAccess();
+  const allowed = !!access.data?.team;
+  const orgView = !!access.data?.org;
 
   const [tab, setTab] = useState<TeamTab>("pending");
   const [search, setSearch] = useState("");
@@ -50,11 +58,10 @@ export default function TeamClaimsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
-    if (!allowed) router.replace("/portal/reimbursements");
-  }, [allowed, router]);
+    if (access.isSuccess && !allowed) router.replace("/portal/reimbursements");
+  }, [access.isSuccess, allowed, router]);
 
   const q = useTeamClaims(tab, orgView, allowed);
-  // Search runs in the browser: the API's search parameter widens a manager's scope (known backend bug).
   const rows = useMemo(() => {
     const s = search.trim().toLowerCase();
     return (q.data ?? []).filter((c) => !s || `${c.claimId} ${claimant(c)} ${c.category} ${c.client?.name ?? ""} ${c.project?.name ?? ""} ${c.description ?? ""}`.toLowerCase().includes(s));
@@ -89,29 +96,6 @@ export default function TeamClaimsPage() {
 
   const columns: Column<Claim>[] = [
     {
-      key: "sel",
-      header: "",
-      className: "w-10",
-      cell: (c) =>
-        tab === "pending" && reviewerActions(c, user?.role, user?.id).approve ? (
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-[var(--brand)]"
-            checked={selected.has(c.id)}
-            onClick={(e) => e.stopPropagation()}
-            onChange={() =>
-              setSelected((s) => {
-                const n = new Set(s);
-                if (n.has(c.id)) n.delete(c.id);
-                else n.add(c.id);
-                return n;
-              })
-            }
-            aria-label={`Select ${c.claimId}`}
-          />
-        ) : null,
-    },
-    {
       key: "emp",
       header: "Employee",
       sortValue: (c) => claimant(c),
@@ -137,22 +121,7 @@ export default function TeamClaimsPage() {
         title="Team reimbursements"
         description={orgView ? "Claims across the firm, by stage." : "Claims from the people who report to you."}
         actions={
-          <>
-            <ClaimTabs />
-            <Button
-              variant="secondary"
-              disabled={!rows.length}
-              onClick={() =>
-                downloadCsv(
-                  `team-claims-${tab.toLowerCase()}-${today()}.csv`,
-                  ["Claim ID", "Employee", "Employee ID", "Date", "Expense head", "Client", "Project", "Amount (INR)", "Stage", "Description"],
-                  rows.map((c) => [c.claimId, claimant(c), c.employee?.employeeId, workDate(c.date), c.category, c.client?.name, c.project?.name, c.amount, STAGE_LABEL[stageOf(c)], c.description]),
-                )
-              }
-            >
-              <Download className="h-4 w-4" /> Export
-            </Button>
-          </>
+          <ClaimTabs />
         }
       />
 
@@ -162,24 +131,7 @@ export default function TeamClaimsPage() {
         {tab === "pending" && <StatCard label="You can act on" value={approvable.length} loading={q.isLoading} tone={approvable.length ? "warning" : "neutral"} className="col-span-2 xl:col-span-1" />}
       </section>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          aria-label="Stage"
-          value={tab}
-          onChange={(v) => (setTab(v), setSelected(new Set()))}
-          options={[
-            { value: "pending", label: "Needs approval" },
-            { value: "APPROVED", label: "Awaiting payment" },
-            { value: "PAID", label: "Paid" },
-            { value: "REJECTED", label: "Rejected" },
-            { value: "SENT_BACK", label: "Returned" },
-          ]}
-        />
-        <div className="relative w-full lg:w-72">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-subtle" aria-hidden />
-          <Input placeholder="Search claims" aria-label="Search claims" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-      </div>
+      <PolicyCard canEdit={!!access.data?.pay || ["admin", "owner", "hr"].includes(normRole(user?.role))} />
 
       {tab === "pending" && approvable.length > 0 && (
         <div className={cn("flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3", selectedIds.length ? "border-brand/30 bg-brand-softer" : "border-line bg-surface")}>
@@ -201,6 +153,34 @@ export default function TeamClaimsPage() {
       )}
 
       <DataTable
+        exportName={false}
+        itemsLabel="claims"
+        filterTabs={STAGES.map((s) => ({ ...s, count: s.key === tab && !q.isLoading && !q.isError ? (q.data ?? []).length : undefined }))}
+        activeFilterTab={tab}
+        onFilterTabChange={(k) => (setTab(k as TeamTab), setSelected(new Set()))}
+        searchable
+        searchPlaceholder="Search claims"
+        searchValue={search}
+        onSearchChange={setSearch}
+        toolbarActions={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!rows.length}
+            onClick={() =>
+              downloadCsv(
+                `team-claims-${tab.toLowerCase()}-${today()}.csv`,
+                ["Claim ID", "Employee", "Employee ID", "Date", "Expense head", "Client", "Project", "Amount (INR)", "Stage", "Description"],
+                rows.map((c) => [c.claimId, claimant(c), c.employee?.employeeId, workDate(c.date), c.category, c.client?.name, c.project?.name, c.amount, STAGE_LABEL[stageOf(c)], c.description]),
+              )
+            }
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
+        }
+        selectable={tab === "pending" && approvable.length > 0}
+        selectedKeys={selected}
+        onSelectionChange={(s) => setSelected(new Set([...s].filter((id) => approvable.some((c) => c.id === id))))}
         rows={rows}
         columns={columns}
         rowKey={(c) => c.id}

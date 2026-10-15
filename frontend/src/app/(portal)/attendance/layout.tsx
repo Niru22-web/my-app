@@ -15,6 +15,7 @@ export default function AttendanceLayout({ children }: { children: React.ReactNo
         label="Attendance views"
         tabs={[
           { href: "/attendance/dashboard", label: "My attendance" },
+          { href: "/attendance/requests", label: "Corrections" },
           ...(scopes.data?.team ? [{ href: "/attendance/team", label: "Team attendance" }] : []),
           ...(org ? [{ href: "/attendance/org", label: "Organization attendance" }] : []),
         ]}

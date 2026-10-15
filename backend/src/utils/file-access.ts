@@ -54,6 +54,18 @@ async function inLeadTree(u: JwtUser, ownerId: string) {
   return (await reportingTreeIds(u.id)).includes(ownerId);
 }
 
+/**
+ * A claim attachment: the claimant, their reporting line, HR and Finance (Accounts roles or Accounts access).
+ * undefined = the file isn't a claim attachment.
+ */
+async function claimReadable(u: JwtUser, r: string, match: (field: string) => object): Promise<boolean | undefined> {
+  const att = await prisma.reimbursementAttachment.findFirst({ where: match("filePath"), select: { reimbursement: { select: { employeeId: true } } } });
+  if (!att) return undefined;
+  const owner = att.reimbursement.employeeId;
+  if (owner === u.id || r === "hr" || ACCOUNTS_ROLES.has(r) || u.hasAccountsAccess) return true;
+  return inLeadTree(u, owner);
+}
+
 export async function canReadUpload(u: JwtUser, rel: string): Promise<boolean> {
   const r = normRole(u.role);
   if (r === "admin" || r === "owner") return true;
@@ -72,25 +84,23 @@ export async function canReadUpload(u: JwtUser, rel: string): Promise<boolean> {
           select: { employeeId: true },
         });
     const owner = doc?.employeeId ?? prof?.employeeId;
-    if (!owner) return r === "hr";
+    // Claim receipts are stored here too.
+    if (!owner) return (await claimReadable(u, r, match)) ?? r === "hr";
     if (owner === u.id || r === "hr") return true;
     return ["manager", "partner", "sub-manager", "sub manager"].includes(r) && (await inLeadTree(u, owner));
   }
 
-  if (folder === "reimbursements") {
-    const att = await prisma.reimbursementAttachment.findFirst({ where: match("filePath"), select: { reimbursement: { select: { employeeId: true } } } });
-    const owner = att?.reimbursement.employeeId;
-    if (r === "hr" || ACCOUNTS_ROLES.has(r)) return true;
-    if (!owner) return false;
-    return owner === u.id || (await inLeadTree(u, owner));
-  }
+  if (folder === "reimbursements") return (await claimReadable(u, r, match)) ?? (r === "hr" || ACCOUNTS_ROLES.has(r) || !!u.hasAccountsAccess);
 
   if (folder === "tickets") {
     const att = await prisma.ticketAttachment.findFirst({ where: match("url"), select: { ticket: { select: { createdById: true, assignedTo: true } } } });
     if (r === "hr" || r === "it") return true;
     const t = att?.ticket;
-    return !!t && (t.createdById === u.id || t.assignedTo === u.id);
+    return !!t && (t.createdById === u.id || t.assignedTo === u.id || (await inLeadTree(u, t.createdById)));
   }
+
+  // Bug tracker screenshots: reporter, assignee, Admin/Owner/IT, and anyone who commented on that bug.
+  if (folder === "bugs") return (await import("./bug-access")).canReadBugFile(u, list);
 
   return false; // temp/, logs/, anything else: Admin/Owner only
 }
