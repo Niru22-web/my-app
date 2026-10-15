@@ -71,7 +71,7 @@ export default function DashboardPage() {
           hint="this week"
         />
         <StatCard
-          label={r.isAdmin ? "Projects (firm)" : "My projects"}
+          label="My projects"
           icon={FolderKanban}
           loading={combined.isLoading}
           value={formatNumber(d?.stats.totalProjects)}

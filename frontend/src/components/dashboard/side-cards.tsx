@@ -24,7 +24,7 @@ export function EventsCard({ data, loading }: { data?: CombinedDashboard; loadin
   const events = data?.events ?? [];
   return (
     <Card>
-      <CardHeader icon={CalendarDays} title="This month" description="Holidays, meetings and firm events" />
+      <CardHeader icon={CalendarDays} title="Coming up" description="Holidays, meetings and firm events" />
       {loading ? (
         <ListSkeleton />
       ) : events.length === 0 ? (
@@ -98,12 +98,13 @@ export function ActivityCard({ data, loading, firmWide }: { data?: CombinedDashb
       ) : items.length === 0 ? (
         <EmptyState icon={Activity} title="No recent activity" />
       ) : (
-        <ol className="relative space-y-4 p-5 before:absolute before:bottom-6 before:left-[27px] before:top-6 before:w-px before:bg-line">
+        <ol tabIndex={0} aria-label="Recent activity" className="relative max-h-[420px] space-y-4 overflow-y-auto p-5 [scrollbar-gutter:stable] before:absolute before:bottom-6 before:left-[27px] before:top-6 before:w-px before:bg-line">
           {items.map((a, i) => (
             <li key={i} className="relative flex gap-3 pl-0">
               <span className="relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-[3px] border-surface bg-brand" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-ink">{a.title}</p>
+                {a.who && <p className="text-xs font-medium text-ink-muted">{a.who}</p>}
                 {a.description && <p className="line-clamp-2 text-xs text-ink-muted">{a.description}</p>}
                 <p className="mt-0.5 text-[11px] text-ink-subtle">{timeAgo(a.createdAt)}</p>
               </div>

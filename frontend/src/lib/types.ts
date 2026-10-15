@@ -39,7 +39,7 @@ export interface CombinedDashboard {
   expenses: { total: number; breakdown: { category: string; amount: number }[] };
   birthdays: { name: string; role: string | null; date: string }[];
   events: { id: string; title: string; date: string; time: string | null; type: string; color: string }[];
-  activities: { title: string; description: string | null; type: string; createdAt: string }[];
+  activities: { title: string; who?: string | null; description: string | null; type: string; createdAt: string }[];
   pendingApprovals: { leaves: number; assets: number; reimbursements: number; tickets: number };
   myAssetRequests: number;
   myTickets: number;

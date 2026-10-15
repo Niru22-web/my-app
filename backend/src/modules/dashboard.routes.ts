@@ -83,10 +83,15 @@ export async function dashboardRoutes(app: FastifyInstance) {
         orderBy: { date: "asc" },
         take: 10,
       }),
+      // Meaningful events only (no sign-ins / punches); firm-wide for Admin, Owner and HR, otherwise the person's own.
       prisma.activity.findMany({
-        where: { type: { not: "team_message" } },
+        where: {
+          type: { notIn: ["team_message", "login", "logout", "check_in", "check_out"] },
+          ...(["admin", "owner", "hr"].includes(r) ? {} : { userId: u.id }),
+        },
+        include: { user: { select: { firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 15,
       }),
       ["admin", "owner", "hr", "it"].includes(r)
         ? prisma.assetRequest.count({ where: { status: "Pending" } })
@@ -121,7 +126,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       .sort((a, b) => a.dob.getUTCDate() - b.dob.getUTCDate())
       .map((p) => ({
         name: `${p.employee.firstName} ${p.employee.lastName}`.trim(),
-        role: p.employee.designation,
+        role: p.employee.designation && p.employee.designation !== "Not set" ? p.employee.designation : null,
         date: p.dob.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
       }));
 
@@ -159,6 +164,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         })),
         activities: activities.map((act) => ({
           title: act.title,
+          who: act.user ? `${act.user.firstName} ${act.user.lastName ?? ""}`.trim() : null,
           description: act.description,
           type: act.type,
           createdAt: act.createdAt.toISOString(),

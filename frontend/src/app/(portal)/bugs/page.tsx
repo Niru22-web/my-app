@@ -75,7 +75,9 @@ export default function BugDashboardPage() {
           ) : s.recent.length === 0 ? (
             <EmptyState title="No activity yet" description="When someone reports a bug or updates a ticket, it shows up here." />
           ) : (
-            <ActivityList events={s.recent} />
+            <div className="max-h-[440px] overflow-y-auto pr-1 [scrollbar-gutter:stable]" tabIndex={0} aria-label="Recent activity">
+              <ActivityList events={s.recent} />
+            </div>
           )}
         </div>
       </Card>

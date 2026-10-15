@@ -122,7 +122,8 @@ export async function accountsBillingRoutes(app: FastifyInstance) {
       entityId ? prisma.entity.findUnique({ where: { id: entityId } }) : null,
       clientId ? prisma.client.findUnique({ where: { id: clientId } }) : null,
     ]);
-    if (!entity || !client) return reply.code(404).send({ success: false, message: "Choose an entity and a client." });
+    if (!entityId || !clientId) return reply.code(400).send({ success: false, message: "Choose an entity and a client." });
+    if (!entity || !client) return reply.code(404).send({ success: false, message: "That entity or client no longer exists." });
     return reply.send({ success: true, data: placeOfSupply(entity, client) });
   });
 

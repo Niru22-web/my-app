@@ -99,7 +99,6 @@ export async function complianceRoutes(app: FastifyInstance) {
       const d = day.toISOString().slice(0, 10);
       if (!isOffDay(day, cal) && !holidayYmds.has(d)) weekWorkingDays.push(d);
     }
-    const workingDays = weekWorkingDays.filter((d) => d <= todayYmd);
 
     const logsByEmp = new Map<string, typeof timelogs>();
     for (const l of timelogs) {
@@ -122,7 +121,9 @@ export async function complianceRoutes(app: FastifyInstance) {
     let escalationsTriggered = 0;
     let totalHoursAll = 0;
 
-    const yesterdayYmd = workingDays.length > 1 ? workingDays[workingDays.length - 2] : workingDays[0];
+    // The last working day before today (skips weekly offs and holidays); time for today can still be logged.
+    const pastDays = weekWorkingDays.filter((d) => d < todayYmd);
+    const yesterdayYmd = pastDays[pastDays.length - 1];
 
     const empRows = employees.map((emp) => {
       const myLogs = logsByEmp.get(emp.id) ?? [];
@@ -137,13 +138,15 @@ export async function complianceRoutes(app: FastifyInstance) {
       const isOnLeave = (ymd: string) =>
         empLeaves.some((lv) => lv.fromDate.toISOString().slice(0, 10) <= ymd && lv.toDate.toISOString().slice(0, 10) >= ymd);
 
-      const missingDays = workingDays.filter((ymd) => !loggedDates.has(ymd) && !isOnLeave(ymd));
+      const missingDays = pastDays.filter((ymd) => !loggedDates.has(ymd) && !isOnLeave(ymd));
       if (yesterdayYmd && missingDays.includes(yesterdayYmd)) missingYesterday++;
 
       // Expected hours this week = working days not on leave × expected hours per day
       const targetHours = Math.round((weekWorkingDays.length - weekWorkingDays.filter(isOnLeave).length) * stdHours * 100) / 100;
+      // Expected so far: working days before today (a week in progress isn't judged against the full week).
+      const dueHours = Math.round((pastDays.length - pastDays.filter(isOnLeave).length) * stdHours * 100) / 100;
       const complianceStatus =
-        weeklyHours >= targetHours && missingDays.length === 0
+        weeklyHours >= dueHours && missingDays.length === 0
           ? "compliant"
           : weeklyHours === 0
             ? "unsubmitted"
@@ -152,7 +155,7 @@ export async function complianceRoutes(app: FastifyInstance) {
               : "under_40_hours";
 
       if (complianceStatus === "compliant") compliantEmployees++;
-      if (weeklyHours < targetHours) below40Hours++;
+      if (weeklyHours < dueHours) below40Hours++;
 
       const riskScore = Math.min(100, missingDays.length * 25 + (weeklyHours === 0 ? 40 : weeklyHours < 20 ? 20 : 0));
       const riskLevel = riskScore >= 60 ? "critical" : riskScore >= 25 ? "warning" : "healthy";
@@ -175,8 +178,9 @@ export async function complianceRoutes(app: FastifyInstance) {
         weeklyHours,
         billableHours,
         targetHours,
+        dueHours,
         complianceStatus,
-        compliancePct: targetHours > 0 ? Math.min(100, Math.round((weeklyHours / targetHours) * 100)) : 100,
+        compliancePct: dueHours > 0 ? Math.min(100, Math.round((weeklyHours / dueHours) * 100)) : 100,
         missingDays,
         riskScore,
         riskLevel,
@@ -189,7 +193,7 @@ export async function complianceRoutes(app: FastifyInstance) {
 
     const totalEmployees = empRows.length;
     const weeklyCompliance = totalEmployees > 0 ? Math.round((compliantEmployees / totalEmployees) * 100) : 100;
-    const totalTarget = empRows.reduce((s, x) => s + x.targetHours, 0);
+    const totalTarget = empRows.reduce((s, x) => s + x.dueHours, 0);
     const teamUtilization = totalTarget > 0 ? Math.min(100, Math.round((totalHoursAll / totalTarget) * 100)) : 0;
 
     // Department breakdown
@@ -208,11 +212,11 @@ export async function complianceRoutes(app: FastifyInstance) {
         compliancePct: Math.round((comp / list.length) * 100),
         avgHours: Math.round((hrs / list.length) * 10) / 10,
         utilizationPct: (() => {
-          const t = list.reduce((s, x) => s + x.targetHours, 0);
+          const t = list.reduce((s, x) => s + x.dueHours, 0);
           return t > 0 ? Math.min(100, Math.round((hrs / t) * 100)) : 0;
         })(),
         criticalCount: list.filter((x) => x.riskLevel === "critical").length,
-        belowHoursCount: list.filter((x) => x.weeklyHours < x.targetHours).length,
+        belowHoursCount: list.filter((x) => x.weeklyHours < x.dueHours).length,
       };
     });
 

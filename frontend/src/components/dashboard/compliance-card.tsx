@@ -72,8 +72,8 @@ export function ComplianceCard({
               <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${pct}%` }} />
             </div>
             <dl className="mt-5 grid grid-cols-3 gap-3">
-              <Metric label="Missed yesterday" value={k.missingYesterday} />
-              <Metric label="Below target hours" value={k.below40Hours} />
+              <Metric label="Missed last working day" value={k.missingYesterday} />
+              <Metric label="Behind on hours this week" value={k.below40Hours} />
               <Metric label="Utilisation" value={`${k.teamUtilization}%`} />
             </dl>
           </>

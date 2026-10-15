@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
 import { authenticate, normRole, requireRoles, isTeamMemberOrSelf } from "../plugins/auth";
 import { isScope, scopeCodes } from "../utils/scope";
-import { statusContext } from "../utils/attendance-policy";
+import { fmtHHMM, istMinutes, istToday, statusContext } from "../utils/attendance-policy";
 
 const pickStatus = ({ computedStatus, lateMinutes, workedHours }: { computedStatus: unknown; lateMinutes: number; workedHours: number }) => ({ computedStatus, lateMinutes, workedHours });
 
@@ -23,8 +23,11 @@ export async function attendanceRoutes(app: FastifyInstance) {
   app.get("/api/attendance/today", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
     const now = new Date();
-    const day = utcDayDate(now);
+    // Today in IST (not UTC — before 05:30 IST the UTC date is still yesterday).
+    const day = istToday();
     const weekAgo = new Date(day.getTime() - 6 * 86_400_000);
+    // This calendar week, Monday to today.
+    const weekStartDay = new Date(day.getTime() - ((day.getUTCDay() + 6) % 7) * 86_400_000);
 
     const [record, recentRows, me] = await Promise.all([
       prisma.attendance.findFirst({
@@ -49,8 +52,12 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const sessions = record?.attendance_sessions ?? [];
     const activeSession = [...sessions].reverse().find((s) => !s.check_out_time) ?? null;
 
-    const totalWeekHours = recentRows.reduce((s, r) => s + Number(r.total_hours ?? 0), 0);
-    const presentDays = recentRows.filter((r) => (r.status ?? "").toLowerCase() === "present").length;
+    const weekRows = recentRows.filter((r) => r.date.getTime() >= weekStartDay.getTime());
+    const totalWeekHours = weekRows.reduce((s, r) => s + Number(r.total_hours ?? 0), 0);
+    const presentDays = weekRows.filter((r) => !!r.check_in_time).length;
+    // Average first check-in this week, in IST.
+    const inMins = weekRows.filter((r) => r.check_in_time).map((r) => istMinutes(r.check_in_time!));
+    const avgIn = inMins.length ? Math.round(inMins.reduce((a, b) => a + b, 0) / inMins.length) : null;
 
     return reply.send({
       success: true,
@@ -94,9 +101,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
         weeklyStats: {
           totalHours: totalWeekHours.toFixed(1),
           presentDays,
-          avgInTime: record?.check_in_time
-            ? record.check_in_time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-            : "—",
+          avgInTime: avgIn === null ? "—" : fmtHHMM(avgIn),
         },
         workLog: recentRows.map((r) => ({
           date: r.date.toISOString().slice(0, 10),
