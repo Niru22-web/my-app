@@ -123,7 +123,7 @@ export default function GstReport() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Invoices couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Invoices couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 
@@ -222,7 +222,7 @@ export default function GstReport() {
             <Skeleton className="h-6" />
           </div>
         ) : taxes.isError ? (
-          <ErrorState message="Tax rates couldn’t be loaded." onRetry={() => taxes.refetch()} />
+          <ErrorState error={taxes.error} message="Tax rates couldn’t be loaded." onRetry={() => taxes.refetch()} />
         ) : !taxes.data?.length ? (
           <EmptyState icon={Percent} title="No custom tax slabs configured yet" description="Add GST slabs (e.g. GST 18%) or TDS sections (e.g. TDS 194J — 10%)." className="py-8" />
         ) : (

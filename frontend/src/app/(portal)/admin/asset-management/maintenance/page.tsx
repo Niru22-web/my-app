@@ -85,7 +85,7 @@ export default function MaintenancePage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Maintenance records couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Maintenance records couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

@@ -112,7 +112,7 @@ function Feed() {
           ))}
         </div>
       ) : q.isError ? (
-        <ErrorState onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={Megaphone}

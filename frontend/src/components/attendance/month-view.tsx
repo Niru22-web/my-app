@@ -86,7 +86,7 @@ export function AttendanceMonth({ employeeCode, title = "This month", initialMon
 
       <div className="p-5">
         {q.isError ? (
-          <ErrorState onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} onRetry={() => q.refetch()} />
         ) : q.isLoading ? (
           <Skeleton className="h-[420px]" />
         ) : (

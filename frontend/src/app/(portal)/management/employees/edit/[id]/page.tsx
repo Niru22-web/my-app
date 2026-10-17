@@ -39,7 +39,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
 
       {q.isError ? (
         <Card>
-          <ErrorState onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} onRetry={() => q.refetch()} />
         </Card>
       ) : (
         <>

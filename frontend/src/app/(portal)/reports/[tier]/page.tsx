@@ -38,7 +38,7 @@ export default function ReportCatalogPage({ params }: { params: Promise<{ tier: 
   };
 
   if (cat.isLoading) return <Skeleton className="h-[420px]" />;
-  if (cat.isError || !cat.data) return <Card><ErrorState onRetry={() => cat.refetch()} /></Card>;
+  if (cat.isError || !cat.data) return <Card><ErrorState error={cat.error} onRetry={() => cat.refetch()} /></Card>;
   if (!cat.data.access[tier])
     return (
       <Card>

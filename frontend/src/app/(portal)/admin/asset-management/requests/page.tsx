@@ -99,7 +99,7 @@ export default function RequestsPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Requests couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Requests couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

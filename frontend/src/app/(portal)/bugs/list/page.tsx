@@ -173,7 +173,7 @@ function BugList() {
       cell: (b) =>
         b.allowedStatuses.length ? (
           <InlineSelect className="w-44" label={`Status of ${b.code}`} value={b.status} onChange={(v) => actions.setStatus(b, v)}>
-            {[b.status, ...b.allowedStatuses].map((s) => (
+            {[...new Set([b.status, ...b.allowedStatuses])].map((s) => (
               <option key={s}>{s}</option>
             ))}
           </InlineSelect>

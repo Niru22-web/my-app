@@ -72,7 +72,7 @@ export function MyAssets() {
       <Card>
         <CardHeader icon={Laptop} title="Assigned to me" />
         {mine.isError ? (
-          <ErrorState message="Your assets couldn’t be loaded." onRetry={() => mine.refetch()} />
+          <ErrorState error={mine.error} message="Your assets couldn’t be loaded." onRetry={() => mine.refetch()} />
         ) : mine.isLoading ? (
           <Skeleton className="m-5 h-24" />
         ) : !mine.data?.length ? (
@@ -113,7 +113,7 @@ export function MyAssets() {
         <h2 className="mb-3 text-base font-semibold text-ink">My requests</h2>
         {reqs.isError ? (
           <Card>
-            <ErrorState message="Your requests couldn’t be loaded." onRetry={() => reqs.refetch()} />
+            <ErrorState error={reqs.error} message="Your requests couldn’t be loaded." onRetry={() => reqs.refetch()} />
           </Card>
         ) : (
           <DataTable

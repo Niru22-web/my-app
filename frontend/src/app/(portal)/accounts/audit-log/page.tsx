@@ -197,7 +197,7 @@ export default function AccountsAuditLogPage() {
 
       <Card>
         {q.isError ? (
-          <ErrorState message="Audit log couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="Audit log couldn’t be loaded." onRetry={() => q.refetch()} />
         ) : q.isLoading ? (
           <Skeleton className="m-5 h-56" />
         ) : !rows.length ? (

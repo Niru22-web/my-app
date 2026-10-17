@@ -103,7 +103,7 @@ export default function InventoryPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="The inventory couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="The inventory couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

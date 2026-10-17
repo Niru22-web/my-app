@@ -138,7 +138,7 @@ export default function ReleasesPage() {
         </div>
       ) : q.isError ? (
         <div className="rounded-[var(--radius-card)] border border-line bg-surface">
-          <ErrorState message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />
         </div>
       ) : shown.length === 0 ? (
         <div className="rounded-[var(--radius-card)] border border-line bg-surface">

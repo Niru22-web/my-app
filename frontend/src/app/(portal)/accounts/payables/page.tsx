@@ -224,7 +224,7 @@ export default function PayablesPage() {
   if (payrolls.isError) {
     return (
       <Card>
-        <ErrorState message="Payables couldn’t be loaded." onRetry={() => payrolls.refetch()} />
+        <ErrorState error={payrolls.error} message="Payables couldn’t be loaded." onRetry={() => payrolls.refetch()} />
       </Card>
     );
   }

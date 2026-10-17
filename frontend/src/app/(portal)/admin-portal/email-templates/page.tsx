@@ -79,7 +79,7 @@ export default function EmailPage() {
         {status.isLoading ? (
           <Skeleton className="m-5 h-16" />
         ) : status.isError ? (
-          <ErrorState message="Mailbox status couldn’t be loaded." onRetry={() => status.refetch()} />
+          <ErrorState error={status.error} message="Mailbox status couldn’t be loaded." onRetry={() => status.refetch()} />
         ) : (
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2 text-[13px]">
@@ -129,7 +129,7 @@ export default function EmailPage() {
       </div>
       {q.isError ? (
         <Card>
-          <ErrorState message="Templates couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="Templates couldn’t be loaded." onRetry={() => q.refetch()} />
         </Card>
       ) : q.isLoading ? (
         <Skeleton className="h-48" />

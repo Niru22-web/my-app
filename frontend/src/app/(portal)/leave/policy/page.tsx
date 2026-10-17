@@ -37,7 +37,7 @@ export default function LeavePolicyPage() {
       </Card>
     );
   if (policy.isLoading) return <Skeleton className="h-[560px]" />;
-  if (policy.isError || !policy.data) return <Card><ErrorState onRetry={() => policy.refetch()} /></Card>;
+  if (policy.isError || !policy.data) return <Card><ErrorState error={policy.error} onRetry={() => policy.refetch()} /></Card>;
 
   return (
     <div className="space-y-6">

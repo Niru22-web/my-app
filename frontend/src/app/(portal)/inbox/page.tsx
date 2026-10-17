@@ -227,7 +227,7 @@ export default function InboxPage() {
             )}
           </div>
           {q.isError ? (
-            <ErrorState message="Notifications couldn’t be loaded." onRetry={() => q.refetch()} />
+            <ErrorState error={q.error} message="Notifications couldn’t be loaded." onRetry={() => q.refetch()} />
           ) : q.isLoading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 6 }, (_, i) => (

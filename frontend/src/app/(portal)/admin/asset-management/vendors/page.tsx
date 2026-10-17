@@ -67,7 +67,7 @@ export default function VendorsPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Vendors couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Vendors couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

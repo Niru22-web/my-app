@@ -34,7 +34,7 @@ export default function PartnerDashboardPage() {
     const msg = q.error instanceof ApiError ? q.error.message : undefined;
     return (
       <Card>
-        <ErrorState message={msg} onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message={msg} onRetry={() => q.refetch()} />
       </Card>
     );
   }

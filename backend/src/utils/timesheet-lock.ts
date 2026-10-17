@@ -6,7 +6,9 @@ import { prisma } from "../config/db";
  */
 export async function lockedThrough(): Promise<string | null> {
   const row = await prisma.timesheetLock.findFirst({ orderBy: { createdAt: "desc" }, select: { lockedThrough: true } });
-  return row ? row.lockedThrough.toISOString().slice(0, 10) : null;
+  const d = row?.lockedThrough.toISOString().slice(0, 10);
+  // Reopening everything is stored as 2019-12-31 (before any allowed date), which means "nothing locked".
+  return d && d > "2019-12-31" ? d : null;
 }
 
 /** Error message when `date` falls in a locked period, else null. */

@@ -107,7 +107,7 @@ export default function EsslPage() {
       <Card>
         <CardHeader icon={Fingerprint} title="Devices" />
         {machines.isError ? (
-          <ErrorState message="Devices couldn’t be loaded." onRetry={() => machines.refetch()} />
+          <ErrorState error={machines.error} message="Devices couldn’t be loaded." onRetry={() => machines.refetch()} />
         ) : machines.isLoading ? (
           <Skeleton className="m-5 h-24" />
         ) : !machines.data?.length ? (
@@ -178,7 +178,7 @@ export default function EsslPage() {
         </div>
         {maps.isError ? (
           <Card>
-            <ErrorState message="Mappings couldn’t be loaded." onRetry={() => maps.refetch()} />
+            <ErrorState error={maps.error} message="Mappings couldn’t be loaded." onRetry={() => maps.refetch()} />
           </Card>
         ) : (
           <DataTable

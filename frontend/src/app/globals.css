@@ -177,6 +177,27 @@
   }
 }
 
+/* Browser autofill paints its own tint on the bare input only; keep fields one colour. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  transition: background-color 9999s ease-out 0s;
+}
+
+@keyframes showcase-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

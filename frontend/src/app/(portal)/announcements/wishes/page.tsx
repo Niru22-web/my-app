@@ -96,7 +96,7 @@ export default function WishesPage() {
                 ))}
               </div>
             ) : today.isError ? (
-              <ErrorState onRetry={() => today.refetch()} />
+              <ErrorState error={today.error} onRetry={() => today.refetch()} />
             ) : !d || todayCount === 0 ? (
               <EmptyState icon={CalendarHeart} title="Nothing to celebrate today" description="No birthdays, work anniversaries or festivals dated today." className="py-6" />
             ) : (
@@ -160,7 +160,7 @@ export default function WishesPage() {
           {templates.isLoading ? (
             <Skeleton className="h-40" />
           ) : templates.isError ? (
-            <ErrorState onRetry={() => templates.refetch()} />
+            <ErrorState error={templates.error} onRetry={() => templates.refetch()} />
           ) : (
             <div className="grid gap-6 lg:grid-cols-3">
               {(Object.keys(grouped) as WishKind[]).map((k) => {

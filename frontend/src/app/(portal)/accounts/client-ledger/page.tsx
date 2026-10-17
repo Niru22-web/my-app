@@ -127,7 +127,7 @@ function ClientStatements() {
         ) : q.isLoading ? (
           <Skeleton className="m-5 h-48" />
         ) : q.isError ? (
-          <ErrorState message="The statement couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="The statement couldn’t be loaded." onRetry={() => q.refetch()} />
         ) : (
           <LedgerTable
             key={`${clientId}-${from}-${to}`}
@@ -191,7 +191,7 @@ function EmployeeLedgerView() {
         ) : q.isLoading ? (
           <Skeleton className="m-5 h-48" />
         ) : q.isError ? (
-          <ErrorState message="Employee ledger couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="Employee ledger couldn’t be loaded." onRetry={() => q.refetch()} />
         ) : (
           <LedgerTable
             key={`${employeeId}-${from}-${to}`}
@@ -267,7 +267,7 @@ function GeneralLedgerView() {
         {q.isLoading ? (
           <Skeleton className="m-5 h-48" />
         ) : q.isError ? (
-          <ErrorState message="General ledger couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="General ledger couldn’t be loaded." onRetry={() => q.refetch()} />
         ) : !q.data?.rows.length && !q.data?.opening ? (
           <EmptyState icon={BookOpen} title={entityId || type !== "all" ? "No ledger postings match these filters" : "No ledger postings in this period"} />
         ) : (

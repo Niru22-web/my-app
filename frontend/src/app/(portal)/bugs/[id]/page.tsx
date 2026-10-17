@@ -82,7 +82,7 @@ export default function BugPage({ params }: { params: Promise<{ id: string }> })
   if (q.isError)
     return (
       <Card>
-        <ErrorState message={q.error instanceof ApiError && q.error.status === 404 ? "This ticket doesn’t exist or was deleted." : undefined} onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message={q.error instanceof ApiError && q.error.status === 404 ? "This ticket doesn’t exist or was deleted." : undefined} onRetry={() => q.refetch()} />
         <p className="pb-6 text-center">
           <Link href="/bugs/list" className="text-[13px] font-semibold text-brand hover:underline">
             Back to all tickets

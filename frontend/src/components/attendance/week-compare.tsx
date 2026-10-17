@@ -57,7 +57,7 @@ export function WeekCompare() {
         {q.isLoading ? (
           <Skeleton className="mx-2 h-[220px]" />
         ) : q.isError ? (
-          <ErrorState onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} onRetry={() => q.refetch()} />
         ) : empty ? (
           <EmptyState icon={BarChart3} title="No attendance hours in the last two weeks" />
         ) : view === "chart" ? (

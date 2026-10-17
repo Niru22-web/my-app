@@ -165,7 +165,7 @@ export default function ReportPage({ params }: { params: Promise<{ tier: string;
 
       {rep.isError ? (
         <Card>
-          <ErrorState message={rep.error instanceof ApiError ? rep.error.message : undefined} onRetry={() => rep.refetch()} />
+          <ErrorState error={rep.error} message={rep.error instanceof ApiError ? rep.error.message : undefined} onRetry={() => rep.refetch()} />
         </Card>
       ) : !data ? (
         <div className="space-y-4">

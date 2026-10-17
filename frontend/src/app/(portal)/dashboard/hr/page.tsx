@@ -20,7 +20,7 @@ export default function HrDashboardPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />
       </Card>
     );
 

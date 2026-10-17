@@ -105,7 +105,7 @@ export default function SetupPage() {
         <Card>
           <CardHeader icon={MapPin} title="Locations" description="Offices and sites. Shared with employee records." />
           {locs.isError ? (
-            <ErrorState message="Couldn’t load locations." onRetry={() => locs.refetch()} />
+            <ErrorState error={locs.error} message="Couldn’t load locations." onRetry={() => locs.refetch()} />
           ) : locs.isLoading ? (
             <Skeleton className="m-5 h-32" />
           ) : (

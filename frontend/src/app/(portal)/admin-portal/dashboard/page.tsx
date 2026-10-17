@@ -38,7 +38,7 @@ export default function AdminOverview() {
         <>
           {q.isError ? (
             <Card>
-              <ErrorState message="Server status couldn’t be loaded." onRetry={() => q.refetch()} />
+              <ErrorState error={q.error} message="Server status couldn’t be loaded." onRetry={() => q.refetch()} />
             </Card>
           ) : (
             <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4" aria-label="Firm records">

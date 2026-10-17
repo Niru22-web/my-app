@@ -53,7 +53,7 @@ export default function AssetOverview() {
   if (assets.isError)
     return (
       <Card>
-        <ErrorState message="Asset data couldn’t be loaded." onRetry={() => assets.refetch()} />
+        <ErrorState error={assets.error} message="Asset data couldn’t be loaded." onRetry={() => assets.refetch()} />
       </Card>
     );
 

@@ -80,7 +80,7 @@ export default function SystemPage() {
       />
       {q.isError ? (
         <Card>
-          <ErrorState message="Server status couldn’t be loaded." onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message="Server status couldn’t be loaded." onRetry={() => q.refetch()} />
         </Card>
       ) : (
         <div className="grid gap-6 lg:grid-cols-3">
@@ -158,7 +158,7 @@ export default function SystemPage() {
           </div>
         </div>
         {files.isError ? (
-          <ErrorState message="Files couldn’t be listed." onRetry={() => files.refetch()} />
+          <ErrorState error={files.error} message="Files couldn’t be listed." onRetry={() => files.refetch()} />
         ) : files.isLoading ? (
           <Skeleton className="mx-5 mb-5 h-40" />
         ) : !files.data?.data.length ? (

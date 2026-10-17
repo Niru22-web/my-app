@@ -204,7 +204,7 @@ export default function BankingPage() {
   if (q.isError) {
     return (
       <Card>
-        <ErrorState message="Bank transactions couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Bank transactions couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
   }

@@ -71,7 +71,7 @@ export function MyFeedbackList() {
         ))}
       </div>
     );
-  if (q.isError) return <ErrorState message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />;
+  if (q.isError) return <ErrorState error={q.error} message={q.error instanceof ApiError ? q.error.message : undefined} onRetry={() => q.refetch()} />;
   if (!rows.length) return <EmptyState icon={MessageSquareHeart} title="You haven’t sent any feedback yet" description="What you send appears here, along with any reply from the team." />;
 
   return (

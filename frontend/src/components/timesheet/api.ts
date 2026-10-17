@@ -360,3 +360,103 @@ export function useSetTimesheetLock() {
     },
   });
 }
+
+// ---- Grids, My jobs, My projects -------------------------------------------------
+
+export interface GridRowInput {
+  jobId: string;
+  billable?: boolean;
+  description?: string;
+  workItem?: string;
+  hours: Record<string, number>;
+}
+
+export interface MyJob {
+  id: string;
+  jobId: string;
+  name: string;
+  status: string;
+  billable: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  canLog: boolean;
+  assigned: boolean;
+  project: { id: string; projectId: string; name: string; status: string };
+  client: { id: string; clientId: string; name: string; alias?: string | null };
+  myHoursMonth: number;
+  myHoursTotal: number;
+  myBillableHours: number;
+  lastLoggedOn: string | null;
+  teamHours: number;
+  usersCount: number;
+  loggedByCount: number;
+}
+
+export interface MyProject {
+  id: string;
+  projectId: string;
+  name: string;
+  status: string;
+  billable: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  member: boolean;
+  client: { id: string; clientId: string; name: string; alias?: string | null };
+  jobsCount: number;
+  openJobsCount: number;
+  usersCount: number;
+  myHoursMonth: number;
+  myHoursTotal: number;
+  myBillableHours: number;
+  lastLoggedOn: string | null;
+  teamHours: number;
+}
+
+export function useMyJobs() {
+  return useQuery({
+    queryKey: ["timelogs", "my-jobs"],
+    queryFn: async () => (await api<Envelope<MyJob[]>>("timelogs/my-jobs")).data ?? [],
+    staleTime: 60_000,
+  });
+}
+
+export function useMyProjects() {
+  return useQuery({
+    queryKey: ["timelogs", "my-projects"],
+    queryFn: async () => (await api<Envelope<MyProject[]>>("timelogs/my-projects")).data ?? [],
+    staleTime: 60_000,
+  });
+}
+
+/** Grid save (PUT /api/timelogs/grid) and bulk delete, sharing the same cache refresh as the other mutations. */
+export function useGridMutations() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["timelogs"] });
+    void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    void qc.invalidateQueries({ queryKey: ["compliance"] });
+  };
+  return {
+    saveGrid: useMutation({
+      mutationFn: (b: { from: string; to: string; mode?: "replace" | "append"; rows: GridRowInput[] }) =>
+        api<Envelope<{ changed: number }>>("timelogs/grid", { method: "PUT", body: b }),
+      onSuccess: refresh,
+    }),
+    removeMany: useMutation({
+      mutationFn: async (ids: string[]) => {
+        let done = 0;
+        const failed: string[] = [];
+        for (const id of ids) {
+          try {
+            await api(`timelogs/${id}`, { method: "DELETE" });
+            done++;
+          } catch (e) {
+            failed.push(e instanceof Error ? e.message : "Couldn’t delete");
+          }
+        }
+        return { done, failed };
+      },
+      onSettled: refresh,
+    }),
+  };
+}

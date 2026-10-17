@@ -108,7 +108,7 @@ export default function AccessPage() {
               </div>
             </div>
             {users.isError ? (
-              <ErrorState message="People couldn’t be loaded." onRetry={() => users.refetch()} />
+              <ErrorState error={users.error} message="People couldn’t be loaded." onRetry={() => users.refetch()} />
             ) : users.isLoading ? (
               <Skeleton className="m-3 h-64" />
             ) : (
@@ -156,14 +156,14 @@ export default function AccessPage() {
 
 function PersonEditor({ person }: { person: AdminUser }) {
   const q = useUserPermissions(person.id);
-  if (q.isError) return <Card><ErrorState message="Access couldn’t be loaded." onRetry={() => q.refetch()} /></Card>;
+  if (q.isError) return <Card><ErrorState error={q.error} message="Access couldn’t be loaded." onRetry={() => q.refetch()} /></Card>;
   if (q.isLoading || !q.data) return <Skeleton className="h-96" />;
   return <Editor key={q.dataUpdatedAt} initial={toMatrix(q.data)} title={`${person.firstName} ${person.lastName ?? ""}`.trim()} subtitle={`${roleLabel(person.role)} · ${person.officeEmail}`} target={{ kind: "person", id: person.id, role: person.role ?? "" }} />;
 }
 
 function RoleEditor({ role }: { role: string }) {
   const q = useRolePermissions(role);
-  if (q.isError) return <Card><ErrorState message="Access couldn’t be loaded." onRetry={() => q.refetch()} /></Card>;
+  if (q.isError) return <Card><ErrorState error={q.error} message="Access couldn’t be loaded." onRetry={() => q.refetch()} /></Card>;
   if (q.isLoading || !q.data) return <Skeleton className="h-96" />;
   return <Editor key={`${role}-${q.dataUpdatedAt}`} initial={toMatrix(q.data)} title={`Everyone with the ${roleLabel(role)} role`} subtitle="Applies unless a person has their own access set" target={{ kind: "role", id: role, role }} />;
 }

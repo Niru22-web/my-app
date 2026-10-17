@@ -66,6 +66,162 @@ const TIMELOG_INCLUDE = {
   },
 } as const;
 
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const isOpenJob = (s: string | null | undefined) => ["active", "started"].includes((s ?? "").toLowerCase());
+
+/** Calendar month (IST) as UTC-midnight bounds. `ym` = "YYYY-MM", default the current month in India. */
+function currentMonth(ym?: string) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym ?? ""));
+  const ist = new Date(Date.now() + 330 * 60_000);
+  const y = m ? Number(m[1]) : ist.getUTCFullYear();
+  const mo = m ? Number(m[2]) - 1 : ist.getUTCMonth();
+  return { monthStart: new Date(Date.UTC(y, mo, 1)), monthEnd: new Date(Date.UTC(y, mo + 1, 0, 23, 59, 59, 999)) };
+}
+
+export interface GridRow {
+  jobId?: string;
+  billable?: boolean;
+  description?: string;
+  workItem?: string;
+  hours?: Record<string, number | string | null>;
+}
+
+const MAX_GRID_DAYS = 31;
+
+/**
+ * Saves a job × day grid of the caller's time for [from, to] (both "YYYY-MM-DD", at most 31 days).
+ * Same rules as single entries: 0.25–24 h a cell, ≤ 24 h a day (submitted/approved time included),
+ * open (Active/Started) jobs only, nothing in a locked period, at most 7 days ahead.
+ * Only the caller's draft/returned cells are changed; submitted and approved time is never touched.
+ */
+async function saveGrid(
+  employeeId: string,
+  from: string,
+  to: string,
+  rawRows: GridRow[] | undefined,
+  mode: "replace" | "append",
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const bad = (message: string, errors?: string[]) => ({ status: 400, body: { success: false, message, ...(errors ? { errors } : {}) } });
+  const start = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return bad("That period isn’t valid.");
+  if (end < start) return bad("The end date must be on or after the start date.");
+  const span = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (span > MAX_GRID_DAYS) return bad(`A grid can cover at most ${MAX_GRID_DAYS} days.`);
+  const days = Array.from({ length: span }, (_, i) => new Date(start.getTime() + i * 86_400_000).toISOString().slice(0, 10));
+  const daySet = new Set(days);
+
+  if (rawRows !== undefined && !Array.isArray(rawRows)) return bad("Rows must be a list.");
+  const rows = rawRows ?? [];
+  if (rows.length > 60) return bad("Too many rows for one grid (60 at most).");
+
+  const locked = await lockedThrough();
+  const jobIds = [...new Set(rows.map((r) => String(r?.jobId ?? "")).filter(Boolean))];
+  const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, include: { project: true } });
+  const jobById = new Map(jobs.map((j) => [j.id, j]));
+  const existing = await prisma.timelog.findMany({
+    where: { employeeId, date: { gte: new Date(`${days[0]}T00:00:00.000Z`), lte: new Date(`${days[days.length - 1]}T23:59:59.999Z`) } },
+  });
+  const isDraft = (t: { submissionStatus: string }) => ["not_submitted", "draft", "rejected"].includes(t.submissionStatus);
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+  const errors: string[] = [];
+  const gridJobs = new Set(jobIds);
+  // Day totals: time the grid doesn't replace (submitted/approved, other jobs' drafts, everything in append mode) + the cells.
+  const dayTotal = new Map<string, number>(days.map((d) => [d, 0]));
+  for (const t of existing) {
+    if (mode === "append" || !isDraft(t) || !gridJobs.has(t.jobId)) dayTotal.set(ymd(t.date), (dayTotal.get(ymd(t.date)) ?? 0) + t.hours);
+  }
+
+  type Cell = { jobId: string; day: string; hours: number; billable?: boolean; description?: string; workItem?: string };
+  const cells: Cell[] = [];
+  const seenJobs = new Set<string>();
+  for (const r of rows) {
+    const jobId = String(r?.jobId ?? "");
+    const job = jobById.get(jobId);
+    if (!job) {
+      errors.push(jobId ? "A selected job no longer exists." : "Every row needs a job.");
+      continue;
+    }
+    if (mode === "replace") {
+      if (seenJobs.has(jobId)) errors.push(`${job.jobId} appears more than once — use one row per job.`);
+      seenJobs.add(jobId);
+    }
+    if (r.description !== undefined && String(r.description).length > 2000) errors.push(`${job.jobId}: keep the description under 2,000 characters.`);
+    const hoursMap = r.hours && typeof r.hours === "object" ? r.hours : {};
+    for (const key of Object.keys(hoursMap)) {
+      if (!daySet.has(key.slice(0, 10))) errors.push(`${job.jobId}: ${key} is outside ${from} – ${to}.`);
+    }
+    for (const day of days) {
+      const raw = hoursMap[day];
+      const h = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
+      const current =
+        mode === "append" ? 0 : existing.filter((t) => t.jobId === jobId && ymd(t.date) === day && isDraft(t)).reduce((x, t) => x + t.hours, 0);
+      const changed = Math.abs(current - h) > 0.001;
+      const dateProblem = checkEntryDate(new Date(`${day}T00:00:00.000Z`));
+      if (!Number.isFinite(h) || h < 0 || h > 24) errors.push(`${job.jobId} on ${day}: hours must be between 0.25 and 24.`);
+      else if (h > 0 && h < 0.25) errors.push(`${job.jobId} on ${day}: the minimum is 0.25 h.`);
+      else if (changed && locked && day <= locked) errors.push(`${day} is in a locked period.`);
+      else if (changed && h > 0 && !isOpenJob(job.status)) errors.push(`${job.jobId} is ${job.status}; time can't be added to it.`);
+      else if (changed && h > 0 && dateProblem) errors.push(`${day}: ${dateProblem}`);
+      dayTotal.set(day, (dayTotal.get(day) ?? 0) + (Number.isFinite(h) ? h : 0));
+      if (changed) cells.push({ jobId, day, hours: h, billable: r.billable, description: r.description, workItem: r.workItem });
+    }
+  }
+  for (const [day, total] of dayTotal) if (total > 24) errors.push(`${day} adds up to ${round2(total)} h — a day can't exceed 24 h.`);
+  if (errors.length) return bad(errors[0], [...new Set(errors)]);
+
+  const emp = await prisma.employee.findUnique({ where: { id: employeeId }, select: { managerId: true, partnerId: true } });
+  await prisma.$transaction(async (tx) => {
+    for (const c of cells) {
+      const job = jobById.get(c.jobId)!;
+      const drafts = mode === "append" ? [] : existing.filter((t) => t.jobId === c.jobId && ymd(t.date) === c.day && isDraft(t));
+      if (c.hours === 0) {
+        if (drafts.length) await tx.timelog.deleteMany({ where: { id: { in: drafts.map((t) => t.id) } } });
+        continue;
+      }
+      const [first, ...rest] = drafts;
+      if (rest.length) await tx.timelog.deleteMany({ where: { id: { in: rest.map((t) => t.id) } } });
+      const d = new Date(`${c.day}T00:00:00.000Z`);
+      const billableStatus = c.billable === undefined ? (job.billable ? "billable" : "non_billable") : c.billable ? "billable" : "non_billable";
+      if (first) {
+        await tx.timelog.update({
+          where: { id: first.id },
+          data: {
+            hours: c.hours,
+            submissionStatus: "not_submitted",
+            rejectionReason: null,
+            submittedAt: null,
+            ...(c.description !== undefined ? { description: String(c.description).trim().slice(0, 2000) } : {}),
+            ...(c.billable !== undefined ? { billableStatus } : {}),
+          },
+        });
+      } else {
+        await tx.timelog.create({
+          data: {
+            employeeId,
+            jobId: job.id,
+            projectId: job.projectId,
+            clientId: job.project.clientId,
+            combinedJobCode: job.combinedId,
+            hours: c.hours,
+            date: d,
+            weekStart: computeWeekStart(d),
+            billableStatus,
+            description: String(c.description ?? "").trim().slice(0, 2000),
+            workItem: c.workItem ? String(c.workItem).trim().slice(0, 200) : null,
+            submissionStatus: "not_submitted",
+            reportingManagerId: emp?.managerId ?? null,
+            reportingPartnerId: emp?.partnerId ?? null,
+          },
+        });
+      }
+    }
+  });
+  return { status: 200, body: { success: true, data: { changed: cells.length } } };
+}
+
 export async function timelogRoutes(app: FastifyInstance) {
   // GET /api/timelogs/my
   app.get("/api/timelogs/my", { preHandler: [authenticate] }, async (req, reply) => {
@@ -949,100 +1105,146 @@ export async function timelogRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { lockedThrough: raw && raw > "2019-12-31" ? raw : null } });
   });
 
-  // ── Weekly entry ─────────────────────────────────────────────────────────────
-  // PUT /api/timelogs/week — save a whole week grid for the caller.
-  // Body: { weekStart: "YYYY-MM-DD" (Monday), rows: [{ jobId, billable?: boolean, description?, hours: { "YYYY-MM-DD": number } }] }
-  // Each job × day cell holds the caller's draft time for that day: a number replaces the drafts in that cell,
-  // 0 or empty removes them. Submitted and approved time is never touched (and still counts toward the 24 h cap).
+  // ── Grid entry (daily / weekly / semi-monthly / monthly logs) ─────────────────
+  // PUT /api/timelogs/week — save a whole week grid for the caller (kept for existing clients).
+  // Body: { weekStart: "YYYY-MM-DD" (Monday), rows: [{ jobId, billable?, description?, hours: { "YYYY-MM-DD": number } }] }
   app.put("/api/timelogs/week", { preHandler: [authenticate] }, async (req, reply) => {
-    const u = req.user!;
-    const b = (req.body ?? {}) as { weekStart?: string; rows?: { jobId?: string; billable?: boolean; description?: string; hours?: Record<string, number | string | null> }[] };
+    const b = (req.body ?? {}) as { weekStart?: string; rows?: GridRow[] };
     const ws = String(b.weekStart ?? "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ws)) return reply.code(400).send({ success: false, message: "Week start is required." });
     const monday = computeWeekStart(new Date(`${ws}T00:00:00.000Z`));
-    const days = Array.from({ length: 7 }, (_, i) => new Date(monday.getTime() + i * 86_400_000).toISOString().slice(0, 10));
-    const rows = Array.isArray(b.rows) ? b.rows : [];
-    if (rows.length > 60) return reply.code(400).send({ success: false, message: "Too many rows for one week." });
+    if (Number.isNaN(monday.getTime())) return reply.code(400).send({ success: false, message: "Week start is required." });
+    const from = monday.toISOString().slice(0, 10);
+    const to = new Date(monday.getTime() + 6 * 86_400_000).toISOString().slice(0, 10);
+    const res = await saveGrid(req.user!.id, from, to, b.rows, "replace");
+    return reply.code(res.status).send(res.body);
+  });
 
-    const locked = await lockedThrough();
-    const jobIds = [...new Set(rows.map((r) => String(r.jobId ?? "")).filter(Boolean))];
-    const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, include: { project: true } });
-    const jobById = new Map(jobs.map((j) => [j.id, j]));
-    const existing = await prisma.timelog.findMany({
-      where: { employeeId: u.id, date: { gte: new Date(`${days[0]}T00:00:00.000Z`), lte: new Date(`${days[6]}T23:59:59.999Z`) } },
-    });
-    const isDraft = (t: { submissionStatus: string }) => ["not_submitted", "rejected"].includes(t.submissionStatus);
-
-    const errors: string[] = [];
-    // Day totals: locked-in time (submitted/approved, and drafts for jobs not in the grid) + new cells.
-    const gridJobs = new Set(jobIds);
-    const dayTotal = new Map<string, number>(days.map((d) => [d, 0]));
-    for (const t of existing) {
-      if (!isDraft(t) || !gridJobs.has(t.jobId)) dayTotal.set(t.date.toISOString().slice(0, 10), (dayTotal.get(t.date.toISOString().slice(0, 10)) ?? 0) + t.hours);
+  // PUT /api/timelogs/grid — save any period of up to 31 days for the caller.
+  // Body: { from, to, mode?: "replace" | "append", rows: [{ jobId, billable?, description?, workItem?, hours: { "YYYY-MM-DD": n } }] }
+  // replace (default): each job × day cell holds the caller's draft time for that day — a number replaces the drafts
+  //   in that cell, 0 or empty removes them. Submitted and approved time is never touched.
+  // append: every non-zero cell becomes a new draft entry (used by the daily log); existing entries are left alone.
+  app.put("/api/timelogs/grid", { preHandler: [authenticate] }, async (req, reply) => {
+    const b = (req.body ?? {}) as { from?: string; to?: string; mode?: string; rows?: GridRow[] };
+    const from = String(b.from ?? "").slice(0, 10);
+    const to = String(b.to ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return reply.code(400).send({ success: false, message: "Choose the start and end dates of the period." });
     }
-    type Cell = { jobId: string; day: string; hours: number; billable?: boolean; description?: string };
-    const cells: Cell[] = [];
-    for (const r of rows) {
-      const jobId = String(r.jobId ?? "");
-      const job = jobById.get(jobId);
-      if (!job) {
-        errors.push("A selected job no longer exists.");
-        continue;
-      }
-      for (const day of days) {
-        const raw = r.hours?.[day];
-        const h = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
-        const current = existing.filter((t) => t.jobId === jobId && t.date.toISOString().slice(0, 10) === day && isDraft(t)).reduce((x, t) => x + t.hours, 0);
-        const changed = Math.abs(current - h) > 0.001;
-        if (!Number.isFinite(h) || h < 0 || h > 24) errors.push(`${job.jobId} on ${day}: hours must be between 0.25 and 24.`);
-        else if (h > 0 && h < 0.25) errors.push(`${job.jobId} on ${day}: the minimum is 0.25 h.`);
-        else if (changed && locked && day <= locked) errors.push(`${day} is in a locked period.`);
-        else if (changed && h > 0 && !["active", "started"].includes((job.status ?? "").toLowerCase())) errors.push(`${job.jobId} is ${job.status}; time can't be added to it.`);
-        else if (changed && h > 0 && checkEntryDate(new Date(`${day}T00:00:00.000Z`))) errors.push(`${day}: ${checkEntryDate(new Date(`${day}T00:00:00.000Z`))}`);
-        dayTotal.set(day, (dayTotal.get(day) ?? 0) + (Number.isFinite(h) ? h : 0));
-        if (changed) cells.push({ jobId, day, hours: h, billable: r.billable, description: r.description });
-      }
+    if (b.mode !== undefined && b.mode !== "replace" && b.mode !== "append") {
+      return reply.code(400).send({ success: false, message: "Mode must be replace or append." });
     }
-    for (const [day, total] of dayTotal) if (total > 24) errors.push(`${day} adds up to ${total} h — a day can't exceed 24 h.`);
-    if (errors.length) return reply.code(400).send({ success: false, message: errors[0], errors: [...new Set(errors)] });
+    const res = await saveGrid(req.user!.id, from, to, b.rows, (b.mode as "replace" | "append" | undefined) ?? "replace");
+    return reply.code(res.status).send(res.body);
+  });
 
-    await prisma.$transaction(async (tx) => {
-      for (const c of cells) {
-        const job = jobById.get(c.jobId)!;
-        const drafts = existing.filter((t) => t.jobId === c.jobId && t.date.toISOString().slice(0, 10) === c.day && isDraft(t));
-        if (c.hours === 0) {
-          if (drafts.length) await tx.timelog.deleteMany({ where: { id: { in: drafts.map((t) => t.id) } } });
-          continue;
-        }
-        const [first, ...rest] = drafts;
-        if (rest.length) await tx.timelog.deleteMany({ where: { id: { in: rest.map((t) => t.id) } } });
-        const d = new Date(`${c.day}T00:00:00.000Z`);
-        const billableStatus = c.billable === undefined ? (job.billable ? "billable" : "non_billable") : c.billable ? "billable" : "non_billable";
-        if (first) {
-          await tx.timelog.update({
-            where: { id: first.id },
-            data: { hours: c.hours, submissionStatus: "not_submitted", rejectionReason: null, ...(c.description !== undefined ? { description: String(c.description).slice(0, 2000) } : {}) },
-          });
-        } else {
-          await tx.timelog.create({
-            data: {
-              employeeId: u.id,
-              jobId: job.id,
-              projectId: job.projectId,
-              clientId: job.project.clientId,
-              combinedJobCode: job.combinedId,
-              hours: c.hours,
-              date: d,
-              weekStart: computeWeekStart(d),
-              billableStatus,
-              description: String(c.description ?? "").slice(0, 2000),
-              submissionStatus: "not_submitted",
-            },
-          });
-        }
-      }
+  // ── My jobs / My projects ─────────────────────────────────────────────────────
+  // Jobs and projects the caller is assigned to (job team or project team) or has logged time on.
+  // Hours: the caller's own (this month, all time, billable) and the team total for those jobs/projects only.
+  app.get("/api/timelogs/my-jobs", { preHandler: [authenticate] }, async (req, reply) => {
+    const me = req.user!.id;
+    const { monthStart, monthEnd } = currentMonth((req.query as { month?: string } | undefined)?.month);
+    const [jobUsers, projectUsers, mine] = await Promise.all([
+      prisma.jobUser.findMany({ where: { employeeId: me }, select: { jobId: true } }),
+      prisma.projectUser.findMany({ where: { employeeId: me }, select: { projectId: true } }),
+      prisma.timelog.groupBy({ by: ["jobId"], where: { employeeId: me }, _sum: { hours: true }, _max: { date: true } }),
+    ]);
+    const assigned = new Set(jobUsers.map((j) => j.jobId));
+    const memberProjects = new Set(projectUsers.map((p) => p.projectId));
+    const jobs = await prisma.job.findMany({
+      where: { OR: [{ id: { in: [...assigned, ...mine.map((m) => m.jobId)] } }, { projectId: { in: [...memberProjects] } }] },
+      include: {
+        project: { include: { client: { select: { id: true, clientId: true, name: true, alias: true } } } },
+        _count: { select: { users: true } },
+      },
+      orderBy: { name: "asc" },
     });
-    return reply.send({ success: true, data: { changed: cells.length } });
+    const ids = jobs.map((j) => j.id);
+    const [month, billable, team, loggers] = await Promise.all([
+      prisma.timelog.groupBy({ by: ["jobId"], where: { employeeId: me, jobId: { in: ids }, date: { gte: monthStart, lte: monthEnd } }, _sum: { hours: true } }),
+      prisma.timelog.groupBy({ by: ["jobId"], where: { employeeId: me, jobId: { in: ids }, billableStatus: "billable" }, _sum: { hours: true } }),
+      prisma.timelog.groupBy({ by: ["jobId"], where: { jobId: { in: ids } }, _sum: { hours: true } }),
+      prisma.timelog.groupBy({ by: ["jobId", "employeeId"], where: { jobId: { in: ids } } }),
+    ]);
+    const sum = (rows: { jobId: string; _sum: { hours: number | null } }[]) => new Map(rows.map((r) => [r.jobId, round2(r._sum.hours ?? 0)]));
+    const mineMap = new Map(mine.map((m) => [m.jobId, m]));
+    const monthMap = sum(month);
+    const billMap = sum(billable);
+    const teamMap = sum(team);
+    const loggerCount = new Map<string, number>();
+    for (const l of loggers) loggerCount.set(l.jobId, (loggerCount.get(l.jobId) ?? 0) + 1);
+    const data = jobs.map((j) => ({
+      id: j.id,
+      jobId: j.jobId,
+      name: j.name,
+      status: j.status,
+      billable: j.billable,
+      startDate: j.startDate,
+      endDate: j.endDate,
+      canLog: isOpenJob(j.status),
+      assigned: assigned.has(j.id) || memberProjects.has(j.projectId),
+      project: { id: j.project.id, projectId: j.project.projectId, name: j.project.name, status: j.project.status },
+      client: j.project.client,
+      myHoursMonth: monthMap.get(j.id) ?? 0,
+      myHoursTotal: round2(mineMap.get(j.id)?._sum.hours ?? 0),
+      myBillableHours: billMap.get(j.id) ?? 0,
+      lastLoggedOn: mineMap.get(j.id)?._max.date ?? null,
+      teamHours: teamMap.get(j.id) ?? 0,
+      usersCount: j._count.users,
+      loggedByCount: loggerCount.get(j.id) ?? 0,
+    }));
+    return reply.send({ success: true, month: monthStart.toISOString().slice(0, 7), data });
+  });
+
+  app.get("/api/timelogs/my-projects", { preHandler: [authenticate] }, async (req, reply) => {
+    const me = req.user!.id;
+    const { monthStart, monthEnd } = currentMonth((req.query as { month?: string } | undefined)?.month);
+    const [jobUsers, projectUsers, mine] = await Promise.all([
+      prisma.jobUser.findMany({ where: { employeeId: me }, select: { job: { select: { projectId: true } } } }),
+      prisma.projectUser.findMany({ where: { employeeId: me }, select: { projectId: true } }),
+      prisma.timelog.groupBy({ by: ["projectId"], where: { employeeId: me }, _sum: { hours: true }, _max: { date: true } }),
+    ]);
+    const memberOf = new Set(projectUsers.map((p) => p.projectId));
+    const ids = [...new Set([...memberOf, ...jobUsers.map((j) => j.job.projectId), ...mine.map((m) => m.projectId)])];
+    const projects = await prisma.project.findMany({
+      where: { id: { in: ids } },
+      include: { client: { select: { id: true, clientId: true, name: true, alias: true } }, _count: { select: { jobs: true, users: true } } },
+      orderBy: { name: "asc" },
+    });
+    const [month, billable, team, projectJobs] = await Promise.all([
+      prisma.timelog.groupBy({ by: ["projectId"], where: { employeeId: me, projectId: { in: ids }, date: { gte: monthStart, lte: monthEnd } }, _sum: { hours: true } }),
+      prisma.timelog.groupBy({ by: ["projectId"], where: { employeeId: me, projectId: { in: ids }, billableStatus: "billable" }, _sum: { hours: true } }),
+      prisma.timelog.groupBy({ by: ["projectId"], where: { projectId: { in: ids } }, _sum: { hours: true } }),
+      prisma.job.findMany({ where: { projectId: { in: ids } }, select: { projectId: true, status: true } }),
+    ]);
+    const sum = (rows: { projectId: string; _sum: { hours: number | null } }[]) => new Map(rows.map((r) => [r.projectId, round2(r._sum.hours ?? 0)]));
+    const mineMap = new Map(mine.map((m) => [m.projectId, m]));
+    const monthMap = sum(month);
+    const billMap = sum(billable);
+    const teamMap = sum(team);
+    const openMap = new Map<string, number>();
+    for (const j of projectJobs) if (isOpenJob(j.status)) openMap.set(j.projectId, (openMap.get(j.projectId) ?? 0) + 1);
+    const data = projects.map((p) => ({
+      id: p.id,
+      projectId: p.projectId,
+      name: p.name,
+      status: p.status,
+      billable: p.billable,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      member: memberOf.has(p.id),
+      client: p.client,
+      jobsCount: p._count.jobs,
+      openJobsCount: openMap.get(p.id) ?? 0,
+      usersCount: p._count.users,
+      myHoursMonth: monthMap.get(p.id) ?? 0,
+      myHoursTotal: round2(mineMap.get(p.id)?._sum.hours ?? 0),
+      myBillableHours: billMap.get(p.id) ?? 0,
+      lastLoggedOn: mineMap.get(p.id)?._max.date ?? null,
+      teamHours: teamMap.get(p.id) ?? 0,
+    }));
+    return reply.send({ success: true, month: monthStart.toISOString().slice(0, 7), data });
   });
 
   // GET /api/timelogs/template — Excel template for bulk import

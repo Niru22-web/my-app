@@ -87,7 +87,7 @@ export default function TicketPage({ params }: { params: Promise<{ id: string }>
   if (q.isError)
     return (
       <Card>
-        <ErrorState message={q.error instanceof ApiError && q.error.status === 404 ? "This ticket doesn’t exist or was deleted." : undefined} onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message={q.error instanceof ApiError && q.error.status === 404 ? "This ticket doesn’t exist or was deleted." : undefined} onRetry={() => q.refetch()} />
       </Card>
     );
   if (q.isLoading || !q.data) return <Skeleton className="h-[600px]" />;

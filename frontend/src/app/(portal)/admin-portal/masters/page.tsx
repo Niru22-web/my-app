@@ -121,7 +121,7 @@ function Masters() {
       <p className="text-[13px] text-ink-muted">{meta.hint}</p>
       {q.isError ? (
         <Card>
-          <ErrorState message={`${meta.label} couldn’t be loaded.`} onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} message={`${meta.label} couldn’t be loaded.`} onRetry={() => q.refetch()} />
         </Card>
       ) : (
         <DataTable

@@ -102,7 +102,7 @@ export default function CategoriesPage() {
             <Skeleton className="h-12" />
           </div>
         ) : q.isError ? (
-          <ErrorState onRetry={() => q.refetch()} />
+          <ErrorState error={q.error} onRetry={() => q.refetch()} />
         ) : (q.data?.length ?? 0) === 0 ? (
           <EmptyState icon={FolderTree} title="No ticket categories yet" description="Add categories such as IT, HR or Finance so people can raise tickets." />
         ) : (

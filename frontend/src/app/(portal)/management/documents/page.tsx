@@ -69,6 +69,13 @@ export default function DocumentsPage() {
     },
   ];
 
+  if (q.error instanceof ApiError && q.error.status === 403)
+    return (
+      <div className="rounded-[var(--radius-card)] border border-line bg-surface">
+        <ErrorState error={q.error} />
+      </div>
+    );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -146,7 +153,7 @@ function ChecklistDialog({ row, onClose }: { row: SummaryRow; onClose: () => voi
       {q.isLoading ? (
         <Skeleton className="h-48" />
       ) : q.isError || !q.data ? (
-        <ErrorState onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : (
         <ul className="divide-y divide-line">
           {q.data.items.map((it) => (

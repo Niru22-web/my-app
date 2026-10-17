@@ -20,7 +20,7 @@ export default function EditReleasePage({ params }: { params: Promise<{ id: stri
   if (q.isError || !q.data)
     return (
       <div className="rounded-[var(--radius-card)] border border-line bg-surface">
-        <ErrorState message={q.error instanceof ApiError ? q.error.message : "This release couldn’t be loaded."} onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message={q.error instanceof ApiError ? q.error.message : "This release couldn’t be loaded."} onRetry={() => q.refetch()} />
       </div>
     );
   return <ReleaseEditor key={q.data.id} release={q.data} />;

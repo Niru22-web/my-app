@@ -167,7 +167,7 @@ export default function CalendarPage() {
           </div>
           {q.isError ? (
             <Card>
-              <ErrorState message="Events couldn’t be loaded." onRetry={() => q.refetch()} />
+              <ErrorState error={q.error} message="Events couldn’t be loaded." onRetry={() => q.refetch()} />
             </Card>
           ) : q.isLoading ? (
             <Skeleton className="h-[560px]" />

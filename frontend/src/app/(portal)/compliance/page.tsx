@@ -146,7 +146,7 @@ export default function CompliancePage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="The compliance service didn’t respond." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="The compliance service didn’t respond." onRetry={() => q.refetch()} />
       </Card>
     );
 

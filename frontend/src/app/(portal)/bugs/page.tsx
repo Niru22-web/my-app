@@ -25,7 +25,7 @@ export default function BugDashboardPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} onRetry={() => q.refetch()} />
       </Card>
     );
 

@@ -106,7 +106,7 @@ export default function HierarchyPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="The hierarchy couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="The hierarchy couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

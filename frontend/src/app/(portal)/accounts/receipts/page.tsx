@@ -161,7 +161,7 @@ function Receipts() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Receipts couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Receipts couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

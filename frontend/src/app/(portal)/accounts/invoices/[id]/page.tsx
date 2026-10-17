@@ -36,7 +36,7 @@ export default function InvoiceDetail({ params }: PageProps<"/accounts/invoices/
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="This invoice couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="This invoice couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
   if (q.isLoading || !inv) return <Skeleton className="h-96" />;

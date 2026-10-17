@@ -92,7 +92,7 @@ function Invoices() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Invoices couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Invoices couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

@@ -29,7 +29,7 @@ export default function CurrenciesPage() {
   if (q.isError) {
     return (
       <Card>
-        <ErrorState message="Currencies couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Currencies couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
   }

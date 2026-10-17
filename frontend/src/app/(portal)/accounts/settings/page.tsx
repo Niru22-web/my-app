@@ -33,7 +33,7 @@ export default function EntitiesPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Billing entities couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Billing entities couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 

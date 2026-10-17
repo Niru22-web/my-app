@@ -19,7 +19,7 @@ export function ownerActions(t: Timelog, privileged: boolean) {
   const s = statusOf(t);
   return {
     edit: s === "draft" || s === "submitted" || (privileged && s !== "approved"),
-    remove: s !== "approved",
+    remove: s === "draft" || s === "rejected",
     submit: s === "draft" || s === "rejected",
   };
 }

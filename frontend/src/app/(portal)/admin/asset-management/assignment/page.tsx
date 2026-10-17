@@ -92,7 +92,7 @@ export default function AssignmentsPage() {
   if (q.isError)
     return (
       <Card>
-        <ErrorState message="Assignments couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState error={q.error} message="Assignments couldn’t be loaded." onRetry={() => q.refetch()} />
       </Card>
     );
 
