@@ -1,8 +1,10 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Calls every parameter-free GET route as each test role and reports server errors, not-founds and slow answers.
 // Read-only. Usage: node backend/tests/api-sweep.mjs
 import fs from "fs";
 import path from "path";
-const ROOT = "C:/Users/SHIVA/Downloads/WebApp";
+const ROOT = __ROOT;
 const env = Object.fromEntries(fs.readFileSync(`${ROOT}/_local/test-accounts.env`, "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
 

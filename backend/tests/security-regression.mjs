@@ -1,12 +1,16 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Run with the API running locally:  node backend/tests/security-regression.mjs
 // Uses the local test accounts in _local/test-accounts.env and only touches test-account records.
 // Re-runs the exploits found in the audit against the local API. Test accounts only.
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { createRequire } from "module";
-const require = createRequire("C:/Users/SHIVA/Downloads/WebApp/frontend/package.json");
+const require = createRequire(__ROOT + "/frontend/package.json");
 const { io } = require("socket.io-client");
 
-const env = Object.fromEntries(fs.readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
+const env = Object.fromEntries(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../_local/test-accounts.env"), "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const check = (name, ok, detail = "") => { ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
@@ -45,13 +49,13 @@ const [, hj] = await call(H.t, "GET", `/api/employees/${real.id}`);
 check("HR still sees full profile", hj?.data?.profile ? "dob" in hj.data.profile : true);
 
 // 3. Uploads
-const docs = fs.readdirSync("C:/Users/SHIVA/Downloads/WebApp/backend/uploads/documents").filter((f) => !f.startsWith("."));
+const docs = fs.readdirSync(__ROOT + "/backend/uploads/documents").filter((f) => !f.startsWith("."));
 if (docs.length) {
   check("Anonymous can't download a KYC document", (await call(null, "GET", `/uploads/documents/${docs[0]}`))[0] === 401);
   check("Employee can't download someone else's document", [403, 404].includes((await call(E.t, "GET", `/uploads/documents/${docs[0]}`))[0]));
   check("Admin can download it", (await call(A.t, "GET", `/uploads/documents/${docs[0]}`))[0] === 200);
 }
-const photos = fs.readdirSync("C:/Users/SHIVA/Downloads/WebApp/backend/uploads/profile");
+const photos = fs.readdirSync(__ROOT + "/backend/uploads/profile");
 if (photos.length) check("Profile photo still loads for <img>", (await fetch(`${B}/uploads/profile/${photos[0]}`)).status === 200);
 
 // 4. Lock-out by non-HR

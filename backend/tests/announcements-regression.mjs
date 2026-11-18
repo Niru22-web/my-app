@@ -1,7 +1,9 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Announcements + wishes: access, audience rules, send-once, banner/read, schedule/cancel, templates, wishes.
 // Sends only to test accounts (@asa-local.test). Wish tests address everyone briefly and are deleted straight after.
 import fs from "fs";
-const env = Object.fromEntries(fs.readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
+const env = Object.fromEntries(fs.readFileSync(__ROOT + "/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const check = (n, ok, d = "") => { ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };

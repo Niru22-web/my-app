@@ -100,8 +100,13 @@ export default function BankingPage() {
       if (entityFilter && t.entityId !== entityFilter) continue;
       total++;
       if (t.mappedStatus === "RECONCILED") reconciled++;
-      else if (isCredit(t)) (unmappedCredits += Math.abs(t.amount)), unmappedCreditCount++;
-      else (unmappedDebits += Math.abs(t.amount)), unmappedDebitCount++;
+      else if (isCredit(t)) {
+        unmappedCredits += Math.abs(t.amount);
+        unmappedCreditCount++;
+      } else {
+        unmappedDebits += Math.abs(t.amount);
+        unmappedDebitCount++;
+      }
     }
     return { total, reconciled, unmappedCredits, unmappedDebits, unmappedCreditCount, unmappedDebitCount };
   }, [all, entityFilter]);

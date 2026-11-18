@@ -14,9 +14,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
-import { today } from "@/lib/dates";
 import { formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -35,7 +33,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 type FilterTab = "all" | "not_filled" | "incomplete" | "compliant";
 
 export default function MonthlyTimesheetTrackerPage() {
-  const { user } = useAuth();
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -55,8 +52,8 @@ export default function MonthlyTimesheetTrackerPage() {
 
   const data = q.data;
   const kpis = data?.kpis;
-  const weeks = data?.weeks ?? [];
-  const allEmployees = data?.employees ?? [];
+  const weeks = useMemo(() => data?.weeks ?? [], [data]);
+  const allEmployees = useMemo(() => data?.employees ?? [], [data]);
 
   // Filter employees
   const filteredEmployees = useMemo(() => {

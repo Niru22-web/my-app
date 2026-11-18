@@ -1,3 +1,5 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Run with the API running locally:  node backend/tests/timesheet-ui-regression.mjs
 // Covers the Time logs upgrade: PUT /api/timelogs/grid (+ /week refactor), GET /api/timelogs/my-jobs and /my-projects.
 // Test accounts only (_local/test-accounts.env); every entry it creates is deleted at the end. Never prints secrets.
@@ -5,7 +7,7 @@ import fs from "fs";
 
 const env = Object.fromEntries(
   fs
-    .readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8")
+    .readFileSync(__ROOT + "/_local/test-accounts.env", "utf8")
     .split(/\r?\n/)
     .filter((l) => l.includes("=") && !l.startsWith("#"))
     .map((l) => l.split(/=(.*)/s).slice(0, 2)),

@@ -1,9 +1,11 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Import service: templates, check, all-or-nothing, import, duplicate skip. Test records only (cleaned up).
 import fs from "fs";
 import { createRequire } from "module";
-const require = createRequire("C:/Users/SHIVA/Downloads/WebApp/backend/package.json");
+const require = createRequire(__ROOT + "/backend/package.json");
 const ExcelJS = require("exceljs");
-const env = Object.fromEntries(fs.readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
+const env = Object.fromEntries(fs.readFileSync(__ROOT + "/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const check = (n, ok, d = "") => { ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };

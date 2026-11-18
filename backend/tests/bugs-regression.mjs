@@ -1,11 +1,13 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Run with the API running locally:  node backend/tests/bugs-regression.mjs
 // Bug tracker: create/validate, permissions (triage, assignee, reporter), files, feeds, export.
 // Uses the local test accounts in _local/test-accounts.env and deletes every bug it creates.
 import fs from "fs";
 
-const env = Object.fromEntries(fs.readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
+const env = Object.fromEntries(fs.readFileSync(__ROOT + "/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
-const UPLOADS = "C:/Users/SHIVA/Downloads/WebApp/backend";
+const UPLOADS = __ROOT + "/backend";
 let pass = 0, fail = 0;
 const check = (name, ok, detail = "") => { ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
 const login = async (who) => {

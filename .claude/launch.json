@@ -3,9 +3,15 @@
   "configurations": [
     {
       "name": "asa-portal-web",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "3000"],
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["frontend/node_modules/next/dist/bin/next", "dev", "frontend", "--port", "3000"],
       "port": 3000
+    },
+    {
+      "name": "asa-portal-api",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["--import", "./backend/node_modules/tsx/dist/loader.mjs", "backend/src/server.ts"],
+      "port": 5000
     }
   ]
 }

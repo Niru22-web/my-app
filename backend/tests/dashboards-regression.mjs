@@ -1,6 +1,8 @@
+import { fileURLToPath as __toPath } from "url";
+const __ROOT = __toPath(new URL("../../", import.meta.url)).split(String.fromCharCode(92)).join("/").replace(/\/$/, "");
 // Partner / HR dashboards and the "waiting for you" counts. Read-only; test logins only.
 import fs from "fs";
-const env = Object.fromEntries(fs.readFileSync("C:/Users/SHIVA/Downloads/WebApp/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
+const env = Object.fromEntries(fs.readFileSync(__ROOT + "/_local/test-accounts.env", "utf8").split(/\r?\n/).filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => l.split(/=(.*)/s).slice(0, 2)));
 const B = "http://127.0.0.1:5000";
 let pass = 0, fail = 0;
 const check = (n, ok, d = "") => { ok ? pass++ : fail++; console.log(`${ok ? "PASS" : "FAIL"}  ${n}${d ? "  — " + d : ""}`); };
@@ -11,6 +13,10 @@ const A = await login("ADMIN"), H = await login("HR"), M = await login("MANAGER"
 let [s, j] = await get(A.t, "/api/insights/partners");
 check("Admin gets the partner list", s === 200 && j.data.length > 0, `${j?.data?.length} partners`);
 const big = j.data.find((p) => !/Test/.test(p.name));
+if (!big) {
+  console.log("SKIP  No real (non-test) partner in this database, so the partner dashboard checks can't run.");
+  process.exit(0);
+}
 [s, j] = await get(A.t, `/api/insights/partner?period=fy&partnerId=${big.id}`);
 const d = j.data;
 check("Admin can view a partner's dashboard", s === 200 && d.lead.id === big.id && d.team.size > 0, `${d?.lead?.name}: ${d?.team?.size} people`);

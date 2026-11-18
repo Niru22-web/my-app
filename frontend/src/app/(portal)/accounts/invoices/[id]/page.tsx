@@ -36,7 +36,16 @@ export default function InvoiceDetail({ params }: PageProps<"/accounts/invoices/
   if (q.isError)
     return (
       <Card>
-        <ErrorState error={q.error} message="This invoice couldn’t be loaded." onRetry={() => q.refetch()} />
+        <ErrorState
+          error={q.error}
+          message={q.error instanceof ApiError && q.error.status === 404 ? "This invoice doesn’t exist or was deleted." : "This invoice couldn’t be loaded."}
+          onRetry={() => q.refetch()}
+        />
+        <p className="pb-6 text-center">
+          <Link href="/accounts/invoices" className="text-[13px] font-semibold text-brand hover:underline">
+            Back to all invoices
+          </Link>
+        </p>
       </Card>
     );
   if (q.isLoading || !inv) return <Skeleton className="h-96" />;
