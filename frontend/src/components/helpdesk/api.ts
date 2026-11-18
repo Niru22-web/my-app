@@ -145,8 +145,11 @@ export function useTickets() {
   return useQuery({
     queryKey: ["tickets"],
     queryFn: async () => (await api<Envelope<Ticket[]>>("tickets")).data ?? [],
-    refetchInterval: 60_000,
+    // Every 2 minutes while visible, plus on return to the tab (was every minute).
+    staleTime: 60_000,
+    refetchInterval: 120_000,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

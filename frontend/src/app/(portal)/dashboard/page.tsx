@@ -7,7 +7,8 @@ import { roleInfo, roleLabel } from "@/lib/roles";
 import { formatHours, formatNumber, greeting } from "@/lib/format";
 import { StatCard } from "@/components/ui/stat";
 import { AttendanceCard } from "@/components/dashboard/attendance-card";
-import { WeeklyHours } from "@/components/dashboard/weekly-hours";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalsPanel } from "@/components/dashboard/approvals";
 import { ComplianceCard, PersonalComplianceBanner } from "@/components/dashboard/compliance-card";
 import { ActivityCard, BirthdaysCard, EventsCard } from "@/components/dashboard/side-cards";
@@ -16,6 +17,12 @@ import { AccountsCard } from "@/components/dashboard/accounts-card";
 import { TeamChat } from "@/components/dashboard/team-chat";
 import { useAttendanceToday, useCombinedDashboard, useCompliance } from "@/components/dashboard/queries";
 import { canUseAccounts } from "@/components/accounts/api";
+
+// The chart library is the heaviest download on the landing page; load it after the numbers are on screen.
+const WeeklyHours = dynamic(() => import("@/components/dashboard/weekly-hours").then((m) => m.WeeklyHours), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[320px]" />,
+});
 
 export default function DashboardPage() {
   const { user } = useAuth();

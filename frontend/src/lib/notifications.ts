@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { useAuth } from "./auth";
@@ -14,14 +14,25 @@ export function useNotifications() {
   const qc = useQueryClient();
   const enabled = status === "authenticated" && !!user;
 
+  // New notifications arrive over the socket, so there's no fast polling. The slow poll is only a safety net
+  // (e.g. a dropped socket), and a reconnect refetches straight away to pick up anything missed meanwhile.
   const q = useQuery({
     queryKey: KEY,
-    // Snoozed items stay hidden until they wake up (the API returns them regardless); the 30s poll brings them back.
-    queryFn: async () => ((await api<Envelope<AppNotification[]>>("notifications", { query: { archived: "false" } })).data ?? []).filter((n) => !isSnoozed(n)),
+    queryFn: async () => (await api<Envelope<AppNotification[]>>("notifications", { query: { archived: "false" } })).data ?? [],
     enabled,
-    refetchInterval: 30_000,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
     refetchIntervalInBackground: false,
   });
+
+  // Snoozed items are kept in the cache and hidden until they wake; a local clock re-checks every minute
+  // (no request needed).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled || !user) return;
@@ -29,6 +40,8 @@ export function useNotifications() {
     const join = () => socket.emit("join_user_room", user.id);
     if (socket.connected) join();
     socket.on("connect", join);
+    const onReconnect = () => void qc.invalidateQueries({ queryKey: KEY });
+    socket.io.on("reconnect", onReconnect);
     const onNotification = (n: AppNotification) => {
       qc.setQueryData<AppNotification[]>(KEY, (prev = []) => {
         // Some server events (IT tickets) arrive without an id — refetch to get the stored copy.
@@ -42,6 +55,7 @@ export function useNotifications() {
     socket.on("new_notification", onNotification);
     return () => {
       socket.off("connect", join);
+      socket.io.off("reconnect", onReconnect);
       socket.off("new_notification", onNotification);
       releaseSocket();
     };
@@ -58,7 +72,7 @@ export function useNotifications() {
     onMutate: () => qc.setQueryData<AppNotification[]>(KEY, (prev = []) => prev.map((n) => ({ ...n, isRead: true }))),
   });
 
-  const items = useMemo(() => q.data ?? [], [q.data]);
+  const items = useMemo(() => (q.data ?? []).filter((n) => !isSnoozed(n, now)), [q.data, now]);
   const unread = useMemo(() => items.filter((n) => !n.isRead && !n.isArchived).length, [items]);
 
   return { items, unread, loading: q.isLoading, error: q.error, markRead: markRead.mutate, markAllRead: markAllRead.mutate };
@@ -77,6 +91,6 @@ export function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
-export function isSnoozed(n: Pick<AppNotification, "snoozedUntil">): boolean {
-  return !!n.snoozedUntil && new Date(n.snoozedUntil).getTime() > Date.now();
+export function isSnoozed(n: Pick<AppNotification, "snoozedUntil">, now = Date.now()): boolean {
+  return !!n.snoozedUntil && new Date(n.snoozedUntil).getTime() > now;
 }

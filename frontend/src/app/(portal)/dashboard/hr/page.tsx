@@ -1,21 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarOff, Cake, ClipboardCheck, DoorOpen, FileWarning, LineChart, UserPlus, Users } from "lucide-react";
+import { CalendarOff, Cake, ClipboardCheck, DoorOpen, FileWarning, LineChart, Lock, UserPlus, Users } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { normRole } from "@/lib/roles";
 import { fmtDay } from "@/lib/dates";
 import { cn } from "@/lib/cn";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
-import { ErrorState } from "@/components/ui/empty-state";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { BarList, PairedMonths, Panel, TodayCard, WeekComplianceCard } from "@/components/dashboard/insight-parts";
 import { useHrInsights } from "@/components/dashboard/insights-api";
 
 export default function HrDashboardPage() {
-  const q = useHrInsights();
+  const { user } = useAuth();
+  const allowed = ["admin", "owner", "hr"].includes(normRole(user?.role));
+  const q = useHrInsights(allowed);
   const d = q.data;
+
+  // Same rule as the API: answer "no access" here instead of sending a request that can only be refused.
+  if (user && !allowed)
+    return (
+      <Card>
+        <EmptyState icon={Lock} title="You don’t have access to this page" description="The HR dashboard is for HR, Admin and Owner." />
+      </Card>
+    );
 
   if (q.isError)
     return (

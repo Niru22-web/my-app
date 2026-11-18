@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Eraser, Cpu, Database, FileText, HardDrive, RefreshCw, Search, Server, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
+import { useDebounced } from "@/lib/use-debounced";
 import { formatDate, formatNumber } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -51,9 +52,11 @@ export default function SystemPage() {
   const [cleaning, setCleaning] = useState<"clean_temp" | "clean_logs" | null>(null);
   const [deletingFile, setDeletingFile] = useState<StoredFile | null>(null);
 
+  // Typing in the file search only asks the server once the person pauses.
+  const searchTerm = useDebounced(search.trim(), 300);
   const files = useQuery({
-    queryKey: ["admin", "files", cat, search, page],
-    queryFn: () => api<{ data: StoredFile[]; pagination: { page: number; pages: number; total: number } }>("system/storage/files", { query: { category: cat, search: search.trim() || undefined, page: String(page), limit: "25" } }),
+    queryKey: ["admin", "files", cat, searchTerm, page],
+    queryFn: () => api<{ data: StoredFile[]; pagination: { page: number; pages: number; total: number } }>("system/storage/files", { query: { category: cat, search: searchTerm || undefined, page: String(page), limit: "25" } }),
     enabled: on,
     placeholderData: (p) => p,
   });

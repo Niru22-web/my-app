@@ -47,7 +47,10 @@ export function signToken(payload: Omit<JwtUser, "iat" | "exp" | "iatMs">): stri
 // database on every request (cached for a few seconds), so deactivation, rejection or a role change
 // takes effect immediately instead of when the token expires.
 interface LiveAccount { active: boolean; role: string; hasAccountsAccess: boolean; /** ms */ validAfter: number; at: number }
-const LIVE_TTL_MS = 5_000;
+// Every change that matters (deactivation, rejection, role/access change, exit, password change) clears the
+// entry at once through revokeSessions()/forgetLiveAccount(), so the TTL only bounds edits made outside the
+// API (e.g. a direct database fix). 30s saves two queries per active user every few seconds.
+const LIVE_TTL_MS = 30_000;
 const live = new Map<string, LiveAccount>();
 
 async function liveAccount(id: string): Promise<LiveAccount | null> {

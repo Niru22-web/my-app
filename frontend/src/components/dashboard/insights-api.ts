@@ -87,10 +87,12 @@ export function usePartnerList(enabled: boolean) {
   });
 }
 
-export function useHrInsights() {
+/** `enabled` = false for roles the API refuses (it serves HR, Admin and Owner only) — no request is sent. */
+export function useHrInsights(enabled = true) {
   return useQuery({
     queryKey: ["dashboard", "hr"],
     queryFn: async () => (await api<Envelope<HrInsights>>("insights/hr")).data,
+    enabled,
     ...LIVE,
   });
 }

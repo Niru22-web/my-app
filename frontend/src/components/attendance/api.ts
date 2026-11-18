@@ -252,8 +252,11 @@ export function useWeeklyPulse(prevMonday: YMD, thisSunday: YMD) {
   return useQuery({
     queryKey: ["attendance", "weekly-pulse", prevMonday, thisSunday],
     queryFn: async () => (await api<Envelope<WeeklyPulse>>("attendance/weekly-pulse", { query: { startDate: prevMonday, endDate: thisSunday } })).data,
-    refetchInterval: 60_000,
+    // Every 2 minutes while visible, plus on return to the tab (was every minute).
+    staleTime: 60_000,
+    refetchInterval: 120_000,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

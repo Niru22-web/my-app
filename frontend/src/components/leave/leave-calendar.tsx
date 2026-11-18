@@ -14,10 +14,17 @@ import { leaveState, personName, useLeaves, type Leave } from "./api";
  * Team leave calendar: one row per person who is away this month, one column per day.
  * Solid = approved, outlined = waiting for approval. Weekly offs are shaded.
  */
-export function LeaveCalendar({ scope, excludeId }: { scope: "team" | "org"; excludeId?: string }) {
+export function LeaveCalendar({ scope, excludeId, source }: { scope: "team" | "org"; excludeId?: string; source?: { data?: Leave[]; isLoading: boolean; isError: boolean; error: unknown; refetch: () => unknown } }) {
   const [month, setMonth] = useState<YMD>(() => startOfMonth(today()));
   const last = endOfMonth(month);
-  const q = useLeaves({ scope, dateFrom: month, dateTo: last });
+  // When the page already holds this scope's full leave list, use it (the API's month filter is a plain
+  // overlap test) instead of asking the server again for every month shown.
+  const own = useLeaves({ scope, dateFrom: month, dateTo: last }, !source);
+  const base = source ?? own;
+  const q = useMemo(
+    () => (source ? { ...base, data: base.data?.filter((l) => workDate(l.fromDate) <= last && workDate(l.toDate) >= month) } : base),
+    [source, base, month, last],
+  );
   const days = useMemo(() => {
     const out: YMD[] = [];
     for (let d = month; d <= last; d = addDays(d, 1)) out.push(d);

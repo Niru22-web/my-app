@@ -192,7 +192,7 @@ export function ScopedLeave({ scope }: { scope: "team" | "org" }) {
         <StatCard label="Approved this month" icon={CalendarX2} loading={leaves.isLoading} value={monthDays} hint="days, requests overlapping this month" />
       </section>
 
-      <LeaveCalendar scope={scope} excludeId={user?.id} />
+      <LeaveCalendar scope={scope} excludeId={user?.id} source={leaves} />
 
       {(awayToday.length > 0 || awayWeek.length > 0) && (
         <Card>

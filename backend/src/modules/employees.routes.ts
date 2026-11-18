@@ -583,6 +583,7 @@ export async function employeeRoutes(app: FastifyInstance) {
         prisma.registrationToken.create({ data: { token, email: emp.officeEmail, employeeId: emp.id, expiresAt: new Date(Date.now() + 7 * 24 * 3_600_000) } }),
         prisma.employee.update({ where: { id }, data: { status: "Invited", approvalStatus: "PENDING", isApproved: false } }),
       ]);
+      forgetLiveAccount(id); // status changed: don't serve the cached account state
       return reply.send({
         success: true,
         emailStatus: "not_sent",

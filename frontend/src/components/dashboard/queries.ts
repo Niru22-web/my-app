@@ -5,8 +5,9 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AttendanceToday, CombinedDashboard, ComplianceDashboard, Envelope } from "@/lib/types";
 
-// Same 30s refresh the legacy dashboard used, paused while the tab is hidden.
-const LIVE = { refetchInterval: 30_000, refetchIntervalInBackground: false } as const;
+// Refresh every 2 minutes while the tab is visible, and as soon as the person comes back to the tab. The
+// person's own actions (punching in, submitting time, approving) invalidate these straight away anyway.
+const LIVE = { staleTime: 60_000, refetchInterval: 120_000, refetchIntervalInBackground: false, refetchOnWindowFocus: true } as const;
 
 export function useCombinedDashboard() {
   const { user } = useAuth();

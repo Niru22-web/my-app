@@ -565,6 +565,7 @@ model Notification {
   metadata     Json?
   user         Employee  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, isArchived, createdAt])
   @@map("notifications")
 }
 
@@ -578,6 +579,8 @@ model Activity {
   relatedId   String?
   user        Employee? @relation(fields: [userId], references: [id])
 
+  @@index([userId, createdAt])
+  @@index([createdAt])
   @@map("activities")
 }
 
@@ -602,6 +605,8 @@ model Leave {
   employee           Employee        @relation("EmployeeLeaves", fields: [employeeId], references: [id])
   approvals          LeaveApproval[]
 
+  @@index([employeeId])
+  @@index([status])
   @@map("leaves")
 }
 
@@ -673,6 +678,8 @@ model Reimbursement {
   processedBy       Employee?                 @relation("ReimbursementProcessor", fields: [processedById], references: [id])
   project           Project?                  @relation(fields: [projectId], references: [id])
 
+  @@index([employeeId])
+  @@index([status])
   @@map("reimbursements")
 }
 
@@ -797,6 +804,8 @@ model Ticket {
   categoryRel    HelpdeskCategory?  @relation("TicketCategory", fields: [categoryId], references: [id])
   subcategoryRel HelpdeskCategory?  @relation("TicketSubcategory", fields: [subcategoryId], references: [id])
 
+  @@index([createdById])
+  @@index([status])
   @@map("tickets")
 }
 

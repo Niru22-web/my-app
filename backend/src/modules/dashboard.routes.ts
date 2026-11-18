@@ -46,6 +46,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       openTickets,
       myAssetRequests,
       myTickets,
+      queue,
     ] = await Promise.all([
       // "My projects" — open projects/jobs this person is on (team member, manager or partner of the project)
       prisma.project.count({
@@ -69,12 +70,17 @@ export async function dashboardRoutes(app: FastifyInstance) {
           (balances.get(u.id) ?? []).filter((b) => b.paid && (b.entitled != null || b.opening !== 0 || b.adjusted !== 0)),
         ),
       ),
-      prisma.reimbursement.findMany({
+      // Totals per category, added up by the database instead of shipping every claim row.
+      prisma.reimbursement.groupBy({
+        by: ["category"],
         where: { employeeId: u.id },
-        select: { category: true, amount: true },
+        _sum: { amount: true },
       }),
+      // Birthdays need only the date of birth and a name — never the rest of the profile (PAN, bank, address…).
       prisma.employeeProfile.findMany({
-        include: {
+        where: { employee: { status: { equals: "Active", mode: "insensitive" } } },
+        select: {
+          dob: true,
           employee: { select: { firstName: true, lastName: true, designation: true, status: true } },
         },
       }),
@@ -101,15 +107,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
         : Promise.resolve(0),
       prisma.assetRequest.count({ where: { employeeId: u.id, status: { in: ["Pending", "Approved"] } } }),
       prisma.ticket.count({ where: { createdById: u.id, status: { notIn: ["Resolved", "Closed"] } } }),
+      // Leave and claims the caller can actually act on (their reporting line, the approval step they hold).
+      reportingTreeIds(u.id).then((tree) => myQueue(u, tree)),
     ]);
-
-    // Leave and claims the caller can actually act on (their reporting line, the approval step they hold).
-    const queue = await myQueue(u, await reportingTreeIds(u.id));
 
     const expByCat = new Map<string, number>();
     let expTotal = 0;
     for (const c of claims) {
-      const amt = Number(c.amount ?? 0);
+      const amt = Number(c._sum.amount ?? 0);
       expTotal += amt;
       expByCat.set(c.category, (expByCat.get(c.category) ?? 0) + amt);
     }
