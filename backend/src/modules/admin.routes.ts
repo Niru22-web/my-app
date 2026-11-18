@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, SAFE_EMPLOYEE_SELECT } from "../config/db";
 import { authenticate, normRole, requireRoles } from "../plugins/auth";
+import { sendMail, textToHtml } from "../utils/mailer";
 
 const MODULE_MAP: { moduleName: string; prefix: string; viewOnly?: boolean }[] = [
   { moduleName: "dashboard", prefix: "dashboard" },
@@ -624,19 +625,15 @@ export async function adminRoutes(app: FastifyInstance) {
       const { to, subject } = (req.body ?? {}) as { to?: string; subject?: string };
       if (!to) return reply.code(400).send({ success: false, message: "Recipient 'to' address is required." });
 
-      await prisma.emailLog.create({
-        data: {
-          recipient: to,
-          subject: subject || "ASA Portal Test Email",
-          status: "sent",
-          category: "test",
-        },
-      });
-
-      return reply.send({
-        success: true,
-        message: `Test email queued for ${to}.`,
-      });
+      // Really send it (and log the real outcome) instead of recording a "sent" that never happened.
+      const text = "This is a test email from the ASA Portal. If you can read it, outgoing email is working.";
+      const res = await sendMail({ to, subject: subject || "ASA Portal Test Email", text, html: textToHtml(text), category: "test" });
+      if (res.status !== "sent") {
+        return reply
+          .code(res.status === "not_configured" ? 400 : 502)
+          .send({ success: false, message: res.error ?? "The test email wasn’t sent." });
+      }
+      return reply.send({ success: true, message: `Test email sent to ${to}.` });
     },
   );
 

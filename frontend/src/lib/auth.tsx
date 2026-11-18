@@ -21,6 +21,8 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 // Matches the legacy portal's security policy.
 const INACTIVITY_MS = 15 * 60 * 1000;
+/** Last time the person used any portal tab (ms since epoch), shared across tabs. */
+const ACTIVITY_KEY = "lastActivity";
 
 function parseUser(raw: string | null | undefined): AuthUser | null {
   if (!raw) return null;
@@ -71,20 +73,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("asa:session-expired", onExpired);
   }, [logout]);
 
-  // Sign out after a period of inactivity.
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sign out after a period of inactivity. The sign-in is shared by every open portal tab, so activity is
+  // too: the last-activity time lives in localStorage, and an idle background tab no longer signs out a
+  // person who is busy in another tab.
   useEffect(() => {
     if (status !== "authenticated") return;
-    const reset = () => {
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => logout("inactive"), INACTIVITY_MS);
+    let lastWrite = 0;
+    const touch = () => {
+      const now = Date.now();
+      if (now - lastWrite < 5_000) return; // mousemove fires constantly; a few seconds' precision is plenty
+      lastWrite = now;
+      try {
+        localStorage.setItem(ACTIVITY_KEY, String(now)); // quiet write: nothing renders from this key
+      } catch {
+        /* storage unavailable — this tab's own lastWrite still counts */
+      }
+    };
+    const check = () => {
+      const last = Number(readLocal(ACTIVITY_KEY)) || lastWrite;
+      if (Date.now() - last >= INACTIVITY_MS) logout("inactive");
     };
     const events = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const;
-    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
-    reset();
+    events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    touch();
+    const interval = setInterval(check, 30_000);
     return () => {
-      events.forEach((e) => window.removeEventListener(e, reset));
-      if (timer.current) clearTimeout(timer.current);
+      events.forEach((e) => window.removeEventListener(e, touch));
+      clearInterval(interval);
     };
   }, [status, logout]);
 

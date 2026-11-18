@@ -3,6 +3,8 @@ import { prisma } from "../config/db";
 import { authenticate, normRole, requireRoles } from "../plugins/auth";
 import { getWorkCalendar, isOffDay } from "../utils/work-calendar";
 import { createNotification } from "../utils/notify";
+import { mailConfigured, sendMail, textToHtml, type MailResult } from "../utils/mailer";
+import { env } from "../config/env";
 
 function currentWeekBounds(now = new Date()): { weekStart: Date; weekEnd: Date } {
   const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -15,7 +17,62 @@ function currentWeekBounds(now = new Date()): { weekStart: Date; weekEnd: Date }
   return { weekStart, weekEnd };
 }
 
+const FIRM_ROLES = ["admin", "owner", "hr", "it"];
+
+/** People who report to `leadId` in any of the ways the portal records a reporting line. */
+function teamOr(leadId: string) {
+  return [
+    { managerId: leadId },
+    { partnerId: leadId },
+    { subManagerId: leadId },
+    { reportingManagerIds: { has: leadId } },
+    { reportingPartnerIds: { has: leadId } },
+    { subManagerIds: { has: leadId } },
+    { managers: { some: { managerId: leadId } } },
+    { partners: { some: { partnerId: leadId } } },
+  ];
+}
+
+const EMP_FOR_MAIL = {
+  id: true,
+  employeeId: true,
+  firstName: true,
+  lastName: true,
+  officeEmail: true,
+  managerId: true,
+  partnerId: true,
+  reportingManagerIds: true,
+  reportingPartnerIds: true,
+  managers: { select: { managerId: true } },
+  partners: { select: { partnerId: true } },
+} as const;
+
+/** Find the employee a reminder/escalation is for, limited to the caller's team unless they're HR/Admin/IT. */
+async function findTarget(user: { id: string; role: string }, id: string) {
+  const firm = FIRM_ROLES.includes(normRole(user.role));
+  return prisma.employee.findFirst({
+    where: {
+      AND: [{ OR: [{ employeeId: id }, { id }] }, ...(firm ? [] : [{ OR: teamOr(user.id) }])],
+    },
+    select: EMP_FOR_MAIL,
+  });
+}
+
+const fullName = (e: { firstName: string; lastName: string }) => `${e.firstName} ${e.lastName}`.trim();
+
+function mailNote(m: MailResult | null) {
+  if (!m) return "";
+  if (m.status === "sent") return " Email sent.";
+  if (m.status === "not_configured") return " Email not sent: email isn’t set up yet.";
+  return ` Email failed: ${m.error ?? "the mail server refused it"}.`;
+}
+
 export async function complianceRoutes(app: FastifyInstance) {
+  // GET /api/compliance/email-status — lets the page say whether "Send email" will actually deliver.
+  app.get("/api/compliance/email-status", { preHandler: [authenticate] }, async (_req, reply) => {
+    return reply.send({ success: true, data: { configured: mailConfigured() } });
+  });
+
   // GET /api/compliance/dashboard — fixes C1, C2, T14, L7
   app.get("/api/compliance/dashboard", { preHandler: [authenticate] }, async (req, reply) => {
     const u = req.user!;
@@ -31,43 +88,36 @@ export async function complianceRoutes(app: FastifyInstance) {
     };
     if (!isFirm) {
       if (isTeamLead) {
-        empWhere.OR = [
-          { id: u.id },
-          { managerId: u.id },
-          { partnerId: u.id },
-          { subManagerId: u.id },
-          { reportingManagerIds: { has: u.id } },
-          { reportingPartnerIds: { has: u.id } },
-          { subManagerIds: { has: u.id } },
-          { managers: { some: { managerId: u.id } } },
-          { partners: { some: { partnerId: u.id } } },
-        ];
+        empWhere.OR = [{ id: u.id }, ...teamOr(u.id)];
       } else {
         empWhere.id = u.id;
       }
     }
 
-    const [employees, timelogs, holidays, leaves, reminders] = await Promise.all([
-      prisma.employee.findMany({
-        where: empWhere,
-        select: {
-          id: true,
-          employeeId: true,
-          firstName: true,
-          lastName: true,
-          officeEmail: true,
-          role: true,
-          department: true,
-          manager: { select: { firstName: true, lastName: true } },
-          managers: {
-            include: { manager: { select: { firstName: true, lastName: true } } },
-            take: 1,
-          },
+    const employees = await prisma.employee.findMany({
+      where: empWhere,
+      select: {
+        id: true,
+        employeeId: true,
+        firstName: true,
+        lastName: true,
+        officeEmail: true,
+        role: true,
+        department: true,
+        manager: { select: { firstName: true, lastName: true } },
+        managers: {
+          include: { manager: { select: { firstName: true, lastName: true } } },
+          take: 1,
         },
-        orderBy: { firstName: "asc" },
-      }),
+      },
+      orderBy: { firstName: "asc" },
+    });
+    // Only the people on this page: a team lead's view no longer reads (or returns) the whole firm's week.
+    const forShown = isFirm ? {} : { employeeId: { in: employees.map((e) => e.id) } };
+
+    const [timelogs, holidays, leaves, reminders] = await Promise.all([
       prisma.timelog.findMany({
-        where: { date: { gte: weekStart, lte: new Date(weekStart.getTime() + 6 * 86_400_000) } },
+        where: { ...forShown, date: { gte: weekStart, lte: new Date(weekStart.getTime() + 6 * 86_400_000) } },
         select: { employeeId: true, date: true, hours: true, billableStatus: true },
       }),
       prisma.event.findMany({
@@ -76,6 +126,7 @@ export async function complianceRoutes(app: FastifyInstance) {
       }),
       prisma.leave.findMany({
         where: {
+          ...forShown,
           status: { equals: "approved", mode: "insensitive" },
           fromDate: { lte: weekEnd },
           toDate: { gte: weekStart },
@@ -83,7 +134,7 @@ export async function complianceRoutes(app: FastifyInstance) {
         select: { employeeId: true, fromDate: true, toDate: true },
       }),
       prisma.reminderHistory.findMany({
-        where: { weekStart },
+        where: { ...forShown, weekStart },
         include: { employee: { select: { firstName: true, lastName: true } } },
         orderBy: { sentAt: "desc" },
       }),
@@ -262,29 +313,41 @@ export async function complianceRoutes(app: FastifyInstance) {
     });
   });
 
-  // POST /api/compliance/trigger-reminder/:id — fixes C3
+  // POST /api/compliance/trigger-reminder/:id  body: { sendEmail?: boolean }
   app.post(
     "/api/compliance/trigger-reminder/:id",
     { preHandler: [requireRoles(["admin", "owner", "hr", "it", "manager", "partner"])] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const emp = await prisma.employee.findFirst({
-        where: { OR: [{ employeeId: id }, { id }] },
-      });
+      const { sendEmail = false } = (req.body ?? {}) as { sendEmail?: boolean };
+      const emp = await findTarget(req.user!, id);
       if (!emp) {
-        return reply.code(404).send({ success: false, message: "Employee not found." });
+        return reply.code(404).send({ success: false, message: "Employee not found in your team." });
       }
 
       const { weekStart } = currentWeekBounds();
-      await prisma.reminderHistory.create({
-        data: {
+      const name = fullName(emp);
+      let mail: MailResult | null = null;
+      if (sendEmail) {
+        const text =
+          `Hi ${emp.firstName},\n\n` +
+          `Your timesheet for the week of ${weekStart.toISOString().slice(0, 10)} is incomplete. ` +
+          `Please log and submit your pending entries.\n\n` +
+          `Open your timesheet: ${env.FRONTEND_URL}/timesheet\n\n` +
+          `— ASA Portal`;
+        mail = await sendMail({
+          to: emp.officeEmail,
+          subject: "Timesheet reminder: please complete this week",
+          text,
+          html: textToHtml(text),
+          category: "compliance_reminder",
           employeeId: emp.id,
-          reminderType: "manual",
-          weekStart,
-          escalationLevel: 0,
-        },
-      });
+        });
+      }
 
+      await prisma.reminderHistory.create({
+        data: { employeeId: emp.id, reminderType: "manual", weekStart, escalationLevel: 0 },
+      });
       await createNotification({
         userId: emp.id,
         title: "Timesheet Reminder",
@@ -297,34 +360,65 @@ export async function complianceRoutes(app: FastifyInstance) {
 
       return reply.send({
         success: true,
-        message: `Reminder sent to ${emp.firstName} ${emp.lastName}.`,
+        message: `Reminder sent to ${name} in the portal.${mailNote(mail)}`,
+        email: mail ? mail.status : "skipped",
       });
     },
   );
 
-  // POST /api/compliance/escalate/:id
+  // POST /api/compliance/escalate/:id  body: { sendEmail?: boolean }
   app.post(
     "/api/compliance/escalate/:id",
     { preHandler: [requireRoles(["admin", "owner", "hr", "it"])] },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const emp = await prisma.employee.findFirst({
-        where: { OR: [{ employeeId: id }, { id }] },
-      });
+      const { sendEmail = false } = (req.body ?? {}) as { sendEmail?: boolean };
+      const emp = await findTarget(req.user!, id);
       if (!emp) {
         return reply.code(404).send({ success: false, message: "Employee not found." });
       }
 
-      const { weekStart } = currentWeekBounds();
-      await prisma.reminderHistory.create({
-        data: {
-          employeeId: emp.id,
-          reminderType: "monday_escalation",
-          weekStart,
-          escalationLevel: 2,
-        },
-      });
+      // Reporting line: managers get the escalation; HR and partners are copied. No manager → HR receives it.
+      const managerIds = [...new Set([emp.managerId, ...emp.reportingManagerIds, ...emp.managers.map((m) => m.managerId)])].filter(
+        (x): x is string => !!x && x !== emp.id,
+      );
+      const partnerIds = [...new Set([emp.partnerId, ...emp.reportingPartnerIds, ...emp.partners.map((p) => p.partnerId)])].filter(
+        (x): x is string => !!x && x !== emp.id,
+      );
+      const active = { status: { equals: "Active", mode: "insensitive" as const } };
+      const [managers, partners, hr] = await Promise.all([
+        prisma.employee.findMany({ where: { id: { in: managerIds }, ...active }, select: { id: true, officeEmail: true } }),
+        prisma.employee.findMany({ where: { id: { in: partnerIds }, ...active }, select: { id: true, officeEmail: true } }),
+        prisma.employee.findMany({ where: { role: { equals: "HR", mode: "insensitive" }, ...active }, select: { id: true, officeEmail: true } }),
+      ]);
+      const leads = managers.length ? managers : hr;
+      const to = leads.map((m) => m.officeEmail);
+      const cc = [...hr, ...partners].map((x) => x.officeEmail).filter((e) => !to.includes(e));
 
+      const { weekStart } = currentWeekBounds();
+      const name = fullName(emp);
+      let mail: MailResult | null = null;
+      if (sendEmail) {
+        const text =
+          `Timesheet compliance escalation\n\n` +
+          `${name} (${emp.employeeId}) has not completed their timesheet for the week of ${weekStart.toISOString().slice(0, 10)}. ` +
+          `Please follow up with them.\n\n` +
+          `Compliance overview: ${env.FRONTEND_URL}/compliance\n\n` +
+          `— ASA Portal`;
+        mail = await sendMail({
+          to,
+          cc,
+          subject: `Timesheet escalation: ${name}`,
+          text,
+          html: textToHtml(text),
+          category: "compliance_escalation",
+          employeeId: emp.id,
+        });
+      }
+
+      await prisma.reminderHistory.create({
+        data: { employeeId: emp.id, reminderType: "monday_escalation", weekStart, escalationLevel: 2, ccEmails: sendEmail ? cc : [] },
+      });
       await createNotification({
         userId: emp.id,
         title: "Timesheet Compliance Escalation",
@@ -334,10 +428,23 @@ export async function complianceRoutes(app: FastifyInstance) {
         priority: "Critical",
         actionUrl: "/timesheet",
       });
+      // Whoever it was escalated to also hears about it in the portal, whether or not email went out.
+      for (const lead of leads) {
+        await createNotification({
+          userId: lead.id,
+          title: "Timesheet escalation",
+          message: `${name}’s timesheet for this week is still incomplete.`,
+          type: "timesheet_escalation",
+          module: "HR",
+          priority: "High",
+          actionUrl: "/compliance",
+        });
+      }
 
       return reply.send({
         success: true,
-        message: `Escalation recorded for ${emp.firstName} ${emp.lastName}.`,
+        message: `Escalation recorded for ${name}.${mailNote(mail)}`,
+        email: mail ? mail.status : "skipped",
       });
     },
   );

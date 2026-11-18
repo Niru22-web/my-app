@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, BellRing, Building2, CheckCircle2, Clock3, Download, Flag, Gauge, History, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, BellRing, Building2, CheckCircle2, Clock3, Download, Flag, Gauge, History, Mail, ShieldCheck, Users } from "lucide-react";
+import { readLocal, useLocalValue, writeLocal } from "@/lib/local-store";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -38,6 +39,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral"> = { compliant: "success", under_40_hours: "warning", missing_daily: "warning", unsubmitted: "danger", pending: "neutral" };
 const RISK_TONE: Record<string, "success" | "warning" | "danger"> = { healthy: "success", warning: "warning", critical: "danger" };
+const SEND_EMAIL_KEY = "compliance.sendEmail";
 
 export default function CompliancePage() {
   const { user } = useAuth();
@@ -71,15 +73,31 @@ export default function CompliancePage() {
   const riskCount = (level: string) => (d?.employees ?? []).filter((e) => level === "all" || e.riskLevel === level).length;
   const depts = useMemo(() => [...new Set((d?.employees ?? []).map((e) => e.department).filter(Boolean) as string[])].sort(), [d]);
 
+  // "Send email" switch: remembered per viewer. Off = portal notification only.
+  const sendEmail = useLocalValue(SEND_EMAIL_KEY) === "1";
+  const setSendEmail = (on: boolean) => writeLocal(SEND_EMAIL_KEY, on ? "1" : "0");
+  const emailStatus = useQuery({
+    queryKey: ["compliance", "email-status"],
+    queryFn: async () => (await api<{ success: boolean; data: { configured: boolean } }>("compliance/email-status")).data,
+    enabled: canRemind,
+    staleTime: 60_000,
+  });
+  const emailReady = emailStatus.data?.configured ?? false;
+
   // The API answers 200 with {success:false} when an employee isn't found — treat that as an error.
   const action = useMutation({
     mutationFn: async ({ kind, id }: { kind: "trigger-reminder" | "escalate"; id: string }) => {
-      const res = await api<{ success: boolean; message: string }>(`compliance/${kind}/${id}`, { method: "POST" });
+      const res = await api<{ success: boolean; message: string; email?: "sent" | "failed" | "not_configured" | "skipped" }>(`compliance/${kind}/${id}`, {
+        method: "POST",
+        body: { sendEmail: readLocal(SEND_EMAIL_KEY) === "1" },
+      });
       if (!res.success) throw new ApiError(404, res.message);
       return res;
     },
     onSuccess: (res) => {
-      toast.success(res.message);
+      // The portal notification always goes out; say so plainly when the email part didn't.
+      if (res.email === "failed" || res.email === "not_configured") toast.info("Sent in the portal only", res.message);
+      else toast.success(res.message);
       void qc.invalidateQueries({ queryKey: ["compliance"] });
     },
     onError: (e) => toast.error("Couldn’t send", e instanceof ApiError ? e.message : undefined),
@@ -130,10 +148,15 @@ export default function CompliancePage() {
             header: "",
             align: "right" as const,
             cell: (e: Row) =>
-              e.complianceStatus === "compliant" ? null : (
+              // No reminding yourself: team leads see their own row, but reminders go to the people they lead.
+              e.complianceStatus === "compliant" || e.id === user?.id ? null : (
                 <RowMenu
                   items={[
-                    { label: "Send reminder email", icon: <BellRing className="h-4 w-4" />, onClick: () => action.mutate({ kind: "trigger-reminder", id: e.employeeId }) },
+                    {
+                      label: sendEmail ? "Send reminder + email" : "Send reminder (portal only)",
+                      icon: sendEmail ? <Mail className="h-4 w-4" /> : <BellRing className="h-4 w-4" />,
+                      onClick: () => action.mutate({ kind: "trigger-reminder", id: e.employeeId }),
+                    },
                     ...(canEscalate ? [{ label: "Escalate to manager & HR", icon: <Flag className="h-4 w-4" />, danger: true, onClick: () => setEscalate(e) }] : []),
                   ]}
                 />
@@ -273,6 +296,21 @@ export default function CompliancePage() {
         onSearchChange={setSearch}
         toolbarActions={
           <>
+            {canRemind && (
+              <label
+                className="flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-line px-3 text-[13px] text-ink"
+                title={
+                  emailReady
+                    ? "When on, reminders and escalations also go out by email."
+                    : "Email isn’t set up yet (SMTP settings in backend/.env). Reminders still reach people in the portal."
+                }
+              >
+                <input type="checkbox" role="switch" aria-label="Send email with reminders and escalations" checked={sendEmail} onChange={(ev) => setSendEmail(ev.target.checked)} className="h-4 w-4 accent-[var(--brand)]" />
+                <Mail className="h-4 w-4 text-ink-muted" aria-hidden />
+                Send email
+                {sendEmail && emailStatus.isSuccess && !emailReady && <Badge tone="warning">Not set up</Badge>}
+              </label>
+            )}
             <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-40">
               <option value="">Any status</option>
               {Object.entries(STATUS_LABEL).map(([v, l]) => (
@@ -340,7 +378,11 @@ export default function CompliancePage() {
         title={`Escalate ${escalate?.name}?`}
         confirmLabel="Escalate"
         busy={action.isPending}
-        description="An escalation email goes to their manager (or HR), with HR and their partner in copy. This is recorded in their compliance history."
+        description={
+          sendEmail
+            ? `Their manager (or HR) is notified in the portal, and an escalation email goes to them with HR and their partner in copy${emailReady ? "" : " (email isn’t set up yet, so only the portal notice will go out)"}. This is recorded in their compliance history.`
+            : "Their manager (or HR) is notified in the portal. No email is sent (“Send email” is off). This is recorded in their compliance history."
+        }
         onConfirm={() => escalate && action.mutate({ kind: "escalate", id: escalate.employeeId }, { onSuccess: () => setEscalate(null) })}
       />
     </div>
