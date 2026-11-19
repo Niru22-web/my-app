@@ -17,6 +17,8 @@ import { reimbursementRoutes } from "./modules/reimbursements.routes";
 import { assetRoutes } from "./modules/assets.routes";
 import { helpdeskRoutes } from "./modules/helpdesk.routes";
 import { accountsRoutes } from "./modules/accounts.routes";
+import { payrollEngineRoutes } from "./modules/payroll-engine.routes";
+import { misRoutes } from "./modules/mis.routes";
 import { accountsBillingRoutes } from "./modules/accounts-billing.routes";
 import { importRoutes } from "./modules/imports.routes";
 import { insightsRoutes } from "./modules/insights.routes";
@@ -102,6 +104,8 @@ export async function buildServer() {
   await app.register(assetRoutes);
   await app.register(helpdeskRoutes);
   await app.register(accountsRoutes);
+  await app.register(payrollEngineRoutes);
+  await app.register(misRoutes);
   await app.register(accountsBillingRoutes);
   await app.register(importRoutes);
   await app.register(insightsRoutes);

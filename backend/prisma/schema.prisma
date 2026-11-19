@@ -101,6 +101,8 @@ model Employee {
   locationMaster    Location?          @relation(fields: [locationId], references: [id])
 
   payrolls          Payroll[]
+  payrollStructures PayrollStructure[]
+  tallyPartyLinks   TallyPartyLink[]
   transactions      Transaction[]
   ledgers           Ledger[]
   invoiceItems      InvoiceItem[]
@@ -174,6 +176,7 @@ model Client {
   status        String          @default("Active")
   updatedAt     DateTime        @updatedAt
   projects      Project[]
+  reportingMaps ReportingMap[]
   Reimbursement Reimbursement[]
   invoices      Invoice[]
   transactions  Transaction[]
@@ -199,6 +202,7 @@ model Project {
   partnerId      String?
   endDate        DateTime?
   jobs           Job[]
+  reportingMaps  ReportingMap[]
   client         Client              @relation(fields: [clientId], references: [id])
   creator        Employee?           @relation("ProjectCreator", fields: [createdBy], references: [id])
   manager        Employee?           @relation("ProjectManager", fields: [managerId], references: [id])
@@ -1080,11 +1084,16 @@ model Entity {
   status      String   @default("ACTIVE")
   createdAt   DateTime @default(now())
 
-  invoices     Invoice[]
-  payrolls     Payroll[]
-  transactions Transaction[]
-  receipts     Receipt[]
-  ledgers      Ledger[]
+  invoices          Invoice[]
+  payrolls          Payroll[]
+  payrollStructures PayrollStructure[]
+  payrollRuns       PayrollRun[]
+  tallyVouchers     TallyVoucher[]
+  tallyLedgers      TallyLedger[]
+  tallyLoadLogs     TallyLoadLog[]
+  transactions      Transaction[]
+  receipts          Receipt[]
+  ledgers           Ledger[]
 }
 
 model Invoice {
@@ -2181,4 +2190,221 @@ model Feedback {
 
   @@index([status])
   @@map("feedback")
+}
+
+/// Payroll engine (from ASA MIS): a person's full-month salary structure at one firm.
+/// Optionally linked to their portal account; people paid without a portal login can still be on payroll.
+model PayrollStructure {
+  id              String    @id @default(uuid())
+  entityId        String
+  employeeId      String?
+  name            String
+  gender          String? /// M | F — needed for Maharashtra PT on partial months
+  status          String    @default("Active") /// Active | Left
+  dateOfJoining   DateTime? @db.Date
+  dateOfLeaving   DateTime? @db.Date
+  pfApplicable    Boolean   @default(false)
+  esicApplicable  Boolean   @default(false)
+  basicPct        Float?
+  ctc             Float?
+  basic           Float     @default(0)
+  hra             Float     @default(0)
+  conv            Float     @default(0)
+  bonus           Float     @default(0)
+  pt              Float     @default(0)
+  pfEmployee      Float     @default(0)
+  esicEmployee    Float     @default(0)
+  pfEmployer      Float     @default(0)
+  esicEmployer    Float     @default(0)
+  structureSource String?
+  needsReview     Boolean   @default(false)
+  reviewNote      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  entity   Entity        @relation(fields: [entityId], references: [id])
+  employee Employee?     @relation(fields: [employeeId], references: [id])
+  lines    PayrollLine[]
+
+  @@unique([entityId, name])
+  @@index([employeeId])
+  @@map("payroll_structures")
+}
+
+/// One firm + one month. Draft lines are editable; Finalised needs every line's timesheet + approval.
+model PayrollRun {
+  id            String    @id @default(uuid())
+  entityId      String
+  month         String /// YYYY-MM
+  status        String    @default("Draft") /// Draft | Finalised
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  finalisedById String?
+  finalisedAt   DateTime?
+
+  entity Entity        @relation(fields: [entityId], references: [id])
+  lines  PayrollLine[]
+
+  @@unique([entityId, month])
+  @@map("payroll_runs")
+}
+
+/// One person's salary in a run. Editing a line (or replacing its timesheet) puts its approval back to Pending.
+model PayrollLine {
+  id              String    @id @default(uuid())
+  runId           String
+  structureId     String
+  basic           Float     @default(0)
+  hra             Float     @default(0)
+  conv            Float     @default(0)
+  bonus           Float     @default(0)
+  gross           Float     @default(0)
+  pt              Float     @default(0)
+  pfEmployee      Float     @default(0)
+  esicEmployee    Float     @default(0)
+  pfEmployer      Float     @default(0)
+  esicEmployer    Float     @default(0)
+  netPay          Float     @default(0)
+  totalDays       Float
+  lopDays         Float     @default(0)
+  paidDays        Float
+  pfApplicable    Boolean   @default(false)
+  esicApplicable  Boolean   @default(false)
+  basicPct        Float?
+  ctc             Float?
+  calcBasis       String /// full month | prorated | edited
+  remarks         String?
+  approvalStatus  String    @default("Pending") /// Pending | Okay
+  approvalRemarks String?
+  approvedById    String?
+  approvedAt      DateTime?
+  timesheetName   String?
+  timesheetPath   String?
+  timesheetById   String?
+  timesheetAt     DateTime?
+  /// The Payroll (payables) row created when the run is finalised, so bank reconciliation can mark it paid.
+  payrollId       String?
+
+  run       PayrollRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  structure PayrollStructure @relation(fields: [structureId], references: [id])
+
+  @@unique([runId, structureId])
+  @@map("payroll_lines")
+}
+
+/// Reporting dimensions (from ASA MIS client_project_master): per client (projectId null = client default) or
+/// per project. Drives cost allocation and the vertical-head MIS.
+model ReportingMap {
+  id                  String   @id @default(uuid())
+  clientId            String
+  projectId           String?
+  reportingClientName String?
+  serviceCategory     String?
+  verticalHead        String?
+  /// Overrides the project's/client's partner on the portal record, when the MIS reports it differently.
+  engagementPartner   String?
+  updatedById         String?
+  updatedAt           DateTime @updatedAt
+
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, projectId])
+  @@index([projectId])
+  @@map("reporting_map")
+}
+
+/// Tally columnar voucher registers, unpivoted: one row per voucher × ledger column (Cr stored negative).
+model TallyVoucher {
+  id          String    @id @default(uuid())
+  entityId    String
+  register    String /// source file name without extension, e.g. "ASA LLP_Journal"
+  rowKey      String /// entity|register|voucherType|voucherNo|date|ledger (+#n for repeats)
+  date        DateTime? @db.Date
+  particulars String?
+  voucherType String?
+  voucherNo   String?
+  narration   String?
+  grossTotal  Float     @default(0)
+  ledger      String /// the ledger column the amount was posted to
+  value       Float
+  loadedAt    DateTime  @default(now())
+
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, rowKey])
+  @@index([entityId, date])
+  @@index([entityId, register])
+  @@map("tally_vouchers")
+}
+
+/// Tally Ledger Masters: each ledger's parent and primary group per firm.
+model TallyLedger {
+  id             String   @id @default(uuid())
+  entityId       String
+  ledgerName     String
+  parent         String?
+  primaryGroup   String?
+  openingBalance Float?
+  closingBalance Float?
+  loadedAt       DateTime @default(now())
+
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, ledgerName])
+  @@map("tally_ledgers")
+}
+
+/// Tally primary group → P&L head (Revenue | Expense | Tax | Balance Sheet | Suspense).
+model TallyGroupHead {
+  primaryGroup String @id
+  head         String
+
+  @@map("tally_group_heads")
+}
+
+/// One row per imported register (or "Ledger Masters"), with the Grand Total check.
+model TallyLoadLog {
+  id              String   @id @default(uuid())
+  entityId        String
+  register        String
+  sourceFile      String?
+  vouchers        Int      @default(0)
+  rows            Int      @default(0)
+  tallyGrandTotal Float    @default(0)
+  outputTotal     Float    @default(0)
+  difference      Float    @default(0)
+  loadedById      String?
+  loadedAt        DateTime @default(now())
+
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, register])
+  @@map("tally_load_logs")
+}
+
+/// Tally party names → portal people (ASA MIS employee_master). Employee/Consultant costs feed cost allocation.
+model TallyPartyLink {
+  id          String   @id @default(uuid())
+  tallyName   String   @unique
+  employeeId  String?
+  category    String   @default("Employee") /// Employee | Consultant | Partner | Other
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@map("tally_party_links")
+}
+
+/// Historical vertical-head MIS data (the JSON written by ASA MIS etl/vertical_mis_etl.py), viewable in the portal.
+model MisSnapshot {
+  id           String   @id @default(uuid())
+  label        String
+  data         Json
+  uploadedById String?
+  uploadedAt   DateTime @default(now())
+
+  @@map("mis_snapshots")
 }

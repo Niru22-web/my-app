@@ -232,8 +232,8 @@ export default function PayablesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Payroll & payables"
-        description="Monthly salary runs and approved employee expense claims awaiting disbursement."
+        title="Payables"
+        description="Salaries waiting to be paid (finalised payroll runs create these automatically) and approved employee expense claims awaiting disbursement."
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> Record payroll

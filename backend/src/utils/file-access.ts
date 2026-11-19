@@ -12,6 +12,7 @@ import { ACCOUNTS_ROLES, normRole, reportingTreeIds, type JwtUser } from "../plu
 //                   and their managers/partners (not IT)
 //   reimbursements/ receipts — the claimant, their reporting line, HR, Admin, Finance/Accounts
 //   tickets/        attachments — requester, assignee, HR, IT, Admin
+//   payroll/        payroll timesheets — Accounts, Admin, Owner
 //   temp/, logs/, anything unknown — Admin/Owner only
 
 const MIME: Record<string, string> = {
@@ -98,6 +99,9 @@ export async function canReadUpload(u: JwtUser, rel: string): Promise<boolean> {
     const t = att?.ticket;
     return !!t && (t.createdById === u.id || t.assignedTo === u.id || (await inLeadTree(u, t.createdById)));
   }
+
+  // Payroll timesheets: salary paperwork — Accounts only (Admin/Owner already returned true above).
+  if (folder === "payroll") return ACCOUNTS_ROLES.has(r) || !!u.hasAccountsAccess;
 
   // Bug tracker screenshots: reporter, assignee, Admin/Owner/IT, and anyone who commented on that bug.
   if (folder === "bugs") return (await import("./bug-access")).canReadBugFile(u, list);
