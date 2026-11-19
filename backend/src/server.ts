@@ -33,12 +33,13 @@ export async function buildServer() {
     logger: env.NODE_ENV === "development",
     // JSON bodies stay small; file uploads have their own per-file limit below.
     bodyLimit: 2 * 1024 * 1024,
-    // Behind the local proxy (Next.js in dev, Nginx in production) req.ip is the real client address.
-    trustProxy: "127.0.0.1",
+    // Behind a proxy (Next.js in dev, Nginx, or a cloud load balancer) req.ip is the real client address.
+    // Configured by TRUST_PROXY (default 127.0.0.1); see config/env.ts.
+    trustProxy: env.TRUST_PROXY,
   });
 
   await app.register(cors, {
-    origin: env.FRONTEND_URL || true,
+    origin: env.FRONTEND_ORIGINS,
     credentials: true,
   });
 

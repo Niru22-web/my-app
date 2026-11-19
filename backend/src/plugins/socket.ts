@@ -13,7 +13,7 @@ let io: SocketIOServer | null = null;
 export function initSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.FRONTEND_URL,
+      origin: env.FRONTEND_ORIGINS,
       methods: ["GET", "POST"],
       credentials: true,
     },

@@ -17,6 +17,10 @@ The firm's internal portal for Ashish Shah & Associates: timesheets, attendance,
 | `scripts/dev.mjs` | Starts backend and frontend together. |
 | `_local/` | Local-only secrets, test logins and data exports. Git-ignored. |
 
+## Deploying
+
+Website on Vercel, API + database on Render: step by step in [DEPLOY.md](DEPLOY.md).
+
 ## Run it locally
 
 Prerequisites: Node.js 20+, PostgreSQL 16 with the `timesheet` database.

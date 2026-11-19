@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 
 // The API runs as a separate service. In development, requests to /api and
 // /uploads are forwarded to it so the browser only ever talks to one origin.
-const API_ORIGIN = process.env.API_ORIGIN ?? "http://127.0.0.1:5000";
+// On Vercel set API_ORIGIN to the hosted API (e.g. https://asa-portal-api.onrender.com). Rewrites are fixed at
+// build time, so changing it needs a redeploy.
+const API_ORIGIN = (process.env.API_ORIGIN ?? "http://127.0.0.1:5000").replace(/\/$/, "");
+if (process.env.VERCEL && !process.env.API_ORIGIN) {
+  throw new Error("API_ORIGIN is not set. Add it in Vercel → Project → Settings → Environment Variables (the Render API URL), then redeploy.");
+}
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
